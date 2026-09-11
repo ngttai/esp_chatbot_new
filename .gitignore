@@ -1,0 +1,108 @@
+.config
+# Local PC build deps (Boost/Lua/Wasmtime/QuickJS trees from README experiments)
+.deps/
+*.o
+*.pyc
+*.orig
+*.egg-info/
+
+# gtags
+GTAGS
+GRTAGS
+GPATH
+
+# emacs
+.dir-locals.el
+
+# emacs temp file suffixes
+*~
+.#*
+\#*#
+
+# eclipse setting
+.settings
+
+# MacOS directory files
+.DS_Store
+
+# Unit Test CMake compile log folder
+log_ut_cmake
+
+TEST_LOGS
+
+# gcov coverage reports
+*.gcda
+*.gcno
+coverage.info
+coverage_report/
+
+test_multi_heap_host
+
+# VS Code Settings
+.vscode/
+.cursor/
+
+# VIM files
+*.swp
+*.swo
+
+# Clion IDE CMake build & config
+.idea/
+cmake-build-*/
+
+# Results for the checking of the Python coding style and static analysis
+.mypy_cache
+flake8_output.txt
+
+# esp-idf default build directory name
+build
+**/bin/
+_build
+build_esp*/
+build_linux*/
+size_info.txt
+sdkconfig
+sdkconfig.old
+
+# lock files for examples and components
+dependencies.lock
+
+# managed_components for examples
+managed_components
+
+# pytest log
+pytest_embedded_log/
+pytest_log/
+.pytest_cache/
+XUNIT_RESULT.xml
+
+.cache/
+
+# esp_board_manager
+board_manager.defaults
+sdkconfig.bmgr_board.backup
+sdkconfig.bmgr_board.old
+**/gen_bmgr_codes/
+!examples/gui/json_ui_apps/components/gen_bmgr_codes/
+!examples/gui/json_ui_apps/components/gen_bmgr_codes/**
+
+# private key files
+*.pem
+
+# python venv
+.venv/
+.venv-docs/
+
+# Drawio files
+*.drawio.dtmp
+*.drawio.bkp
+
+# SquareLine Studio files
+**/squareline_project/backup/
+**/squareline_project/cache/
+**/squareline_ui/CMakeLists.txt
+**/squareline_ui/filelist.txt
+**/squareline_ui/project.info
+
+# Local planning notes (not part of upstream docs)
+docs/commits_rpk_runtime_feature.md

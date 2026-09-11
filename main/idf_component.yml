@@ -1,0 +1,39 @@
+## IDF Component Manager Manifest File
+dependencies:
+  # Hal
+  espressif/brookesia_hal_adaptor:
+    version: "0.8.*"
+  espressif/brookesia_hal_boards:
+    version: "0.8.*"
+
+  # Services
+  espressif/brookesia_service_device:
+    version: "0.8.*"
+  espressif/brookesia_service_audio:
+    version: "0.8.*"
+  espressif/brookesia_service_wifi:
+    version: "0.8.*"
+  espressif/brookesia_service_display:
+    version: "0.8.*"
+  espressif/brookesia_service_video:
+    version: "0.8.*"
+  espressif/brookesia_service_bt_speaker:
+    rules:
+      - if: target in [esp32s31]
+    version: "0.8.*"
+
+  # Agents
+  espressif/brookesia_agent_coze:
+    version: "0.8.*"
+  espressif/brookesia_agent_openai:
+    version: "0.8.*"
+  espressif/brookesia_agent_xiaozhi:
+    version: "0.8.*"
+
+  # Expressions
+  espressif/brookesia_expression_emote:
+    version: "0.8.*"
+
+  # GUI
+  espressif/brookesia_gui_lvgl:
+    version: "0.8.*"
