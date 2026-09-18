@@ -1,0 +1,130 @@
+# ESP VoCat chatbot PC simulator
+
+This target runs the exact imported `speaker_ui` shell from the SDL reference
+project through the official ESP-Brookesia Linux HAL and an SDL2 window. It does
+not change the ESP-IDF firmware build or modify the imported UI sources.
+
+## Dependencies (Ubuntu/Debian)
+
+Install the Brookesia Linux dependencies (once):
+
+```sh
+cd /path/to/esp-brookesia/hal/brookesia_hal_linux
+./scripts/install_linux_deps.sh --minimal --display
+```
+
+Resolve this project's IDF components once so `managed_components/lvgl__lvgl` is
+available:
+
+```sh
+. "$HOME/.espressif/v6.1/esp-idf/export.sh"
+idf.py reconfigure
+```
+
+## Build and run
+
+The default layout expects the Brookesia checkout next to this project:
+
+```text
+esp_project/
+├── esp-brookesia/
+└── esp_chatbot_v1/
+```
+
+Then run:
+
+```sh
+cmake -S host_sim -B build-host -G Ninja
+cmake --build build-host
+./build-host/esp_chatbot_host_sim
+```
+
+For sources stored elsewhere, pass absolute paths during configuration:
+
+```sh
+cmake -S host_sim -B build-host -G Ninja \
+  -DBROOKESIA_SOURCE_DIR=/path/to/esp-brookesia \
+  -DLVGL_SOURCE_DIR=/path/to/lvgl
+```
+
+The simulator currently covers the display/touch path and UI interactions. Audio
+AFE/wake-word, camera, flash partitions, provisioning, and concrete AI-agent
+components remain firmware-only and are not started by this host target.
+
+## UI controls
+
+- Start at the black idle screen; press and hold to open Launcher.
+- Drag down from the top edge to open Quick Settings.
+- Drag up from the bottom Home indicator to return to Launcher; repeat from
+  Launcher to return to idle.
+- Swipe Launcher horizontally to reach the remaining app pages.
+
+The host target includes the exact Launcher, Quick Settings, Settings, AI Profile,
+and Clock UI from the source simulator.
+
+## Simulated brightness
+
+The Linux HAL simulates LCD backlight brightness by applying a black alpha
+overlay to the SDL renderer. The host-only brightness adapter connects the
+unchanged UI controls to Brookesia Display service:
+
+- Quick Settings cycles through the firmware-compatible levels 40%, 70%, and
+  100%.
+- Settings > Display controls the simulated backlight continuously from 0% to
+  100%.
+- Display service persists the selected brightness between simulator runs.
+- Auto adjust remains presentation-only because the PC simulator has no ambient
+  light sensor source.
+
+The adapter is outside `main/modules/display/speaker_ui`, so the imported UI
+source and its behavior remain byte-identical to the reference simulator.
+
+## Self-tests
+
+The host executable preserves all 11 `--self-test-*` options from the source
+simulator. Input is injected through Brookesia Display service rather than through
+LVGL's built-in SDL driver:
+
+```sh
+./build-host/esp_chatbot_host_sim --self-test-home
+./build-host/esp_chatbot_host_sim --self-test-quick-buttons
+```
+
+Run the complete suite headlessly with:
+
+```sh
+ctest --test-dir build-host --output-on-failure
+```
+
+An additional host-only test verifies that both brightness controls reach the
+Brookesia backlight interface:
+
+```sh
+./build-host/esp_chatbot_host_sim --self-test-brightness-simulation
+```
+
+## Visual parity
+
+Capture one screen through the Brookesia RGB565 buffer output without involving
+the desktop compositor:
+
+```sh
+SDL_VIDEODRIVER=dummy ./build-host/esp_chatbot_host_sim \
+  --screenshot /tmp/launcher.bmp launcher
+```
+
+The accepted screen names are `idle`, `launcher`, `launcher-pressed`, `quick`,
+`settings`, `settings-bottom`, `wlan`, `wlan-bottom`, `wlan-connect`, `softap`,
+`sound`, `display`, `about`, `developer`, `restore`, `ai`, and `timer`.
+
+Run the complete Phase 4 comparison against the frozen Phase 0 golden set:
+
+```sh
+host_sim/tests/visual_parity.sh \
+  build-host/esp_chatbot_host_sim \
+  docs/ui_porting_baseline/screenshots
+```
+
+The script accepts only per-channel RGB565/renderer variance up to 5%. Because
+Clock displays live system time, its four static regions are compared separately
+from the animated digit rectangle.

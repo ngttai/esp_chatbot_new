@@ -66,6 +66,13 @@ Please refer to the following documentation:
 
 Please refer to [ESP-Brookesia Programming Guide - How to Use Example Projects](https://docs.espressif.com/projects/esp-brookesia/en/latest/getting_started.html#getting-started-example-projects).
 
+### PC simulator (Linux)
+
+The project also contains a Linux/SDL2 host target for running the exact imported
+Speaker UI shell without an ESP VoCat board. See
+[host_sim/README.md](host_sim/README.md) for setup, build commands, and the list
+of hardware-only features that are not available in the simulator.
+
 ## 🔧 Configure AI Agents
 
 Run `idf.py menuconfig` and configure the agents in the `Example Configuration` menu:

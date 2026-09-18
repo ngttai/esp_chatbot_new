@@ -1,0 +1,216 @@
+/*
+ * Linux/SDL2 entry point for the ESP VoCat chatbot UI.
+ *
+ * The display and touch path is the real ESP-Brookesia host path:
+ * brookesia_hal_linux -> display service -> brookesia_gui_lvgl -> Speaker UI.
+ * Hardware-only chatbot services are intentionally not started here.
+ */
+#include <algorithm>
+#include <cstdlib>
+#include <exception>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "boost/chrono.hpp"
+#include "boost/json.hpp"
+#include "boost/thread.hpp"
+#include "brookesia/gui_lvgl.hpp"
+#include "brookesia/hal_linux.hpp"
+#include "brookesia/lib_utils.hpp"
+#include "brookesia/service_display/service_display.hpp"
+#include "brookesia/service_helper.hpp"
+#include "brookesia/service_manager.hpp"
+#include "brightness_adapter.hpp"
+#include "screenshot_capture.hpp"
+
+extern "C" {
+#include "speaker_ui.h"
+}
+
+using namespace esp_brookesia;
+using DisplayHelper = service::helper::Display;
+
+namespace host_sim::tests {
+bool is_self_test_option(std::string_view option);
+int run_self_test(std::string_view option, const std::string &output_name,
+                  lv_indev_t *input, uint32_t backlight_output_id);
+} // namespace host_sim::tests
+
+namespace {
+
+constexpr uint16_t WINDOW_WIDTH = 360;
+constexpr uint16_t WINDOW_HEIGHT = 360;
+constexpr int MAIN_LOOP_DELAY_MS = 16;
+constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
+constexpr std::string_view SCREENSHOT_OUTPUT_NAME = "SpeakerUiScreenshot";
+
+int fail(std::string_view stage, std::string_view error)
+{
+    std::cerr << "host_sim: " << stage << " failed: " << error << '\n';
+    return EXIT_FAILURE;
+}
+
+int run_main(int argc, char **argv)
+{
+    const bool screenshot_mode = argc >= 2 && std::string_view(argv[1]) == "--screenshot";
+    if (screenshot_mode && argc < 3) {
+        return fail("screenshot", "--screenshot requires an output path");
+    }
+    const std::string_view screenshot_path = screenshot_mode ? argv[2] : "";
+    const std::string_view screenshot_screen = screenshot_mode && argc >= 4 ? argv[3] : "idle";
+
+    auto &display_device = hal::DisplayLinuxDevice::get_instance();
+    if (!display_device.configure({
+            .width_px = WINDOW_WIDTH,
+            .height_px = WINDOW_HEIGHT,
+            .window_title = "ESP VoCat v1.0 - Chatbot PC Simulator",
+            .render_driver = "software",
+        })) {
+        return fail("display configure", "could not configure the HAL Linux display");
+    }
+
+    auto &service_manager = service::ServiceManager::get_instance();
+    if (!service_manager.start()) {
+        return fail("service manager start", "could not start ServiceManager");
+    }
+    lib_utils::FunctionGuard service_manager_cleanup([&service_manager]() {
+        service_manager.deinit();
+    });
+
+    auto display_binding = service_manager.bind(DisplayHelper::get_name().data());
+    if (!display_binding.is_valid()) {
+        return fail("display bind", "Display service is unavailable");
+    }
+
+    auto outputs_result = DisplayHelper::call_function_sync<boost::json::array>(
+                              DisplayHelper::FunctionId::GetOutputs,
+                              service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                          );
+    if (!outputs_result) {
+        return fail("display outputs", outputs_result.error());
+    }
+
+    std::vector<DisplayHelper::OutputInfo> outputs;
+    if (!BROOKESIA_DESCRIBE_FROM_JSON(outputs_result.value(), outputs) || outputs.empty()) {
+        return fail("display outputs", "no usable display output was registered");
+    }
+    const auto backlight_output = std::find_if(outputs.begin(), outputs.end(), [](const auto &output) {
+        return output.backlight.has_value();
+    });
+    if (backlight_output != outputs.end()) {
+        (void)DisplayHelper::call_function_sync(
+            DisplayHelper::FunctionId::SetBacklightOnOff,
+            static_cast<double>(backlight_output->id),
+            true,
+            service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+        );
+    }
+
+    std::vector<uint8_t> screenshot_buffer;
+    if (screenshot_mode) {
+        screenshot_buffer.assign(static_cast<size_t>(WINDOW_WIDTH) * WINDOW_HEIGHT * 2U, 0);
+        auto output_result = service::Display::get_instance().register_output(
+            service::Display::BufferOutputConfig{
+                .name = std::string(SCREENSHOT_OUTPUT_NAME),
+                .width = WINDOW_WIDTH,
+                .height = WINDOW_HEIGHT,
+                .pixel_format = service::Display::PixelFormat::RGB565,
+                .buffer = service::RawBuffer(screenshot_buffer.data(), screenshot_buffer.size()),
+                .stride_bytes = static_cast<size_t>(WINDOW_WIDTH) * 2U,
+            }
+        );
+        if (!output_result) {
+            return fail("screenshot output", output_result.error());
+        }
+    }
+
+    auto &display_source = gui::lvgl::DisplaySource::get_instance();
+    gui::lvgl::DisplaySourceConfig source_config;
+    source_config.tick_period_ms = 5;
+    if (screenshot_mode) {
+        source_config.output_name = std::string(SCREENSHOT_OUTPUT_NAME);
+    }
+    if (!display_source.start(source_config)) {
+        return fail("LVGL display source", "could not start brookesia_gui_lvgl");
+    }
+    lib_utils::FunctionGuard display_source_cleanup([&display_source]() {
+        display_source.stop_timers();
+        display_source.release_display_service();
+        display_source.stop();
+    });
+
+    auto activate_result = DisplayHelper::call_function_sync(
+                               DisplayHelper::FunctionId::SetActiveSourceRole,
+                               display_source.output_name(),
+                               source_config.source_role,
+                               service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                           );
+    if (!activate_result) {
+        return fail("display activate", activate_result.error());
+    }
+
+    auto *input = display_source.input();
+    if (input == nullptr) {
+        return fail("LVGL input", "brookesia_gui_lvgl did not create a pointer input");
+    }
+
+    gui::lvgl::lock_thread();
+    speaker_ui_create();
+    speaker_ui_set_input(input);
+    gui::lvgl::unlock_thread();
+
+    host_sim::BrightnessAdapter brightness_adapter;
+    if (backlight_output != outputs.end()) {
+        gui::lvgl::lock_thread();
+        const bool brightness_started = brightness_adapter.start(backlight_output->id);
+        gui::lvgl::unlock_thread();
+        if (!brightness_started) {
+            return fail("brightness adapter", "could not create the LVGL bridge timer");
+        }
+    }
+    lib_utils::FunctionGuard brightness_cleanup([&brightness_adapter]() {
+        gui::lvgl::lock_thread();
+        brightness_adapter.stop();
+        gui::lvgl::unlock_thread();
+    });
+
+    if (argc == 2 && host_sim::tests::is_self_test_option(argv[1])) {
+        if (backlight_output == outputs.end()) {
+            return fail("self-test", "no backlight-bound display output is available");
+        }
+        return host_sim::tests::run_self_test(
+            argv[1], display_source.output_name(), input, backlight_output->id
+        );
+    }
+    if (screenshot_mode) {
+        return host_sim::tests::capture_screenshot(
+            screenshot_path,
+            screenshot_screen,
+            display_source.display(),
+            screenshot_buffer,
+            WINDOW_WIDTH,
+            WINDOW_HEIGHT
+        );
+    }
+
+    std::cout << "ESP VoCat simulator is running. Close the SDL window to stop.\n";
+    while (!display_device.is_quit_requested()) {
+        boost::this_thread::sleep_for(boost::chrono::milliseconds(MAIN_LOOP_DELAY_MS));
+    }
+    return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main(int argc, char **argv) noexcept
+{
+    try {
+        return run_main(argc, argv);
+    } catch (const std::exception &e) {
+        return fail("unhandled exception", e.what());
+    } catch (...) {
+        return fail("unhandled exception", "unknown error");
+    }
+}

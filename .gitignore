@@ -60,6 +60,8 @@ build
 _build
 build_esp*/
 build_linux*/
+build-host*/
+build-idf*/
 size_info.txt
 sdkconfig
 sdkconfig.old
