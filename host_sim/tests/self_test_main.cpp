@@ -831,6 +831,17 @@ int test_factory_reset(InputInjector &input, uint32_t output_id)
         std::fprintf(stderr, "Factory Reset did not restore the isolated simulator defaults\n");
         return 50;
     }
+
+    show("idle");
+    input.pump(20);
+    if (!input_ok(input.press(180, 180), input)) return 1;
+    input.pump(120);
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(30);
+    if (!with_ui_lock([]() { return speaker_ui_is_launcher_active(); })) {
+        std::fprintf(stderr, "Launcher long-press stopped working after Factory Reset\n");
+        return 51;
+    }
     std::puts("Factory Reset sandbox passed");
     return 0;
 }
@@ -839,7 +850,7 @@ int test_persistence_defaults(uint32_t output_id)
 {
     if (!simulator_defaults_are_loaded(output_id)) {
         std::fprintf(stderr, "Factory Reset defaults did not survive the next process\n");
-        return 51;
+        return 52;
     }
     std::puts("Post-reset cross-process defaults passed");
     return 0;
