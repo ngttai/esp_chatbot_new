@@ -26,6 +26,30 @@ set(
     "Path to the LVGL source used by the ESP-IDF project"
 )
 
+# Host backends are explicit and deterministic by default. `auto` and the real
+# backend names are opt-in so a normal build never touches host Wi-Fi, power, or
+# audio devices unexpectedly.
+set(HOST_SIM_MEDIA_BACKEND "stub" CACHE STRING
+    "Host media backend: stub, auto, or ffmpeg_portaudio")
+set_property(CACHE HOST_SIM_MEDIA_BACKEND PROPERTY STRINGS stub auto ffmpeg_portaudio)
+if(NOT HOST_SIM_MEDIA_BACKEND MATCHES "^(stub|auto|ffmpeg_portaudio)$")
+    message(FATAL_ERROR "Invalid HOST_SIM_MEDIA_BACKEND='${HOST_SIM_MEDIA_BACKEND}'")
+endif()
+
+set(HOST_SIM_WIFI_BACKEND "stub" CACHE STRING
+    "Host Wi-Fi backend: stub, auto, or networkmanager")
+set_property(CACHE HOST_SIM_WIFI_BACKEND PROPERTY STRINGS stub auto networkmanager)
+if(NOT HOST_SIM_WIFI_BACKEND MATCHES "^(stub|auto|networkmanager)$")
+    message(FATAL_ERROR "Invalid HOST_SIM_WIFI_BACKEND='${HOST_SIM_WIFI_BACKEND}'")
+endif()
+
+set(HOST_SIM_POWER_BACKEND "stub" CACHE STRING
+    "Host power backend: stub, auto, or upower")
+set_property(CACHE HOST_SIM_POWER_BACKEND PROPERTY STRINGS stub auto upower)
+if(NOT HOST_SIM_POWER_BACKEND MATCHES "^(stub|auto|upower)$")
+    message(FATAL_ERROR "Invalid HOST_SIM_POWER_BACKEND='${HOST_SIM_POWER_BACKEND}'")
+endif()
+
 if(NOT EXISTS "${BROOKESIA_SOURCE_DIR}/hal/brookesia_hal_linux/CMakeLists.txt")
     message(FATAL_ERROR
         "ESP-Brookesia source was not found at '${BROOKESIA_SOURCE_DIR}'. "
@@ -84,13 +108,13 @@ else()
     target_link_libraries(lvgl PUBLIC ${SDL2_LIBRARIES})
 endif()
 
-# Only the display needs a real host backend. Other hardware families use
-# deterministic stubs so the simulator is usable without a microphone/camera.
-set(BROOKESIA_HAL_LINUX_MEDIA_BACKEND stub CACHE STRING "" FORCE)
+# Display is always SDL2. Media, Wi-Fi, and power follow the host-facing cache
+# options above. Video and BLE are deliberately out of this simulator's scope.
+set(BROOKESIA_HAL_LINUX_MEDIA_BACKEND "${HOST_SIM_MEDIA_BACKEND}" CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_VIDEO_BACKEND stub CACHE STRING "" FORCE)
-set(BROOKESIA_HAL_LINUX_WIFI_BACKEND stub CACHE STRING "" FORCE)
+set(BROOKESIA_HAL_LINUX_WIFI_BACKEND "${HOST_SIM_WIFI_BACKEND}" CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_BLE_BACKEND stub CACHE STRING "" FORCE)
-set(BROOKESIA_HAL_LINUX_POWER_BACKEND stub CACHE STRING "" FORCE)
+set(BROOKESIA_HAL_LINUX_POWER_BACKEND "${HOST_SIM_POWER_BACKEND}" CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_DISPLAY_BACKEND sdl2 CACHE STRING "" FORCE)
 add_subdirectory(
     "${BROOKESIA_SOURCE_DIR}/gui/brookesia_gui_lvgl"
@@ -104,13 +128,22 @@ file(GLOB_RECURSE SPEAKER_UI_SOURCES CONFIGURE_DEPENDS
 )
 add_executable(esp_chatbot_host_sim
     brightness_adapter.cpp
+    host_capabilities.cpp
     main.cpp
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
     tests/self_test_main.cpp
     ${SPEAKER_UI_SOURCES}
 )
+set(HOST_SIM_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${HOST_SIM_GENERATED_DIR}")
+configure_file(
+    "${HOST_SIM_DIR}/host_capabilities_config.hpp.in"
+    "${HOST_SIM_GENERATED_DIR}/host_capabilities_config.hpp"
+    @ONLY
+)
 target_include_directories(esp_chatbot_host_sim PRIVATE
+    "${HOST_SIM_GENERATED_DIR}"
     "${HOST_SIM_DIR}/tests"
     "${SPEAKER_UI_DIR}/src"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/main/core/brookesia_core/systems"
@@ -129,6 +162,8 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_test(NAME host_sim_capabilities COMMAND esp_chatbot_host_sim --print-capabilities)
+
     set(SPEAKER_UI_SELF_TEST_OPTIONS
         --self-test-home
         --self-test-launcher

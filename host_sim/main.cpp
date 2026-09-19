@@ -23,6 +23,7 @@
 #include "brookesia/service_helper.hpp"
 #include "brookesia/service_manager.hpp"
 #include "brightness_adapter.hpp"
+#include "host_capabilities.hpp"
 #include "screenshot_capture.hpp"
 
 extern "C" {
@@ -54,6 +55,12 @@ int fail(std::string_view stage, std::string_view error)
 
 int run_main(int argc, char **argv)
 {
+    if (argc == 2 && std::string_view(argv[1]) == "--print-capabilities") {
+        host_sim::print_configured_capabilities(std::cout);
+        return EXIT_SUCCESS;
+    }
+
+    host_sim::print_configured_capabilities(std::cout);
     const bool screenshot_mode = argc >= 2 && std::string_view(argv[1]) == "--screenshot";
     if (screenshot_mode && argc < 3) {
         return fail("screenshot", "--screenshot requires an output path");

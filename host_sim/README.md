@@ -47,9 +47,39 @@ cmake -S host_sim -B build-host -G Ninja \
   -DLVGL_SOURCE_DIR=/path/to/lvgl
 ```
 
+## Host backend selection
+
+The default build is deterministic: Display uses SDL2 while media, Wi-Fi, and
+power use Linux HAL stubs. Show the configured selection without starting SDL:
+
+```sh
+./build-host/esp_chatbot_host_sim --print-capabilities
+```
+
+Select optional backends at CMake configure time:
+
+```sh
+cmake -S host_sim -B build-host-real -G Ninja \
+  -DHOST_SIM_MEDIA_BACKEND=ffmpeg_portaudio \
+  -DHOST_SIM_WIFI_BACKEND=networkmanager \
+  -DHOST_SIM_POWER_BACKEND=upower
+```
+
+Accepted values are:
+
+| Option | Values | Default |
+|---|---|---|
+| `HOST_SIM_MEDIA_BACKEND` | `stub`, `auto`, `ffmpeg_portaudio` | `stub` |
+| `HOST_SIM_WIFI_BACKEND` | `stub`, `auto`, `networkmanager` | `stub` |
+| `HOST_SIM_POWER_BACKEND` | `stub`, `auto`, `upower` | `stub` |
+
+`networkmanager` can change the computer's real network state once Wi-Fi service
+integration is enabled. Keep it at `stub` for normal development and CI. Camera,
+video, and BLE are outside this simulator's scope and remain disabled.
+
 The simulator currently covers the display/touch path and UI interactions. Audio
-AFE/wake-word, camera, flash partitions, provisioning, and concrete AI-agent
-components remain firmware-only and are not started by this host target.
+AFE/wake-word, flash partitions, provisioning, and concrete AI-agent components
+remain firmware-only and are not started by this host target.
 
 ## UI controls
 
