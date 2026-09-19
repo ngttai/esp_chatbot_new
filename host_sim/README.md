@@ -141,7 +141,9 @@ Brookesia Storage:
 Settings > Restore Factory now resets those service namespaces and clears only
 the four virtual file-system mounts inside the simulator sandbox. It never
 removes project files or host configuration. The full default UI state is loaded
-the next time the simulator starts.
+the next time the simulator starts. Because the embedded Display service default
+turns the backlight off, the host adapter explicitly keeps the SDL display on
+after reset so the restored UI remains visible and interactive.
 
 For CI, the four cross-process persistence tests override both KV and file-system
 roots with dedicated directories under the build tree. They verify write/read,

@@ -85,6 +85,8 @@ Kết quả:
 - WLAN on/off và AI Profile được lưu trong namespace host-only `HostSimulator`.
 - Factory Reset chạy từ nút UI gốc, reset ba nhóm KV và chỉ dọn bốn virtual
   mount trong sandbox `.brookesia/fs`.
+- Host adapter bật lại backlight sau reset để cửa sổ SDL không bị đen theo mặc
+  định backlight-off của Display service trên embedded.
 - Project, cấu hình hệ điều hành và dữ liệu ngoài sandbox không bị đụng tới.
 - Chuỗi bốn test qua bốn process riêng biệt xác nhận write/read/reset/defaults.
 - Regression: 18/18 CTest pass.

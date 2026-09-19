@@ -222,7 +222,7 @@ int run_main(int argc, char **argv)
     host_sim::PersistenceAdapter persistence_adapter;
     if (persistence_runtime_enabled) {
         gui::lvgl::lock_thread();
-        const bool persistence_started = persistence_adapter.start();
+        const bool persistence_started = persistence_adapter.start(backlight_output->id);
         gui::lvgl::unlock_thread();
         if (!persistence_started) {
             return fail("persistence adapter", "could not connect persistent state to the UI");

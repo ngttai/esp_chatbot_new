@@ -113,9 +113,10 @@ std::expected<void, std::string> clear_virtual_file_systems()
 
 } // namespace
 
-bool PersistenceAdapter::start()
+bool PersistenceAdapter::start(uint32_t backlight_output_id)
 {
     if (timer_ != nullptr) return true;
+    backlight_output_id_ = backlight_output_id;
 
     auto state_result = load_ui_state();
     if (!state_result) {
@@ -199,13 +200,25 @@ std::expected<void, std::string> PersistenceAdapter::save_ui_state(const Simulat
     return {};
 }
 
-std::expected<void, std::string> PersistenceAdapter::reset_simulator_data()
+std::expected<void, std::string> PersistenceAdapter::reset_simulator_data(
+    uint32_t backlight_output_id
+)
 {
     auto display_result = DisplayHelper::call_function_sync(
         DisplayHelper::FunctionId::ResetData, 0.0,
         esp_brookesia::service::helper::Timeout(SERVICE_TIMEOUT_MS)
     );
     if (!display_result) return std::unexpected(display_result.error());
+
+    // Display ResetData follows the embedded default and turns the backlight off.
+    // Keep the host window visible so the reset UI remains usable in the simulator.
+    auto backlight_result = DisplayHelper::call_function_sync(
+        DisplayHelper::FunctionId::SetBacklightOnOff,
+        static_cast<double>(backlight_output_id),
+        true,
+        esp_brookesia::service::helper::Timeout(SERVICE_TIMEOUT_MS)
+    );
+    if (!backlight_result) return std::unexpected(backlight_result.error());
 
     auto audio_result = AudioPlaybackHelper::call_function_sync(
         AudioPlaybackHelper::FunctionId::ResetData,
@@ -239,7 +252,7 @@ void PersistenceAdapter::restore_callback(lv_event_t *event)
 {
     auto *adapter = static_cast<PersistenceAdapter *>(lv_event_get_user_data(event));
     if (adapter == nullptr) return;
-    auto result = reset_simulator_data();
+    auto result = reset_simulator_data(adapter->backlight_output_id_);
     if (!result) {
         std::fprintf(stderr, "host_sim: factory reset failed: %s\n", result.error().c_str());
         return;

@@ -74,6 +74,16 @@ auto get_backlight_brightness(uint32_t output_id)
     );
 }
 
+auto get_backlight_on_off(uint32_t output_id)
+{
+    using DisplayHelper = esp_brookesia::service::helper::Display;
+    return DisplayHelper::call_function_sync<bool>(
+        DisplayHelper::FunctionId::GetBacklightOnOff,
+        static_cast<double>(output_id),
+        esp_brookesia::service::helper::Timeout(1000)
+    );
+}
+
 int test_settings_pages(InputInjector &input)
 {
     struct Case {
@@ -785,6 +795,7 @@ bool simulator_defaults_are_loaded(uint32_t output_id)
     constexpr auto timeout = esp_brookesia::service::helper::Timeout(2000);
 
     auto brightness_result = get_backlight_brightness(output_id);
+    auto backlight_on_result = get_backlight_on_off(output_id);
     auto volume_result = AudioPlaybackHelper::call_function_sync<double>(
         AudioPlaybackHelper::FunctionId::GetVolume, timeout
     );
@@ -801,6 +812,7 @@ bool simulator_defaults_are_loaded(uint32_t output_id)
     auto file_result = StorageHelper::fs_stat(probe_path, 2000);
 
     return brightness_result && static_cast<int>(brightness_result.value()) == 90 &&
+           backlight_on_result && backlight_on_result.value() &&
            volume_result && static_cast<int>(volume_result.value()) == 75 &&
            mute_result && !mute_result.value() && ui_result &&
            ui_result->wlan_enabled && ui_result->ai_profile == 0 &&
