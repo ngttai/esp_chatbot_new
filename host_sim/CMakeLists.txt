@@ -135,6 +135,7 @@ add_executable(esp_chatbot_host_sim
     host_capabilities.cpp
     main.cpp
     persistence_adapter.cpp
+    power_adapter.cpp
     volume_adapter.cpp
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
@@ -185,6 +186,7 @@ if(BUILD_TESTING)
         --self-test-quick-buttons
         --self-test-brightness-simulation
         --self-test-volume-simulation
+        --self-test-power-simulation
         --self-test-persistence-write
         --self-test-persistence-read
         --self-test-factory-reset

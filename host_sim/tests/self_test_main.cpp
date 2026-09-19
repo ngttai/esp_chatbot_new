@@ -5,6 +5,8 @@
 #include <utility>
 
 #include "brookesia/gui_lvgl.hpp"
+#include "brookesia/hal_interface/interfaces/power/battery.hpp"
+#include "brookesia/hal_linux/power/device.hpp"
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "input_injector.hpp"
@@ -60,6 +62,20 @@ lv_obj_t *find_first_slider(lv_obj_t *object)
     const uint32_t child_count = lv_obj_get_child_count(object);
     for (uint32_t index = 0; index < child_count; ++index) {
         if (auto *slider = find_first_slider(lv_obj_get_child(object, index))) return slider;
+    }
+    return nullptr;
+}
+
+lv_obj_t *find_label(lv_obj_t *object, std::string_view text)
+{
+    if (object == nullptr) return nullptr;
+    if (lv_obj_check_type(object, &lv_label_class)) {
+        const char *value = lv_label_get_text(object);
+        if (value != nullptr && text == value) return object;
+    }
+    const uint32_t child_count = lv_obj_get_child_count(object);
+    for (uint32_t index = 0; index < child_count; ++index) {
+        if (auto *match = find_label(lv_obj_get_child(object, index), text)) return match;
     }
     return nullptr;
 }
@@ -709,6 +725,41 @@ int test_volume_simulation(InputInjector &input)
     return 0;
 }
 
+int test_power_simulation(InputInjector &input)
+{
+    using BatteryIface = esp_brookesia::hal::power::BatteryIface;
+    auto battery = esp_brookesia::hal::acquire_interface<BatteryIface>(
+        esp_brookesia::hal::PowerLinuxDevice::BATTERY_IFACE_NAME
+    );
+    BatteryIface::State state;
+    if (!battery || !battery->get_state(state) || !state.is_present ||
+            !state.percentage.has_value() || state.percentage.value() != 67 ||
+            state.power_source != BatteryIface::PowerSource::External ||
+            state.charge_state != BatteryIface::ChargeState::ConstantCurrent) {
+        std::fprintf(stderr, "Deterministic battery stub did not report 67%% charging\n");
+        return 53;
+    }
+
+    show("quick");
+    input.pump(40);
+    const bool ui_matches = with_ui_lock([]() {
+        auto *label = find_label(lv_layer_top(), "67%");
+        if (label == nullptr) return false;
+        auto *parent = lv_obj_get_parent(label);
+        if (parent == nullptr || lv_obj_get_child_count(parent) < 3) return false;
+        auto *icon = lv_obj_get_child(parent, 1);
+        return icon != nullptr && lv_obj_check_type(icon, &lv_image_class) &&
+               !lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN);
+    });
+    if (!ui_matches) {
+        std::fprintf(stderr, "Quick Settings did not show the 67%% charging stub state\n");
+        return 54;
+    }
+
+    std::puts("Power simulation passed: battery=67%, source=external, charging=yes");
+    return 0;
+}
+
 int test_persistence_write(InputInjector &input, uint32_t output_id)
 {
     using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
@@ -872,7 +923,7 @@ int test_persistence_defaults(uint32_t output_id)
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 17> options{{
+    static constexpr std::array<std::string_view, 18> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -886,6 +937,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-quick-buttons",
         "--self-test-brightness-simulation",
         "--self-test-volume-simulation",
+        "--self-test-power-simulation",
         "--self-test-persistence-write",
         "--self-test-persistence-read",
         "--self-test-factory-reset",
@@ -916,6 +968,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
         return test_brightness_simulation(input, backlight_output_id);
     }
     if (option == "--self-test-volume-simulation") return test_volume_simulation(input);
+    if (option == "--self-test-power-simulation") return test_power_simulation(input);
     if (option == "--self-test-persistence-write") {
         return test_persistence_write(input, backlight_output_id);
     }

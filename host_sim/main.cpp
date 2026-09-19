@@ -25,6 +25,7 @@
 #include "brightness_adapter.hpp"
 #include "host_capabilities.hpp"
 #include "persistence_adapter.hpp"
+#include "power_adapter.hpp"
 #include "screenshot_capture.hpp"
 #include "volume_adapter.hpp"
 
@@ -74,6 +75,8 @@ int run_main(int argc, char **argv)
     const bool self_test_mode = argc == 2 && host_sim::tests::is_self_test_option(argv[1]);
     const bool volume_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-volume-simulation");
+    const bool power_runtime_enabled = !screenshot_mode &&
+        (!self_test_mode || option == "--self-test-power-simulation");
     const bool persistence_test_mode = option == "--self-test-persistence-write" ||
         option == "--self-test-persistence-read" || option == "--self-test-factory-reset" ||
         option == "--self-test-persistence-defaults";
@@ -216,6 +219,21 @@ int run_main(int argc, char **argv)
     lib_utils::FunctionGuard volume_cleanup([&volume_adapter]() {
         gui::lvgl::lock_thread();
         volume_adapter.stop();
+        gui::lvgl::unlock_thread();
+    });
+
+    host_sim::PowerAdapter power_adapter;
+    if (power_runtime_enabled) {
+        gui::lvgl::lock_thread();
+        const bool power_started = power_adapter.start();
+        gui::lvgl::unlock_thread();
+        if (!power_started) {
+            return fail("power adapter", "could not connect battery state to Quick Settings");
+        }
+    }
+    lib_utils::FunctionGuard power_cleanup([&power_adapter]() {
+        gui::lvgl::lock_thread();
+        power_adapter.stop();
         gui::lvgl::unlock_thread();
     });
 

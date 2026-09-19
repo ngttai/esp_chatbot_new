@@ -104,6 +104,22 @@ Trạng thái: **COMPLETE (2026-09-19)**.
 
 Checkpoint: `P4.4 Power status pass`.
 
+Kết quả:
+
+- Host adapter đọc `PowerBattery` từ Brookesia HAL Linux và cập nhật phần trăm,
+  trạng thái biểu tượng sạc trên Quick Settings gốc.
+- Stub mặc định cố định ở 67%, nguồn ngoài và đang sạc để CI deterministic.
+- Backend `upower` vẫn là opt-in; khi thiếu dependency hoặc không có pin,
+  Brookesia báo fallback rõ ràng sang mock.
+- Trạng thái không có phần trăm hiển thị `--%`.
+- Adapter chỉ đọc trạng thái, không gọi API điều khiển charger.
+- Có self-test `--self-test-power-simulation` cho HAL state và UI binding.
+- Regression: 19/19 CTest pass.
+- Visual parity pass.
+- Source integrity: 74/74 hash pass.
+
+Trạng thái: **COMPLETE (2026-09-19)**.
+
 ## P4.5 — Wi-Fi deterministic mock
 
 - WLAN on/off, scan, connect, disconnect, timeout và retry.

@@ -125,6 +125,21 @@ Playback service and the selected Linux HAL media backend:
 This adapter also stays outside `main/modules/display/speaker_ui`; no imported
 layout, asset, gesture, or navigation source is changed.
 
+## Simulated battery and power
+
+The host-only power adapter reads Brookesia Linux `PowerBattery` state and
+updates the existing Quick Settings battery widgets without changing their
+source:
+
+- The default `stub` backend deterministically reports 67%, external power, and
+  charging.
+- `HOST_SIM_POWER_BACKEND=upower` opts into the host power backend. When its
+  dependency or a physical battery is unavailable, Brookesia reports the
+  fallback and uses the explicit deterministic mock.
+- A missing percentage is displayed as `--%`; the charge icon is shown only for
+  external power or a charging state.
+- The adapter is read-only and never calls charger-control APIs.
+
 ## Persistent simulator data and Factory Reset
 
 The normal host build stores simulator state beside the executable under
@@ -178,6 +193,13 @@ Audio Playback service:
 
 ```sh
 ./build-host/esp_chatbot_host_sim --self-test-volume-simulation
+```
+
+The power test verifies the deterministic battery state and the unchanged Quick
+Settings widgets:
+
+```sh
+./build-host/esp_chatbot_host_sim --self-test-power-simulation
 ```
 
 CTest also runs the ordered P4.3 process chain automatically:
