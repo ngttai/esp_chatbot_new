@@ -120,6 +120,10 @@ add_subdirectory(
     "${BROOKESIA_SOURCE_DIR}/gui/brookesia_gui_lvgl"
     "${CMAKE_BINARY_DIR}/brookesia_gui_lvgl"
 )
+add_subdirectory(
+    "${BROOKESIA_SOURCE_DIR}/service/media/brookesia_service_audio"
+    "${CMAKE_BINARY_DIR}/brookesia_service_audio"
+)
 
 set(SPEAKER_UI_DIR "${PROJECT_ROOT}/main/modules/display/speaker_ui")
 file(GLOB_RECURSE SPEAKER_UI_SOURCES CONFIGURE_DEPENDS
@@ -130,6 +134,7 @@ add_executable(esp_chatbot_host_sim
     brightness_adapter.cpp
     host_capabilities.cpp
     main.cpp
+    volume_adapter.cpp
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
     tests/self_test_main.cpp
@@ -155,6 +160,7 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
     brookesia::gui_lvgl
     brookesia::hal_linux
     brookesia::service_display
+    brookesia::service_audio
     brookesia::service_helper
     brookesia::service_manager
     m
@@ -177,6 +183,7 @@ if(BUILD_TESTING)
         --self-test-wlan-keyboard
         --self-test-quick-buttons
         --self-test-brightness-simulation
+        --self-test-volume-simulation
     )
     foreach(SELF_TEST_OPTION IN LISTS SPEAKER_UI_SELF_TEST_OPTIONS)
         string(REPLACE "--self-test-" "" SELF_TEST_NAME "${SELF_TEST_OPTION}")

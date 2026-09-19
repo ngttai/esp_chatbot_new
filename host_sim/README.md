@@ -109,6 +109,22 @@ unchanged UI controls to Brookesia Display service:
 The adapter is outside `main/modules/display/speaker_ui`, so the imported UI
 source and its behavior remain byte-identical to the reference simulator.
 
+## Simulated volume
+
+The host-only volume adapter connects the unchanged UI to Brookesia Audio
+Playback service and the selected Linux HAL media backend:
+
+- Quick Settings uses the firmware-compatible levels Mute, 30%, 60%, and 90%.
+- Settings > Sound controls volume continuously from 0% to 100%; 0% also mutes.
+- Opening either control synchronizes it with the current service state.
+- Volume and mute are persisted by Brookesia Storage service.
+- The default `stub` backend is deterministic and does not change global OS
+  volume. With the opt-in PortAudio backend, volume applies only to audio played
+  by the simulator.
+
+This adapter also stays outside `main/modules/display/speaker_ui`; no imported
+layout, asset, gesture, or navigation source is changed.
+
 ## Self-tests
 
 The host executable preserves all 11 `--self-test-*` options from the source
@@ -131,6 +147,13 @@ Brookesia backlight interface:
 
 ```sh
 ./build-host/esp_chatbot_host_sim --self-test-brightness-simulation
+```
+
+The volume test verifies both Quick Settings and Settings > Sound against the
+Audio Playback service:
+
+```sh
+./build-host/esp_chatbot_host_sim --self-test-volume-simulation
 ```
 
 ## Visual parity

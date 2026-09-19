@@ -589,11 +589,119 @@ int test_brightness_simulation(InputInjector &input, uint32_t output_id)
     return 0;
 }
 
+int test_volume_simulation(InputInjector &input)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    constexpr auto timeout = esp_brookesia::service::helper::Timeout(1000);
+
+    auto initial_volume_result = AudioPlaybackHelper::call_function_sync<double>(
+        AudioPlaybackHelper::FunctionId::GetVolume, timeout
+    );
+    auto initial_mute_result = AudioPlaybackHelper::call_function_sync<bool>(
+        AudioPlaybackHelper::FunctionId::GetMute, timeout
+    );
+    if (!initial_volume_result || !initial_mute_result) {
+        std::fprintf(stderr, "Could not read initial simulated audio state\n");
+        return 42;
+    }
+    const double initial_volume = initial_volume_result.value();
+    const bool initial_mute = initial_mute_result.value();
+    esp_brookesia::lib_utils::FunctionGuard restore_audio([=]() {
+        (void)AudioPlaybackHelper::call_function_sync(
+            AudioPlaybackHelper::FunctionId::SetVolume, initial_volume, timeout
+        );
+        (void)AudioPlaybackHelper::call_function_sync(
+            AudioPlaybackHelper::FunctionId::SetMute, initial_mute, timeout
+        );
+    });
+
+    show("quick");
+    input.pump(40);
+    const int initial_level = with_ui_lock([]() {
+        return speaker_ui_get_quick_volume_level();
+    });
+    int32_t x = 0;
+    int32_t y = 0;
+    if (!with_ui_lock([&]() { return speaker_ui_get_quick_volume_button_center(&x, &y); })) {
+        std::fprintf(stderr, "Could not locate the Quick Settings Volume button\n");
+        return 43;
+    }
+    if (!input_ok(input.click(x, y), input)) return 1;
+    input.pump(30);
+
+    const int expected_level = initial_level == 2 ? -1 : initial_level + 1;
+    const int actual_level = with_ui_lock([]() {
+        return speaker_ui_get_quick_volume_level();
+    });
+    auto quick_volume_result = AudioPlaybackHelper::call_function_sync<double>(
+        AudioPlaybackHelper::FunctionId::GetVolume, timeout
+    );
+    auto quick_mute_result = AudioPlaybackHelper::call_function_sync<bool>(
+        AudioPlaybackHelper::FunctionId::GetMute, timeout
+    );
+    static constexpr std::array<int, 3> quick_volume{{30, 60, 90}};
+    const bool quick_state_ok = actual_level == expected_level && quick_volume_result &&
+        quick_mute_result && (expected_level == -1
+            ? quick_mute_result.value()
+            : !quick_mute_result.value() &&
+              static_cast<int>(quick_volume_result.value()) == quick_volume[expected_level]);
+    if (!quick_state_ok) {
+        std::fprintf(stderr,
+                     "Quick volume simulation mismatch: level=%d volume=%.0f mute=%d\n",
+                     actual_level, quick_volume_result ? quick_volume_result.value() : -1.0,
+                     quick_mute_result ? static_cast<int>(quick_mute_result.value()) : -1);
+        return 44;
+    }
+
+    show("sound");
+    input.pump(40);
+    lv_area_t slider_area{};
+    bool found_slider = with_ui_lock([&]() {
+        lv_obj_update_layout(lv_screen_active());
+        auto *slider = find_first_slider(lv_screen_active());
+        if (slider == nullptr) return false;
+        lv_obj_get_coords(slider, &slider_area);
+        return true;
+    });
+    if (!found_slider) {
+        std::fprintf(stderr, "Could not locate the Settings > Sound volume slider\n");
+        return 45;
+    }
+
+    const int32_t slider_y = (slider_area.y1 + slider_area.y2) / 2;
+    const int32_t target_x = slider_area.x1 + (slider_area.x2 - slider_area.x1) / 4;
+    if (!input_ok(input.click(target_x, slider_y), input)) return 1;
+    input.pump(30);
+
+    const int slider_value = with_ui_lock([]() {
+        auto *slider = find_first_slider(lv_screen_active());
+        return slider == nullptr ? -1 : static_cast<int>(lv_slider_get_value(slider));
+    });
+    auto slider_volume_result = AudioPlaybackHelper::call_function_sync<double>(
+        AudioPlaybackHelper::FunctionId::GetVolume, timeout
+    );
+    auto slider_mute_result = AudioPlaybackHelper::call_function_sync<bool>(
+        AudioPlaybackHelper::FunctionId::GetMute, timeout
+    );
+    if (slider_value < 0 || !slider_volume_result || !slider_mute_result ||
+            static_cast<int>(slider_volume_result.value()) != slider_value ||
+            slider_mute_result.value() != (slider_value == 0)) {
+        std::fprintf(stderr, "Sound slider expected volume %d%%, got %.0f%% mute=%d\n",
+                     slider_value, slider_volume_result ? slider_volume_result.value() : -1.0,
+                     slider_mute_result ? static_cast<int>(slider_mute_result.value()) : -1);
+        return 46;
+    }
+
+    std::printf("Volume simulation passed: Quick Settings level=%d, Sound slider=%d%%\n",
+                expected_level, slider_value);
+    return 0;
+}
+
 } // namespace
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 12> options{{
+    static constexpr std::array<std::string_view, 13> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -606,6 +714,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-wlan-keyboard",
         "--self-test-quick-buttons",
         "--self-test-brightness-simulation",
+        "--self-test-volume-simulation",
     }};
     for (auto known : options) {
         if (option == known) return true;
@@ -631,6 +740,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-brightness-simulation") {
         return test_brightness_simulation(input, backlight_output_id);
     }
+    if (option == "--self-test-volume-simulation") return test_volume_simulation(input);
     return 2;
 }
 

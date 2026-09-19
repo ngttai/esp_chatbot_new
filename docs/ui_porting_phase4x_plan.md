@@ -56,6 +56,19 @@ Trạng thái: **COMPLETE (2026-09-19)**.
 
 Checkpoint: `P4.2 Volume simulation pass`.
 
+Kết quả:
+
+- Quick Settings điều khiển đúng Mute/30%/60%/90% như firmware.
+- Settings > Sound điều khiển 0–100%; 0% đồng thời bật mute.
+- Hai control đồng bộ với trạng thái Audio Playback service.
+- Backend mặc định vẫn là `stub`; không thay đổi global OS volume.
+- Volume/mute được Audio Playback service lưu qua Storage service.
+- Regression: 14/14 CTest pass, gồm self-test volume mới.
+- Visual parity pass.
+- Source integrity: 74/74 hash pass.
+
+Trạng thái: **COMPLETE (2026-09-19)**.
+
 ## P4.3 — Storage và Factory Reset sandbox
 
 - Lưu brightness, volume/mute, WLAN state và AI Profile.

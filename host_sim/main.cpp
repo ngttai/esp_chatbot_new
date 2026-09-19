@@ -25,6 +25,7 @@
 #include "brightness_adapter.hpp"
 #include "host_capabilities.hpp"
 #include "screenshot_capture.hpp"
+#include "volume_adapter.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -32,6 +33,7 @@ extern "C" {
 
 using namespace esp_brookesia;
 using DisplayHelper = service::helper::Display;
+using AudioPlaybackHelper = service::helper::AudioPlayback;
 
 namespace host_sim::tests {
 bool is_self_test_option(std::string_view option);
@@ -67,6 +69,9 @@ int run_main(int argc, char **argv)
     }
     const std::string_view screenshot_path = screenshot_mode ? argv[2] : "";
     const std::string_view screenshot_screen = screenshot_mode && argc >= 4 ? argv[3] : "idle";
+    const bool self_test_mode = argc == 2 && host_sim::tests::is_self_test_option(argv[1]);
+    const bool volume_runtime_enabled = !screenshot_mode &&
+        (!self_test_mode || std::string_view(argv[1]) == "--self-test-volume-simulation");
 
     auto &display_device = hal::DisplayLinuxDevice::get_instance();
     if (!display_device.configure({
@@ -89,6 +94,14 @@ int run_main(int argc, char **argv)
     auto display_binding = service_manager.bind(DisplayHelper::get_name().data());
     if (!display_binding.is_valid()) {
         return fail("display bind", "Display service is unavailable");
+    }
+
+    service::ServiceBinding audio_playback_binding;
+    if (volume_runtime_enabled) {
+        audio_playback_binding = service_manager.bind(AudioPlaybackHelper::get_name().data());
+        if (!audio_playback_binding.is_valid()) {
+            return fail("audio playback bind", "Audio Playback service is unavailable");
+        }
     }
 
     auto outputs_result = DisplayHelper::call_function_sync<boost::json::array>(
@@ -169,7 +182,7 @@ int run_main(int argc, char **argv)
     gui::lvgl::unlock_thread();
 
     host_sim::BrightnessAdapter brightness_adapter;
-    if (backlight_output != outputs.end()) {
+    if (!screenshot_mode && backlight_output != outputs.end()) {
         gui::lvgl::lock_thread();
         const bool brightness_started = brightness_adapter.start(backlight_output->id);
         gui::lvgl::unlock_thread();
@@ -183,7 +196,22 @@ int run_main(int argc, char **argv)
         gui::lvgl::unlock_thread();
     });
 
-    if (argc == 2 && host_sim::tests::is_self_test_option(argv[1])) {
+    host_sim::VolumeAdapter volume_adapter;
+    if (volume_runtime_enabled) {
+        gui::lvgl::lock_thread();
+        const bool volume_started = volume_adapter.start();
+        gui::lvgl::unlock_thread();
+        if (!volume_started) {
+            return fail("volume adapter", "could not bridge the Audio Playback service to the UI");
+        }
+    }
+    lib_utils::FunctionGuard volume_cleanup([&volume_adapter]() {
+        gui::lvgl::lock_thread();
+        volume_adapter.stop();
+        gui::lvgl::unlock_thread();
+    });
+
+    if (self_test_mode) {
         if (backlight_output == outputs.end()) {
             return fail("self-test", "no backlight-bound display output is available");
         }
