@@ -78,6 +78,21 @@ Trạng thái: **COMPLETE (2026-09-19)**.
 
 Checkpoint: `P4.3 Persistence/reset pass`.
 
+Kết quả:
+
+- Brightness được lưu bởi Display service; volume/mute được lưu bởi Audio
+  Playback service.
+- WLAN on/off và AI Profile được lưu trong namespace host-only `HostSimulator`.
+- Factory Reset chạy từ nút UI gốc, reset ba nhóm KV và chỉ dọn bốn virtual
+  mount trong sandbox `.brookesia/fs`.
+- Project, cấu hình hệ điều hành và dữ liệu ngoài sandbox không bị đụng tới.
+- Chuỗi bốn test qua bốn process riêng biệt xác nhận write/read/reset/defaults.
+- Regression: 18/18 CTest pass.
+- Visual parity pass.
+- Source integrity: 74/74 hash pass.
+
+Trạng thái: **COMPLETE (2026-09-19)**.
+
 ## P4.4 — Battery và power
 
 - Backend stub có kịch bản pin/sạc deterministic.

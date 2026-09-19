@@ -134,6 +134,7 @@ add_executable(esp_chatbot_host_sim
     brightness_adapter.cpp
     host_capabilities.cpp
     main.cpp
+    persistence_adapter.cpp
     volume_adapter.cpp
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
@@ -184,6 +185,10 @@ if(BUILD_TESTING)
         --self-test-quick-buttons
         --self-test-brightness-simulation
         --self-test-volume-simulation
+        --self-test-persistence-write
+        --self-test-persistence-read
+        --self-test-factory-reset
+        --self-test-persistence-defaults
     )
     foreach(SELF_TEST_OPTION IN LISTS SPEAKER_UI_SELF_TEST_OPTIONS)
         string(REPLACE "--self-test-" "" SELF_TEST_NAME "${SELF_TEST_OPTION}")
@@ -197,4 +202,21 @@ if(BUILD_TESTING)
             TIMEOUT 30
         )
     endforeach()
+
+    set(PERSISTENCE_TEST_KV_DIR "${CMAKE_BINARY_DIR}/persistence-test-kv")
+    set(PERSISTENCE_TEST_FS_DIR "${CMAKE_BINARY_DIR}/persistence-test-fs")
+    set_tests_properties(
+        speaker_ui_persistence-write
+        speaker_ui_persistence-read
+        speaker_ui_factory-reset
+        speaker_ui_persistence-defaults
+        PROPERTIES ENVIRONMENT
+            "SDL_VIDEODRIVER=dummy;BROOKESIA_HAL_LINUX_KV_DIR=${PERSISTENCE_TEST_KV_DIR};BROOKESIA_HAL_LINUX_FS_ROOT=${PERSISTENCE_TEST_FS_DIR}"
+    )
+    set_tests_properties(speaker_ui_persistence-read PROPERTIES
+        DEPENDS speaker_ui_persistence-write)
+    set_tests_properties(speaker_ui_factory-reset PROPERTIES
+        DEPENDS speaker_ui_persistence-read)
+    set_tests_properties(speaker_ui_persistence-defaults PROPERTIES
+        DEPENDS speaker_ui_factory-reset)
 endif()

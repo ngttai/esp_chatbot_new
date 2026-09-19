@@ -24,6 +24,7 @@
 #include "brookesia/service_manager.hpp"
 #include "brightness_adapter.hpp"
 #include "host_capabilities.hpp"
+#include "persistence_adapter.hpp"
 #include "screenshot_capture.hpp"
 #include "volume_adapter.hpp"
 
@@ -69,9 +70,16 @@ int run_main(int argc, char **argv)
     }
     const std::string_view screenshot_path = screenshot_mode ? argv[2] : "";
     const std::string_view screenshot_screen = screenshot_mode && argc >= 4 ? argv[3] : "idle";
+    const std::string_view option = argc >= 2 ? argv[1] : "";
     const bool self_test_mode = argc == 2 && host_sim::tests::is_self_test_option(argv[1]);
     const bool volume_runtime_enabled = !screenshot_mode &&
-        (!self_test_mode || std::string_view(argv[1]) == "--self-test-volume-simulation");
+        (!self_test_mode || option == "--self-test-volume-simulation");
+    const bool persistence_test_mode = option == "--self-test-persistence-write" ||
+        option == "--self-test-persistence-read" || option == "--self-test-factory-reset" ||
+        option == "--self-test-persistence-defaults";
+    const bool persistence_runtime_enabled = !screenshot_mode &&
+        (!self_test_mode || option == "--self-test-factory-reset");
+    const bool audio_service_enabled = volume_runtime_enabled || persistence_test_mode;
 
     auto &display_device = hal::DisplayLinuxDevice::get_instance();
     if (!display_device.configure({
@@ -97,7 +105,7 @@ int run_main(int argc, char **argv)
     }
 
     service::ServiceBinding audio_playback_binding;
-    if (volume_runtime_enabled) {
+    if (audio_service_enabled) {
         audio_playback_binding = service_manager.bind(AudioPlaybackHelper::get_name().data());
         if (!audio_playback_binding.is_valid()) {
             return fail("audio playback bind", "Audio Playback service is unavailable");
@@ -208,6 +216,21 @@ int run_main(int argc, char **argv)
     lib_utils::FunctionGuard volume_cleanup([&volume_adapter]() {
         gui::lvgl::lock_thread();
         volume_adapter.stop();
+        gui::lvgl::unlock_thread();
+    });
+
+    host_sim::PersistenceAdapter persistence_adapter;
+    if (persistence_runtime_enabled) {
+        gui::lvgl::lock_thread();
+        const bool persistence_started = persistence_adapter.start();
+        gui::lvgl::unlock_thread();
+        if (!persistence_started) {
+            return fail("persistence adapter", "could not connect persistent state to the UI");
+        }
+    }
+    lib_utils::FunctionGuard persistence_cleanup([&persistence_adapter]() {
+        gui::lvgl::lock_thread();
+        persistence_adapter.stop();
         gui::lvgl::unlock_thread();
     });
 

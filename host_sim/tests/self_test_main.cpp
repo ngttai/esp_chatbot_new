@@ -8,9 +8,11 @@
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "input_injector.hpp"
+#include "persistence_adapter.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
+#include "ui.h"
 }
 
 namespace host_sim::tests {
@@ -697,11 +699,157 @@ int test_volume_simulation(InputInjector &input)
     return 0;
 }
 
+int test_persistence_write(InputInjector &input, uint32_t output_id)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    using DisplayHelper = esp_brookesia::service::helper::Display;
+    using StorageHelper = esp_brookesia::service::helper::Storage;
+    constexpr auto timeout = esp_brookesia::service::helper::Timeout(2000);
+
+    auto brightness_result = DisplayHelper::call_function_sync(
+        DisplayHelper::FunctionId::SetBacklightBrightness,
+        static_cast<double>(output_id), 37.0, timeout
+    );
+    auto volume_result = AudioPlaybackHelper::call_function_sync(
+        AudioPlaybackHelper::FunctionId::SetVolume, 42.0, timeout
+    );
+    auto mute_result = AudioPlaybackHelper::call_function_sync(
+        AudioPlaybackHelper::FunctionId::SetMute, true, timeout
+    );
+    auto ui_result = host_sim::PersistenceAdapter::save_ui_state({
+        .wlan_enabled = false,
+        .ai_profile = 1,
+    });
+    const auto probe_path = host_sim::PersistenceAdapter::sandbox_file_path(
+        "/littlefs", "p4_3_probe.txt"
+    );
+    auto file_result = StorageHelper::fs_write_text(probe_path, "simulator sandbox", 2000);
+    input.pump(100);
+
+    if (!brightness_result || !volume_result || !mute_result || !ui_result || !file_result) {
+        std::fprintf(stderr,
+                     "Could not write persistence fixture: brightness=%s volume=%s mute=%s ui=%s file=%s\n",
+                     brightness_result ? "ok" : brightness_result.error().c_str(),
+                     volume_result ? "ok" : volume_result.error().c_str(),
+                     mute_result ? "ok" : mute_result.error().c_str(),
+                     ui_result ? "ok" : ui_result.error().c_str(),
+                     file_result ? "ok" : file_result.error().c_str());
+        return 47;
+    }
+    std::puts("Persistence fixture written");
+    return 0;
+}
+
+int test_persistence_read(uint32_t output_id)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    using StorageHelper = esp_brookesia::service::helper::Storage;
+    constexpr auto timeout = esp_brookesia::service::helper::Timeout(2000);
+
+    auto brightness_result = get_backlight_brightness(output_id);
+    auto volume_result = AudioPlaybackHelper::call_function_sync<double>(
+        AudioPlaybackHelper::FunctionId::GetVolume, timeout
+    );
+    auto mute_result = AudioPlaybackHelper::call_function_sync<bool>(
+        AudioPlaybackHelper::FunctionId::GetMute, timeout
+    );
+    auto ui_result = host_sim::PersistenceAdapter::load_ui_state();
+    const auto probe_path = host_sim::PersistenceAdapter::sandbox_file_path(
+        "/littlefs", "p4_3_probe.txt"
+    );
+    auto file_result = StorageHelper::fs_read_text(probe_path, 2000);
+
+    if (!brightness_result || static_cast<int>(brightness_result.value()) != 37 ||
+            !volume_result || static_cast<int>(volume_result.value()) != 42 ||
+            !mute_result || !mute_result.value() || !ui_result ||
+            ui_result->wlan_enabled || ui_result->ai_profile != 1 ||
+            !file_result || file_result.value() != "simulator sandbox") {
+        std::fprintf(stderr,
+                     "Persistence read mismatch: brightness=%.0f volume=%.0f mute=%d wlan=%d profile=%d file=%s\n",
+                     brightness_result ? brightness_result.value() : -1.0,
+                     volume_result ? volume_result.value() : -1.0,
+                     mute_result ? static_cast<int>(mute_result.value()) : -1,
+                     ui_result ? static_cast<int>(ui_result->wlan_enabled) : -1,
+                     ui_result ? ui_result->ai_profile : -1,
+                     file_result ? file_result->c_str() : file_result.error().c_str());
+        return 48;
+    }
+    std::puts("Cross-process persistence passed");
+    return 0;
+}
+
+bool simulator_defaults_are_loaded(uint32_t output_id)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    using StorageHelper = esp_brookesia::service::helper::Storage;
+    constexpr auto timeout = esp_brookesia::service::helper::Timeout(2000);
+
+    auto brightness_result = get_backlight_brightness(output_id);
+    auto volume_result = AudioPlaybackHelper::call_function_sync<double>(
+        AudioPlaybackHelper::FunctionId::GetVolume, timeout
+    );
+    auto mute_result = AudioPlaybackHelper::call_function_sync<bool>(
+        AudioPlaybackHelper::FunctionId::GetMute, timeout
+    );
+    auto ui_result = host_sim::PersistenceAdapter::load_ui_state();
+    auto host_entries = StorageHelper::kv_list(
+        host_sim::PersistenceAdapter::storage_namespace(), 2000
+    );
+    const auto probe_path = host_sim::PersistenceAdapter::sandbox_file_path(
+        "/littlefs", "p4_3_probe.txt"
+    );
+    auto file_result = StorageHelper::fs_stat(probe_path, 2000);
+
+    return brightness_result && static_cast<int>(brightness_result.value()) == 90 &&
+           volume_result && static_cast<int>(volume_result.value()) == 75 &&
+           mute_result && !mute_result.value() && ui_result &&
+           ui_result->wlan_enabled && ui_result->ai_profile == 0 &&
+           host_entries && host_entries->empty() && file_result && !file_result->exists;
+}
+
+int test_factory_reset(InputInjector &input, uint32_t output_id)
+{
+    const bool restored_ui_state = with_ui_lock([]() {
+        return !speaker_ui_is_wlan_on() && ui_ScreenAIProfileTabviewTabView != nullptr &&
+               lv_tabview_get_tab_active(ui_ScreenAIProfileTabviewTabView) == 1;
+    });
+    if (!restored_ui_state) {
+        std::fprintf(stderr, "Persisted WLAN/AI Profile state was not applied to the UI\n");
+        return 49;
+    }
+
+    show("restore");
+    input.pump(20);
+    if (!input_ok(input.click(180, 216), input)) return 1;
+    input.pump(100);
+
+    const bool reset_ui_state = with_ui_lock([]() {
+        return speaker_ui_is_wlan_on() && ui_ScreenAIProfileTabviewTabView != nullptr &&
+               lv_tabview_get_tab_active(ui_ScreenAIProfileTabviewTabView) == 0;
+    });
+    if (!reset_ui_state || !simulator_defaults_are_loaded(output_id)) {
+        std::fprintf(stderr, "Factory Reset did not restore the isolated simulator defaults\n");
+        return 50;
+    }
+    std::puts("Factory Reset sandbox passed");
+    return 0;
+}
+
+int test_persistence_defaults(uint32_t output_id)
+{
+    if (!simulator_defaults_are_loaded(output_id)) {
+        std::fprintf(stderr, "Factory Reset defaults did not survive the next process\n");
+        return 51;
+    }
+    std::puts("Post-reset cross-process defaults passed");
+    return 0;
+}
+
 } // namespace
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 13> options{{
+    static constexpr std::array<std::string_view, 17> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -715,6 +863,10 @@ bool is_self_test_option(std::string_view option)
         "--self-test-quick-buttons",
         "--self-test-brightness-simulation",
         "--self-test-volume-simulation",
+        "--self-test-persistence-write",
+        "--self-test-persistence-read",
+        "--self-test-factory-reset",
+        "--self-test-persistence-defaults",
     }};
     for (auto known : options) {
         if (option == known) return true;
@@ -741,6 +893,18 @@ int run_self_test(std::string_view option, const std::string &output_name,
         return test_brightness_simulation(input, backlight_output_id);
     }
     if (option == "--self-test-volume-simulation") return test_volume_simulation(input);
+    if (option == "--self-test-persistence-write") {
+        return test_persistence_write(input, backlight_output_id);
+    }
+    if (option == "--self-test-persistence-read") {
+        return test_persistence_read(backlight_output_id);
+    }
+    if (option == "--self-test-factory-reset") {
+        return test_factory_reset(input, backlight_output_id);
+    }
+    if (option == "--self-test-persistence-defaults") {
+        return test_persistence_defaults(backlight_output_id);
+    }
     return 2;
 }
 
