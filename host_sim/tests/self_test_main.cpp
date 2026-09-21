@@ -11,6 +11,7 @@
 #include "brookesia/service_helper.hpp"
 #include "input_injector.hpp"
 #include "persistence_adapter.hpp"
+#include "wifi_adapter.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -78,6 +79,28 @@ lv_obj_t *find_label(lv_obj_t *object, std::string_view text)
         if (auto *match = find_label(lv_obj_get_child(object, index), text)) return match;
     }
     return nullptr;
+}
+
+lv_obj_t *find_clickable_with_label(lv_obj_t *object, std::string_view text)
+{
+    if (object == nullptr) return nullptr;
+    lv_obj_t *match = nullptr;
+    if (lv_obj_has_flag(object, LV_OBJ_FLAG_CLICKABLE)) {
+        const uint32_t child_count = lv_obj_get_child_count(object);
+        for (uint32_t index = 0; index < child_count; ++index) {
+            auto *child = lv_obj_get_child(object, index);
+            if (!lv_obj_check_type(child, &lv_label_class)) continue;
+            const char *value = lv_label_get_text(child);
+            if (value != nullptr && text == value) match = object;
+        }
+    }
+    const uint32_t child_count = lv_obj_get_child_count(object);
+    for (uint32_t index = 0; index < child_count; ++index) {
+        if (auto *child_match = find_clickable_with_label(lv_obj_get_child(object, index), text)) {
+            match = child_match;
+        }
+    }
+    return match;
 }
 
 auto get_backlight_brightness(uint32_t output_id)
@@ -760,6 +783,140 @@ int test_power_simulation(InputInjector &input)
     return 0;
 }
 
+int test_wifi_mock(InputInjector &input, WifiAdapter &wifi)
+{
+    show("wlan");
+    input.pump(20);
+    int32_t switch_x = 0;
+    int32_t switch_y = 0;
+    if (!with_ui_lock([&]() {
+            return speaker_ui_get_wlan_switch_center(&switch_x, &switch_y);
+        }) || !input_ok(input.click(switch_x, switch_y), input)) {
+        std::fprintf(stderr, "Could not toggle WLAN off through the original UI\n");
+        return 55;
+    }
+    input.pump(20);
+    if (wifi.enabled()) {
+        std::fprintf(stderr, "WLAN off did not stop the mock backend\n");
+        return 56;
+    }
+    if (!input_ok(input.click(switch_x, switch_y), input)) return 1;
+    input.pump(20);
+    if (!wifi.enabled()) {
+        std::fprintf(stderr, "WLAN on did not start the mock backend\n");
+        return 57;
+    }
+
+    const bool lifecycle_ok = with_ui_lock([&]() {
+        return wifi.set_enabled(false) && !wifi.enabled() && !wifi.connected() &&
+               wifi.set_enabled(true) && wifi.enabled() && wifi.scan();
+    });
+    if (!lifecycle_ok) {
+        std::fprintf(stderr, "Wi-Fi mock lifecycle or scan failed\n");
+        return 58;
+    }
+
+    const auto &aps = wifi.scan_results();
+    const bool scan_ok = aps.size() == 3 && aps[0].ssid == "ESP-Lab" && aps[0].is_locked &&
+                         aps[1].ssid == "NTT_Office" && aps[1].is_locked &&
+                         aps[2].ssid == "Guest" && !aps[2].is_locked;
+    if (!scan_ok) {
+        std::fprintf(stderr, "Wi-Fi mock scan did not return locked/open deterministic APs\n");
+        return 59;
+    }
+
+    if (!with_ui_lock([&]() { return wifi.disconnect(); })) {
+        std::fprintf(stderr, "Wi-Fi mock could not leave the restored profile before testing AP selection\n");
+        return 60;
+    }
+
+    show("wlan");
+    input.pump(10);
+    const bool selected_wrong = with_ui_lock([]() {
+        auto *row = find_clickable_with_label(lv_screen_active(), "ESP-Lab");
+        if (row == nullptr) return false;
+        lv_obj_send_event(row, LV_EVENT_CLICKED, nullptr);
+        return true;
+    });
+    input.pump(20);
+    const bool password_screen_active = active("wlan-connect");
+    bool password_set = false;
+    bool password_confirmed = false;
+    with_ui_lock([&]() {
+        password_set = speaker_ui_set_wlan_password("wrong-password");
+        password_confirmed = speaker_ui_confirm_wlan_password();
+    });
+    if (!selected_wrong || !password_screen_active || !password_set || !password_confirmed) {
+        std::fprintf(stderr,
+                     "Could not submit a password through the original WLAN UI: selected=%d screen=%d set=%d confirm=%d\n",
+                     static_cast<int>(selected_wrong), static_cast<int>(password_screen_active),
+                     static_cast<int>(password_set), static_cast<int>(password_confirmed));
+        return 61;
+    }
+    input.pump(20);
+    if (wifi.last_result() != WifiAdapter::ConnectionResult::AuthenticationFailed ||
+            wifi.connected()) {
+        std::fprintf(stderr, "Wi-Fi mock accepted an incorrect UI password\n");
+        return 62;
+    }
+
+    const bool selected_correct = with_ui_lock([]() {
+        auto *row = find_clickable_with_label(lv_screen_active(), "ESP-Lab");
+        if (row == nullptr) return false;
+        lv_obj_send_event(row, LV_EVENT_CLICKED, nullptr);
+        return true;
+    });
+    input.pump(20);
+    if (!selected_correct || !active("wlan-connect") || !with_ui_lock([]() {
+            return speaker_ui_set_wlan_password("esp123456") &&
+                   speaker_ui_confirm_wlan_password();
+        })) return 63;
+    input.pump(20);
+
+    if (wifi.last_result() != WifiAdapter::ConnectionResult::Connected || !wifi.connected()) {
+        std::fprintf(stderr, "Wi-Fi mock failed a correct locked-AP connection\n");
+        return 64;
+    }
+    if (!with_ui_lock([&]() { return wifi.disconnect(); }) || wifi.connected()) {
+        std::fprintf(stderr, "Wi-Fi mock disconnect failed\n");
+        return 65;
+    }
+
+    auto guest = with_ui_lock([&]() { return wifi.connect("Guest", ""); });
+    if (guest != WifiAdapter::ConnectionResult::Connected || !wifi.connected() ||
+            !with_ui_lock([&]() { return wifi.disconnect(); })) {
+        std::fprintf(stderr, "Wi-Fi mock open-AP connection failed\n");
+        return 66;
+    }
+
+    auto timeout = with_ui_lock([&]() {
+        return wifi.connect("NTT_Office", "ntt123456");
+    });
+    auto retry = with_ui_lock([&]() { return wifi.retry(); });
+    if (timeout != WifiAdapter::ConnectionResult::TimedOut ||
+            retry != WifiAdapter::ConnectionResult::Connected || !wifi.connected()) {
+        std::fprintf(stderr, "Wi-Fi mock timeout/retry scenario failed\n");
+        return 67;
+    }
+
+    show("softap");
+    input.pump(20);
+    if (!wifi.soft_ap_started()) {
+        std::fprintf(stderr, "Opening the original SoftAP screen did not start the mock AP\n");
+        return 68;
+    }
+    show("wlan");
+    input.pump(20);
+    if (wifi.soft_ap_started()) {
+        std::fprintf(stderr, "Leaving the original SoftAP screen did not stop the mock AP\n");
+        return 69;
+    }
+
+    with_ui_lock([&]() { return wifi.set_enabled(true); });
+    std::puts("Wi-Fi mock passed: on/off, scan, auth, connect/disconnect, timeout/retry, SoftAP");
+    return 0;
+}
+
 int test_persistence_write(InputInjector &input, uint32_t output_id)
 {
     using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
@@ -923,7 +1080,7 @@ int test_persistence_defaults(uint32_t output_id)
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 18> options{{
+    static constexpr std::array<std::string_view, 19> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -938,6 +1095,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-brightness-simulation",
         "--self-test-volume-simulation",
         "--self-test-power-simulation",
+        "--self-test-wifi-mock",
         "--self-test-persistence-write",
         "--self-test-persistence-read",
         "--self-test-factory-reset",
@@ -950,7 +1108,8 @@ bool is_self_test_option(std::string_view option)
 }
 
 int run_self_test(std::string_view option, const std::string &output_name,
-                  lv_indev_t *input_device, uint32_t backlight_output_id)
+                  lv_indev_t *input_device, uint32_t backlight_output_id,
+                  WifiAdapter *wifi_adapter)
 {
     InputInjector input(output_name, input_device);
     if (option == "--self-test-settings-pages") return test_settings_pages(input);
@@ -969,6 +1128,10 @@ int run_self_test(std::string_view option, const std::string &output_name,
     }
     if (option == "--self-test-volume-simulation") return test_volume_simulation(input);
     if (option == "--self-test-power-simulation") return test_power_simulation(input);
+    if (option == "--self-test-wifi-mock") {
+        if (wifi_adapter == nullptr) return 70;
+        return test_wifi_mock(input, *wifi_adapter);
+    }
     if (option == "--self-test-persistence-write") {
         return test_persistence_write(input, backlight_output_id);
     }

@@ -28,6 +28,7 @@
 #include "power_adapter.hpp"
 #include "screenshot_capture.hpp"
 #include "volume_adapter.hpp"
+#include "wifi_adapter.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -40,7 +41,8 @@ using AudioPlaybackHelper = service::helper::AudioPlayback;
 namespace host_sim::tests {
 bool is_self_test_option(std::string_view option);
 int run_self_test(std::string_view option, const std::string &output_name,
-                  lv_indev_t *input, uint32_t backlight_output_id);
+                  lv_indev_t *input, uint32_t backlight_output_id,
+                  host_sim::WifiAdapter *wifi_adapter);
 } // namespace host_sim::tests
 
 namespace {
@@ -77,6 +79,8 @@ int run_main(int argc, char **argv)
         (!self_test_mode || option == "--self-test-volume-simulation");
     const bool power_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-power-simulation");
+    const bool wifi_runtime_enabled = !screenshot_mode &&
+        (!self_test_mode || option == "--self-test-wifi-mock");
     const bool persistence_test_mode = option == "--self-test-persistence-write" ||
         option == "--self-test-persistence-read" || option == "--self-test-factory-reset" ||
         option == "--self-test-persistence-defaults";
@@ -237,6 +241,21 @@ int run_main(int argc, char **argv)
         gui::lvgl::unlock_thread();
     });
 
+    host_sim::WifiAdapter wifi_adapter;
+    if (wifi_runtime_enabled) {
+        gui::lvgl::lock_thread();
+        const bool wifi_started = wifi_adapter.start();
+        gui::lvgl::unlock_thread();
+        if (!wifi_started) {
+            return fail("Wi-Fi adapter", "could not connect the Linux Wi-Fi backend to the UI");
+        }
+    }
+    lib_utils::FunctionGuard wifi_cleanup([&wifi_adapter]() {
+        gui::lvgl::lock_thread();
+        wifi_adapter.stop();
+        gui::lvgl::unlock_thread();
+    });
+
     host_sim::PersistenceAdapter persistence_adapter;
     if (persistence_runtime_enabled) {
         gui::lvgl::lock_thread();
@@ -257,7 +276,7 @@ int run_main(int argc, char **argv)
             return fail("self-test", "no backlight-bound display output is available");
         }
         return host_sim::tests::run_self_test(
-            argv[1], display_source.output_name(), input, backlight_output->id
+            argv[1], display_source.output_name(), input, backlight_output->id, &wifi_adapter
         );
     }
     if (screenshot_mode) {

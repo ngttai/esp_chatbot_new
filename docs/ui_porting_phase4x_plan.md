@@ -129,6 +129,26 @@ Trạng thái: **COMPLETE (2026-09-19)**.
 
 Checkpoint: `P4.5 Wi-Fi mock service pass`.
 
+Kết quả:
+
+- Host adapter nối WLAN switch, Quick Settings Wi-Fi, password flow và màn
+  SoftAP gốc với Brookesia `WifiLinux`.
+- Stub scan deterministic trả về `ESP-Lab`, `NTT_Office` và `Guest`, gồm AP có
+  khóa và không khóa.
+- Có kịch bản password sai/đúng, connect/disconnect, timeout lần đầu và retry
+  thành công.
+- Mở/rời màn SoftAP QR gốc sẽ start/stop SoftAP mock.
+- Backend `stub` chạy offline, không đọc hoặc thay đổi network của host.
+- `auto`/`networkmanager` thiếu backend thật sẽ dùng đúng policy stub đã resolve,
+  không chỉ dựa vào tên option CMake.
+- Có self-test `--self-test-wifi-mock` kiểm tra cả API và UI binding.
+- Regression: **20/20 CTest pass**.
+- Visual parity: **pass** cho 16 màn tĩnh và 4 vùng Clock không chứa dữ liệu
+  thời gian động.
+- Source integrity: **74/74 hash pass**, không sửa UI gốc đã import.
+
+Trạng thái: **COMPLETE (2026-09-21)**.
+
 ## P4.6 — Wi-Fi thật opt-in
 
 - Chỉ hoạt động với `HOST_SIM_WIFI_BACKEND=networkmanager`.

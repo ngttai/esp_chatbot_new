@@ -52,7 +52,9 @@ timer_regions=(
     "360x65+0+0"
     "48x135+0+65"
     "48x135+312+65"
-    "360x160+0+200"
+    # The animated clock glyphs anti-alias into row 200. Start the stable
+    # lower region at row 201 so live digit frames are fully excluded.
+    "360x159+0+201"
 )
 timer_failures=0
 for region in "${timer_regions[@]}"; do

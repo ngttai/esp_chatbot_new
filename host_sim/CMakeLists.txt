@@ -137,6 +137,7 @@ add_executable(esp_chatbot_host_sim
     persistence_adapter.cpp
     power_adapter.cpp
     volume_adapter.cpp
+    wifi_adapter.cpp
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
     tests/self_test_main.cpp
@@ -144,6 +145,11 @@ add_executable(esp_chatbot_host_sim
 )
 set(HOST_SIM_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOST_SIM_GENERATED_DIR}")
+if(BROOKESIA_HAL_LINUX_WIFI_BACKEND_NETWORKMANAGER_ENABLED)
+    set(HOST_SIM_WIFI_BACKEND_NETWORKMANAGER_ENABLED 1)
+else()
+    set(HOST_SIM_WIFI_BACKEND_NETWORKMANAGER_ENABLED 0)
+endif()
 configure_file(
     "${HOST_SIM_DIR}/host_capabilities_config.hpp.in"
     "${HOST_SIM_GENERATED_DIR}/host_capabilities_config.hpp"
@@ -187,6 +193,7 @@ if(BUILD_TESTING)
         --self-test-brightness-simulation
         --self-test-volume-simulation
         --self-test-power-simulation
+        --self-test-wifi-mock
         --self-test-persistence-write
         --self-test-persistence-read
         --self-test-factory-reset

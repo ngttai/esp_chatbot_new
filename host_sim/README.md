@@ -140,6 +140,27 @@ source:
   external power or a charging state.
 - The adapter is read-only and never calls charger-control APIs.
 
+## Deterministic Wi-Fi mock
+
+The default `stub` backend now drives the unchanged WLAN UI through Brookesia
+Linux Wi-Fi interfaces without reading or changing the host network:
+
+- WLAN and the Quick Settings Wi-Fi button start/stop the mock backend together.
+- Scan results match the original UI: locked `ESP-Lab`, locked `NTT_Office`, and
+  open `Guest`.
+- `ESP-Lab` accepts the mock password `esp123456`; any other password produces
+  `Authentication failed`.
+- `NTT_Office` accepts `ntt123456`, times out on the first attempt, then succeeds
+  on retry.
+- Opening/leaving the original SoftAP QR screen starts/stops the mock
+  `ESP-Speaker-Setup` AP.
+- `auto` or `networkmanager` still falls back to this deterministic policy when
+  the real NetworkManager backend is unavailable.
+
+The adapter and credentials are simulator-only. No scan, connection, or SoftAP
+operation reaches the computer's network while the default `stub` backend is in
+use.
+
 ## Persistent simulator data and Factory Reset
 
 The normal host build stores simulator state beside the executable under
@@ -200,6 +221,13 @@ Settings widgets:
 
 ```sh
 ./build-host/esp_chatbot_host_sim --self-test-power-simulation
+```
+
+The Wi-Fi mock test covers UI on/off binding, locked/open scans, wrong and
+correct passwords, connect/disconnect, timeout/retry, and UI-driven SoftAP:
+
+```sh
+./build-host/esp_chatbot_host_sim --self-test-wifi-mock
 ```
 
 CTest also runs the ordered P4.3 process chain automatically:
