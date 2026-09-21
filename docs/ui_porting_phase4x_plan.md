@@ -261,6 +261,20 @@ Trạng thái: **COMPLETE (2026-09-21)**.
 
 Checkpoint: `P4.9 Simulator capability regression pass`.
 
+Kết quả:
+
+- Thêm một regression gate duy nhất để build cấu hình mặc định, chạy toàn bộ
+  CTest, visual parity, source integrity và credential scan.
+- Gate xác nhận backend mặc định là media/Wi-Fi/power stub, system time và
+  weather mock; không tự động truy cập thiết bị hoặc dịch vụ mạng thật.
+- Toàn bộ self-test mặc định pass.
+- 17 màn đạt visual parity: 16 màn tĩnh và 4 vùng ổn định của Clock pass.
+- Source integrity đạt **74/74 hash pass** và không có file sửa/thêm trong thư
+  mục UI import.
+- Không có OpenWeather-style credential, `.env` hoặc log được Git track.
+
+Trạng thái: **COMPLETE (2026-09-21)**.
+
 ## Thứ tự thực hiện
 
 ```text

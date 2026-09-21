@@ -373,3 +373,18 @@ host_sim/tests/visual_parity.sh \
 The script accepts only per-channel RGB565/renderer variance up to 5%. Because
 Clock displays live system time, its four static regions are compared separately
 from the animated digit rectangle.
+
+## Complete regression gate
+
+Run the final simulator gate against a default build:
+
+```sh
+host_sim/tests/regression_gate.sh build-host
+```
+
+This command verifies the deterministic default capability selection, builds the
+simulator, runs every registered self-test, compares all 17 screens, checks all
+74 imported UI hashes, rejects modifications inside the imported UI directory,
+and scans Git-tracked text for committed OpenWeather-style credentials and
+environment/log files. Parity artifacts use a temporary directory and are
+removed automatically; pass an optional second argument to retain them.
