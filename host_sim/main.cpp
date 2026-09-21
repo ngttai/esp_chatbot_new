@@ -29,6 +29,7 @@
 #include "screenshot_capture.hpp"
 #include "volume_adapter.hpp"
 #include "wifi_adapter.hpp"
+#include "weather_adapter.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -42,7 +43,8 @@ namespace host_sim::tests {
 bool is_self_test_option(std::string_view option);
 int run_self_test(std::string_view option, const std::string &output_name,
                   lv_indev_t *input, uint32_t backlight_output_id,
-                  host_sim::WifiAdapter *wifi_adapter);
+                  host_sim::WifiAdapter *wifi_adapter,
+                  host_sim::WeatherAdapter *weather_adapter);
 } // namespace host_sim::tests
 
 namespace {
@@ -75,6 +77,14 @@ int run_main(int argc, char **argv)
     const std::string_view screenshot_screen = screenshot_mode && argc >= 4 ? argv[3] : "idle";
     const std::string_view option = argc >= 2 ? argv[1] : "";
     const bool self_test_mode = argc == 2 && host_sim::tests::is_self_test_option(argv[1]);
+    if (host_sim::configured_capabilities().time == std::string_view("sntp") &&
+        !screenshot_mode && !self_test_mode) {
+        std::string sntp_error;
+        if (!host_sim::sync_sntp_once(3000, sntp_error)) {
+            std::cerr << "host_sim: SNTP sync unavailable, keeping system time: "
+                      << sntp_error << '\n';
+        }
+    }
     const bool volume_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-volume-simulation");
     const bool audio_test_mode = option == "--self-test-audio-stub" ||
@@ -195,6 +205,16 @@ int run_main(int argc, char **argv)
         return fail("LVGL input", "brookesia_gui_lvgl did not create a pointer input");
     }
 
+    host_sim::WeatherAdapter weather_adapter;
+    const bool allow_real_weather = !screenshot_mode &&
+        (!self_test_mode || option == "--self-test-weather-real");
+    if (!weather_adapter.start(allow_real_weather)) {
+        return fail("weather adapter", weather_adapter.last_error());
+    }
+    lib_utils::FunctionGuard weather_cleanup([&weather_adapter]() {
+        weather_adapter.stop();
+    });
+
     gui::lvgl::lock_thread();
     speaker_ui_create();
     speaker_ui_set_input(input);
@@ -280,7 +300,8 @@ int run_main(int argc, char **argv)
             return fail("self-test", "no backlight-bound display output is available");
         }
         return host_sim::tests::run_self_test(
-            argv[1], display_source.output_name(), input, backlight_output->id, &wifi_adapter
+            argv[1], display_source.output_name(), input, backlight_output->id,
+            &wifi_adapter, &weather_adapter
         );
     }
     if (screenshot_mode) {

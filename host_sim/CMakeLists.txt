@@ -50,6 +50,20 @@ if(NOT HOST_SIM_POWER_BACKEND MATCHES "^(stub|auto|upower)$")
     message(FATAL_ERROR "Invalid HOST_SIM_POWER_BACKEND='${HOST_SIM_POWER_BACKEND}'")
 endif()
 
+set(HOST_SIM_TIME_BACKEND "system" CACHE STRING
+    "Host clock backend: system or sntp")
+set_property(CACHE HOST_SIM_TIME_BACKEND PROPERTY STRINGS system sntp)
+if(NOT HOST_SIM_TIME_BACKEND MATCHES "^(system|sntp)$")
+    message(FATAL_ERROR "Invalid HOST_SIM_TIME_BACKEND='${HOST_SIM_TIME_BACKEND}'")
+endif()
+
+set(HOST_SIM_WEATHER_BACKEND "mock" CACHE STRING
+    "Host weather backend: mock or openweathermap")
+set_property(CACHE HOST_SIM_WEATHER_BACKEND PROPERTY STRINGS mock openweathermap)
+if(NOT HOST_SIM_WEATHER_BACKEND MATCHES "^(mock|openweathermap)$")
+    message(FATAL_ERROR "Invalid HOST_SIM_WEATHER_BACKEND='${HOST_SIM_WEATHER_BACKEND}'")
+endif()
+
 if(NOT EXISTS "${BROOKESIA_SOURCE_DIR}/hal/brookesia_hal_linux/CMakeLists.txt")
     message(FATAL_ERROR
         "ESP-Brookesia source was not found at '${BROOKESIA_SOURCE_DIR}'. "
@@ -136,6 +150,9 @@ file(GLOB_RECURSE SPEAKER_UI_SOURCES CONFIGURE_DEPENDS
     "${SPEAKER_UI_DIR}/src/*.c"
     "${SPEAKER_UI_DIR}/vendor/*.c"
 )
+# The imported source remains byte-identical, but the host target supplies the
+# same weather_client_get() ABI so it can select mock or opt-in HTTP data.
+list(FILTER SPEAKER_UI_SOURCES EXCLUDE REGEX "/src/flip_clock/weather_source\\.c$")
 add_executable(esp_chatbot_host_sim
     brightness_adapter.cpp
     host_capabilities.cpp
@@ -143,6 +160,7 @@ add_executable(esp_chatbot_host_sim
     persistence_adapter.cpp
     power_adapter.cpp
     volume_adapter.cpp
+    weather_adapter.cpp
     wifi_adapter.cpp
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
@@ -214,6 +232,7 @@ if(BUILD_TESTING)
         --self-test-volume-simulation
         --self-test-audio-stub
         --self-test-power-simulation
+        --self-test-clock-weather
         --self-test-persistence-write
         --self-test-persistence-read
         --self-test-factory-reset
@@ -224,6 +243,9 @@ if(BUILD_TESTING)
     endif()
     if(HOST_SIM_MEDIA_BACKEND_FFMPEG_PORTAUDIO_ENABLED)
         list(REMOVE_ITEM SPEAKER_UI_SELF_TEST_OPTIONS --self-test-audio-stub)
+    endif()
+    if(NOT HOST_SIM_WEATHER_BACKEND STREQUAL "mock")
+        list(REMOVE_ITEM SPEAKER_UI_SELF_TEST_OPTIONS --self-test-clock-weather)
     endif()
     foreach(SELF_TEST_OPTION IN LISTS SPEAKER_UI_SELF_TEST_OPTIONS)
         string(REPLACE "--self-test-" "" SELF_TEST_NAME "${SELF_TEST_OPTION}")

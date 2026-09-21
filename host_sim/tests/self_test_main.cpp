@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -21,6 +22,7 @@
 #include "input_injector.hpp"
 #include "persistence_adapter.hpp"
 #include "wifi_adapter.hpp"
+#include "weather_adapter.hpp"
 #include "host_capabilities_config.hpp"
 
 extern "C" {
@@ -1294,11 +1296,127 @@ int test_persistence_defaults(uint32_t output_id)
     return 0;
 }
 
+int test_clock_weather(InputInjector &input, WeatherAdapter &weather_adapter)
+{
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    if (now <= 0 || localtime_r(&now, &local) == nullptr || local.tm_year < 120) {
+        std::fprintf(stderr, "Host system time is unavailable or invalid\n");
+        return 80;
+    }
+
+    weather_data_t weather{};
+    weather_client_get(&weather);
+    if (std::string_view(weather.city) != "Ho Chi Minh City" ||
+        weather.current_temp != 34 || weather_adapter.state() != WeatherAdapter::State::Mock) {
+        std::fprintf(stderr, "Default weather provider is not the deterministic mock\n");
+        return 81;
+    }
+    show("timer");
+    input.pump(30);
+    if (!with_ui_lock([]() {
+            return find_label(lv_screen_active(), "Ho Chi Minh City") != nullptr;
+        })) {
+        std::fprintf(stderr, "Mock weather did not bind to the unchanged Clock UI\n");
+        return 82;
+    }
+
+    weather_adapter.mark_offline_for_test("deterministic offline test");
+    weather_client_get(&weather);
+    if (weather_adapter.state() != WeatherAdapter::State::Offline ||
+        std::string_view(weather.city) != "Weather Offline") {
+        std::fprintf(stderr, "Weather offline state was not exposed\n");
+        return 83;
+    }
+
+    static constexpr std::string_view forecast_fixture = R"json({
+      "city":{"name":"Test City","timezone":0,"sunrise":1704088800,"sunset":1704132000},
+      "list":[
+        {"dt":1704067200,"main":{"temp":27.4,"temp_min":25.2,"temp_max":29.6},"weather":[{"id":801,"description":"few clouds","icon":"02d"}],"wind":{"speed":3.5,"deg":225}},
+        {"dt":1704196800,"main":{"temp":28,"temp_min":24,"temp_max":31},"weather":[{"id":800,"description":"clear sky","icon":"01d"}]},
+        {"dt":1704283200,"main":{"temp":26,"temp_min":23,"temp_max":30},"weather":[{"id":500,"description":"light rain","icon":"10d"}]},
+        {"dt":1704369600,"main":{"temp":25,"temp_min":22,"temp_max":29},"weather":[{"id":200,"description":"thunderstorm","icon":"11d"}]},
+        {"dt":1704456000,"main":{"temp":24,"temp_min":21,"temp_max":28},"weather":[{"id":741,"description":"fog","icon":"50d"}]}
+      ]
+    })json";
+    if (!weather_adapter.apply_forecast_payload_for_test(std::string(forecast_fixture))) {
+        std::fprintf(stderr, "Deterministic OpenWeather payload did not parse: %s\n",
+                     weather_adapter.last_error().c_str());
+        return 84;
+    }
+    weather_client_get(&weather);
+    if (weather_adapter.state() != WeatherAdapter::State::Live ||
+        std::string_view(weather.city) != "Test City" || weather.current_temp != 27 ||
+        weather.wind_kmh != 13 || std::string_view(weather.wind_dir) != "SW" ||
+        weather.forecast[0].icon != WEATHER_ICON_SUNNY ||
+        weather.forecast[1].icon != WEATHER_ICON_RAIN) {
+        std::fprintf(stderr, "Parsed OpenWeather fields do not match the fixture\n");
+        return 85;
+    }
+    weather_adapter.mark_offline_for_test("deterministic cached fallback test");
+    weather_client_get(&weather);
+    if (weather_adapter.state() != WeatherAdapter::State::Cached ||
+        std::string_view(weather.city) != "Test City") {
+        std::fprintf(stderr, "Last-success weather cache was not retained offline\n");
+        return 86;
+    }
+
+    std::puts("Clock/weather passed: system time + mock UI + parser + offline cache");
+    return 0;
+}
+
+int test_weather_real(InputInjector &input, WeatherAdapter &weather_adapter)
+{
+    if (std::string_view(HOST_SIM_WEATHER_BACKEND) != "openweathermap") {
+        std::fprintf(stderr,
+                     "Real weather backend is not selected; configure "
+                     "HOST_SIM_WEATHER_BACKEND=openweathermap\n");
+        return 87;
+    }
+    if (weather_adapter.state() != WeatherAdapter::State::Live) {
+        std::fprintf(stderr, "OpenWeather fetch failed: %s\n",
+                     weather_adapter.last_error().c_str());
+        return 88;
+    }
+    weather_data_t weather{};
+    weather_client_get(&weather);
+    if (weather.city[0] == '\0' || weather.condition[0] == '\0') {
+        std::fprintf(stderr, "OpenWeather returned empty display fields\n");
+        return 89;
+    }
+    show("timer");
+    input.pump(30);
+    if (!with_ui_lock([&weather]() {
+            return find_label(lv_screen_active(), weather.city) != nullptr;
+        })) {
+        std::fprintf(stderr, "Live weather did not bind to the unchanged Clock UI\n");
+        return 90;
+    }
+    std::printf("Real weather passed: %s, %d C, %s\n",
+                weather.city, weather.current_temp, weather.condition);
+    return 0;
+}
+
+int test_sntp_real()
+{
+    std::string error;
+    if (!sync_sntp_once(5000, error)) {
+        std::fprintf(stderr, "SNTP sync failed: %s\n", error.c_str());
+        return 91;
+    }
+    if (std::time(nullptr) < 1704067200) {
+        std::fprintf(stderr, "System clock remains outside the accepted range\n");
+        return 92;
+    }
+    std::puts("Real SNTP synchronization check passed");
+    return 0;
+}
+
 } // namespace
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 22> options{{
+    static constexpr std::array<std::string_view, 25> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -1315,6 +1433,9 @@ bool is_self_test_option(std::string_view option)
         "--self-test-audio-stub",
         "--self-test-audio-real",
         "--self-test-power-simulation",
+        "--self-test-clock-weather",
+        "--self-test-weather-real",
+        "--self-test-sntp-real",
         "--self-test-wifi-mock",
         "--self-test-wifi-real-readonly",
         "--self-test-persistence-write",
@@ -1330,7 +1451,7 @@ bool is_self_test_option(std::string_view option)
 
 int run_self_test(std::string_view option, const std::string &output_name,
                   lv_indev_t *input_device, uint32_t backlight_output_id,
-                  WifiAdapter *wifi_adapter)
+                  WifiAdapter *wifi_adapter, WeatherAdapter *weather_adapter)
 {
     InputInjector input(output_name, input_device);
     if (option == "--self-test-settings-pages") return test_settings_pages(input);
@@ -1351,6 +1472,15 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-audio-stub") return test_audio_stub();
     if (option == "--self-test-audio-real") return test_audio_real();
     if (option == "--self-test-power-simulation") return test_power_simulation(input);
+    if (option == "--self-test-clock-weather") {
+        if (weather_adapter == nullptr) return 93;
+        return test_clock_weather(input, *weather_adapter);
+    }
+    if (option == "--self-test-weather-real") {
+        if (weather_adapter == nullptr) return 93;
+        return test_weather_real(input, *weather_adapter);
+    }
+    if (option == "--self-test-sntp-real") return test_sntp_real();
     if (option == "--self-test-wifi-mock") {
         if (wifi_adapter == nullptr) return 70;
         return test_wifi_mock(input, *wifi_adapter);

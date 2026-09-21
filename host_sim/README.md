@@ -72,6 +72,8 @@ Accepted values are:
 | `HOST_SIM_MEDIA_BACKEND` | `stub`, `auto`, `ffmpeg_portaudio` | `stub` |
 | `HOST_SIM_WIFI_BACKEND` | `stub`, `auto`, `networkmanager` | `stub` |
 | `HOST_SIM_POWER_BACKEND` | `stub`, `auto`, `upower` | `stub` |
+| `HOST_SIM_TIME_BACKEND` | `system`, `sntp` | `system` |
+| `HOST_SIM_WEATHER_BACKEND` | `mock`, `openweathermap` | `mock` |
 
 `networkmanager` can change the computer's real network state. It is enabled
 only when that exact value is selected; Wi-Fi `auto` intentionally remains on
@@ -82,6 +84,11 @@ The simulator covers the display/touch path, UI interactions, audio playback,
 and microphone capture. ESP AFE/wake-word/echo cancellation, flash partitions,
 provisioning, and concrete AI-agent components remain firmware-only and are not
 started by this host target.
+
+The default Clock path is offline and deterministic: its digits use the host's
+system time while weather uses the imported fixed mock scenario. The host build
+provides the same `weather_client_get()` ABI outside the imported UI directory;
+the original Clock/UI files remain unchanged.
 
 ## UI controls
 
@@ -291,6 +298,42 @@ Settings widgets:
 ```sh
 ./build-host/esp_chatbot_host_sim --self-test-power-simulation
 ```
+
+The Clock/weather regression verifies system time, the mock-to-UI binding,
+OpenWeather JSON mapping, explicit offline state, and last-success cache:
+
+```sh
+SDL_VIDEODRIVER=dummy \
+  ./build-host/esp_chatbot_host_sim --self-test-clock-weather
+```
+
+SNTP and live weather are separate opt-in backends. The API key is read only
+from `OPENWEATHER_API_KEY`; it is never compiled into the simulator. Location
+defaults to Ho Chi Minh City and can be overridden with latitude/longitude:
+
+```sh
+cmake -S host_sim -B build-host-live -G Ninja \
+  -DHOST_SIM_TIME_BACKEND=sntp \
+  -DHOST_SIM_WEATHER_BACKEND=openweathermap
+cmake --build build-host-live
+
+export OPENWEATHER_API_KEY='your-key'
+export HOST_SIM_WEATHER_LATITUDE='10.8231'
+export HOST_SIM_WEATHER_LONGITUDE='106.6297'
+export HOST_SIM_TIMEZONE='Asia/Ho_Chi_Minh'
+
+SDL_VIDEODRIVER=dummy \
+  ./build-host-live/esp_chatbot_host_sim --self-test-sntp-real
+SDL_VIDEODRIVER=dummy \
+  ./build-host-live/esp_chatbot_host_sim --self-test-weather-real
+```
+
+The SNTP backend validates network time before the unchanged Clock continues to
+read Linux system time. Live weather uses Brookesia's HTTPS client with a
+five-second request timeout, refreshes every ten minutes, keeps the last
+successful response in memory, and shows an offline state when no cache exists.
+Neither real-network test is registered with CTest. Other self-tests and
+screenshot capture force the deterministic mock even in an opt-in live build.
 
 The Wi-Fi mock test covers UI on/off binding, locked/open scans, wrong and
 correct passwords, connect/disconnect, timeout/retry, and UI-driven SoftAP:

@@ -227,6 +227,30 @@ Trạng thái: **COMPLETE (2026-09-21)**.
 
 Checkpoint: `P4.8 Clock/weather provider pass`.
 
+Kết quả:
+
+- Clock UI gốc tiếp tục gọi `localtime()`; backend mặc định dùng system time và
+  không truy cập mạng.
+- Backend SNTP opt-in dùng `NetworkLinux:SntpClient`, có timeout và giữ system
+  time nếu server không phản hồi; test thật đã sync thành công với
+  `pool.ntp.org`.
+- Host adapter cung cấp đúng ABI `weather_client_get()` cho target simulator;
+  file `weather_source.c` import vẫn giữ nguyên hash và không bị sửa.
+- Weather mặc định dùng fixed mock, offline và giữ nguyên screenshot regression.
+- OpenWeather opt-in dùng Brookesia HTTPS client, key chỉ đọc từ environment,
+  vị trí lấy từ latitude/longitude environment, timeout 5 giây và refresh 10
+  phút.
+- Có explicit offline state; sau lần fetch thành công, last-success cache trong
+  memory tiếp tục cấp dữ liệu khi request sau thất bại.
+- Parser deterministic map nhiệt độ, condition, icon, sunrise/sunset, gió và 4
+  ngày forecast; self-test kiểm tra cả binding mock vào Clock UI gốc.
+- API key không được ghi vào source, artifact, log hoặc commit.
+- OpenWeather thật đã fetch và bind thành công dữ liệu `Thong Tay Hoi`, `26°C`,
+  `Moderate rain`.
+- Regression mặc định: **22/22 CTest pass**.
+
+Trạng thái: **COMPLETE (2026-09-21)**.
+
 ## P4.9 — Regression gate
 
 - Toàn bộ self-test cũ và test capability mới pass.

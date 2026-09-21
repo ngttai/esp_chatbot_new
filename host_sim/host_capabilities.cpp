@@ -17,6 +17,8 @@ const HostCapabilities &configured_capabilities()
         .wifi = HOST_SIM_WIFI_BACKEND,
         .wifi_resolved = HOST_SIM_WIFI_BACKEND_RESOLVED,
         .power = HOST_SIM_POWER_BACKEND,
+        .time = HOST_SIM_TIME_BACKEND,
+        .weather = HOST_SIM_WEATHER_BACKEND,
     };
     return capabilities;
 }
@@ -32,6 +34,8 @@ void print_configured_capabilities(std::ostream &stream)
            << "  wifi:    " << capabilities.wifi << '\n'
            << "  wifi resolved: " << capabilities.wifi_resolved << '\n'
            << "  power:   " << capabilities.power << '\n';
+    stream << "  time:    " << capabilities.time << '\n'
+           << "  weather: " << capabilities.weather << '\n';
     if (capabilities.media == std::string_view("auto") ||
             capabilities.wifi == std::string_view("auto") ||
             capabilities.power == std::string_view("auto")) {

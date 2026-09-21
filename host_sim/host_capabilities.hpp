@@ -12,6 +12,8 @@ struct HostCapabilities {
     const char *wifi;
     const char *wifi_resolved;
     const char *power;
+    const char *time;
+    const char *weather;
 };
 
 const HostCapabilities &configured_capabilities();
