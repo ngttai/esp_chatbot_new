@@ -159,6 +159,32 @@ Trạng thái: **COMPLETE (2026-09-21)**.
 
 Checkpoint: `P4.6 Real Wi-Fi opt-in pass`.
 
+Tiến độ:
+
+- NetworkManager chỉ được phép resolve khi chọn chính xác
+  `HOST_SIM_WIFI_BACKEND=networkmanager`; Wi-Fi `auto` vẫn dùng stub an toàn.
+- Capability output phân biệt backend được yêu cầu và backend thực tế đã
+  resolve.
+- Scan thật được ánh xạ runtime vào ba row WLAN có sẵn; không sửa source UI.
+- Status được đọc qua Brookesia Connectivity; locked AP dùng password screen
+  gốc, open AP kết nối trực tiếp.
+- Startup không tự connect và cleanup không tự disconnect Wi-Fi máy tính.
+- Wi-Fi mock test không được đăng ký khi backend thật đã resolve.
+- Stub regression: **20/20 CTest pass**; riêng Wi-Fi mock pass **10 lần liên
+  tiếp**, gồm cả open AP đi qua row UI gốc.
+- Visual parity: **pass**; source integrity: **74/74 hash pass**.
+- Build `auto` đã xác nhận `wifi resolved: stub`.
+- Build opt-in với `network-manager`, `nmcli` và `libnm-dev` đã xác nhận
+  `wifi resolved: networkmanager`; CTest của build này chỉ đăng ký **19 test**,
+  không đăng ký Wi-Fi mock.
+- Self-test thật chỉ đọc đã scan **20 AP**, đọc trạng thái connected và xác nhận
+  ba kết quả đầu được bind vào row WLAN gốc.
+- Snapshot NetworkManager trước/sau self-test giống hệt nhau: không tự connect,
+  disconnect hoặc bật SoftAP. Connect/disconnect thật chỉ chạy khi người dùng
+  thao tác rõ ràng trong simulator.
+
+Trạng thái: **COMPLETE (2026-09-21)**.
+
 ## P4.7 — Audio playback và microphone
 
 - Playback/pause/resume/stop qua FFmpeg và PortAudio.

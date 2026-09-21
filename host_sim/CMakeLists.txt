@@ -112,7 +112,13 @@ endif()
 # options above. Video and BLE are deliberately out of this simulator's scope.
 set(BROOKESIA_HAL_LINUX_MEDIA_BACKEND "${HOST_SIM_MEDIA_BACKEND}" CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_VIDEO_BACKEND stub CACHE STRING "" FORCE)
-set(BROOKESIA_HAL_LINUX_WIFI_BACKEND "${HOST_SIM_WIFI_BACKEND}" CACHE STRING "" FORCE)
+# Wi-Fi can change the host's active connection. Keep `auto` deterministic and
+# require the explicit `networkmanager` value before Brookesia may use it.
+if(HOST_SIM_WIFI_BACKEND STREQUAL "networkmanager")
+    set(BROOKESIA_HAL_LINUX_WIFI_BACKEND networkmanager CACHE STRING "" FORCE)
+else()
+    set(BROOKESIA_HAL_LINUX_WIFI_BACKEND stub CACHE STRING "" FORCE)
+endif()
 set(BROOKESIA_HAL_LINUX_BLE_BACKEND stub CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_POWER_BACKEND "${HOST_SIM_POWER_BACKEND}" CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_DISPLAY_BACKEND sdl2 CACHE STRING "" FORCE)
@@ -145,10 +151,15 @@ add_executable(esp_chatbot_host_sim
 )
 set(HOST_SIM_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOST_SIM_GENERATED_DIR}")
-if(BROOKESIA_HAL_LINUX_WIFI_BACKEND_NETWORKMANAGER_ENABLED)
+find_program(HOST_SIM_NMCLI_EXECUTABLE nmcli)
+if(HOST_SIM_WIFI_BACKEND STREQUAL "networkmanager" AND
+   BROOKESIA_HAL_LINUX_NETWORKMANAGER_FOUND AND
+   HOST_SIM_NMCLI_EXECUTABLE)
     set(HOST_SIM_WIFI_BACKEND_NETWORKMANAGER_ENABLED 1)
+    set(HOST_SIM_WIFI_BACKEND_RESOLVED "networkmanager")
 else()
     set(HOST_SIM_WIFI_BACKEND_NETWORKMANAGER_ENABLED 0)
+    set(HOST_SIM_WIFI_BACKEND_RESOLVED "stub")
 endif()
 configure_file(
     "${HOST_SIM_DIR}/host_capabilities_config.hpp.in"
@@ -193,12 +204,14 @@ if(BUILD_TESTING)
         --self-test-brightness-simulation
         --self-test-volume-simulation
         --self-test-power-simulation
-        --self-test-wifi-mock
         --self-test-persistence-write
         --self-test-persistence-read
         --self-test-factory-reset
         --self-test-persistence-defaults
     )
+    if(NOT HOST_SIM_WIFI_BACKEND_NETWORKMANAGER_ENABLED)
+        list(APPEND SPEAKER_UI_SELF_TEST_OPTIONS --self-test-wifi-mock)
+    endif()
     foreach(SELF_TEST_OPTION IN LISTS SPEAKER_UI_SELF_TEST_OPTIONS)
         string(REPLACE "--self-test-" "" SELF_TEST_NAME "${SELF_TEST_OPTION}")
         add_test(

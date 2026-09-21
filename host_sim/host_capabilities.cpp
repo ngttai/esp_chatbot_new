@@ -14,6 +14,7 @@ const HostCapabilities &configured_capabilities()
         .storage = "linux-filesystem",
         .media = HOST_SIM_MEDIA_BACKEND,
         .wifi = HOST_SIM_WIFI_BACKEND,
+        .wifi_resolved = HOST_SIM_WIFI_BACKEND_RESOLVED,
         .power = HOST_SIM_POWER_BACKEND,
     };
     return capabilities;
@@ -27,12 +28,13 @@ void print_configured_capabilities(std::ostream &stream)
            << "  storage: " << capabilities.storage << '\n'
            << "  media:   " << capabilities.media << '\n'
            << "  wifi:    " << capabilities.wifi << '\n'
+           << "  wifi resolved: " << capabilities.wifi_resolved << '\n'
            << "  power:   " << capabilities.power << '\n';
     if (capabilities.media == std::string_view("auto") ||
             capabilities.wifi == std::string_view("auto") ||
             capabilities.power == std::string_view("auto")) {
-        stream << "  note: auto resolves to a real backend when its dependencies are available; "
-                  "otherwise Brookesia logs a stub fallback.\n";
+        stream << "  note: media/power auto may select a real backend; Wi-Fi auto stays on "
+                  "the safe stub and requires explicit networkmanager opt-in.\n";
     }
 }
 

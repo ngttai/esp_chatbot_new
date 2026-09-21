@@ -19,6 +19,7 @@ namespace {
 using namespace esp_brookesia;
 constexpr uint32_t POLL_PERIOD_MS = 50;
 constexpr int RETRY_DELAY_MS = 1000;
+constexpr int REAL_STATUS_POLL_MS = 5000;
 constexpr std::string_view LOCKED_PASSWORD = "esp123456";
 constexpr std::string_view TIMEOUT_PASSWORD = "ntt123456";
 
@@ -86,8 +87,17 @@ bool WifiAdapter::start()
     }
 
     if (!basic_->configure({}, {}) || !station_->configure({
+            .on_event = [this](hal::wifi::StationEvent event, bool) {
+                if (event == hal::wifi::StationEvent::Connected) connected_ = true;
+                else if (event == hal::wifi::StationEvent::Disconnected) connected_ = false;
+            },
+            .on_error = [this]() {
+                connected_ = false;
+                last_result_ = ConnectionResult::BackendError;
+            },
             .on_scan_ap_infos_updated = [this](std::span<const hal::wifi::ScanApInfo> aps) {
                 scan_results_.assign(aps.begin(), aps.end());
+                scan_ui_dirty_ = true;
             },
         }) || !soft_ap_->configure({
             .on_event = [this](hal::wifi::SoftApEvent event) {
@@ -114,10 +124,9 @@ void WifiAdapter::stop()
         timer_ = nullptr;
     }
     if (soft_ap_) soft_ap_->stop();
-    if (station_) {
-        station_->do_action(hal::wifi::StationAction::Disconnect, true);
-        station_->clear_callbacks();
-    }
+    // Never disconnect the computer merely because the simulator is closing.
+    // Explicit UI disconnect/off actions still go through disconnect().
+    if (station_) station_->clear_callbacks();
     if (soft_ap_) soft_ap_->clear_callbacks();
     if (basic_) {
         basic_->stop();
@@ -137,7 +146,7 @@ bool WifiAdapter::set_enabled(bool enabled)
 {
     if (!basic_ || !station_) return false;
     if (!enabled) {
-        (void)disconnect();
+        if (deterministic_stub() || connected_) (void)disconnect();
         basic_->do_action(hal::wifi::BasicAction::Stop, true);
         enabled_ = false;
         last_result_ = ConnectionResult::Offline;
@@ -157,6 +166,9 @@ bool WifiAdapter::set_enabled(bool enabled)
     if (deterministic_stub()) {
         connected_ = connect_backend("Studio-WiFi", "stored-profile");
         last_result_ = connected_ ? ConnectionResult::Connected : ConnectionResult::BackendError;
+    } else {
+        // Observe an existing host connection, but never connect automatically.
+        refresh_real_status();
     }
     return true;
 }
@@ -226,6 +238,9 @@ WifiAdapter::ConnectionResult WifiAdapter::connect_internal(
     pending_ssid_.clear();
     pending_password_.clear();
     connected_ = connect_backend(ssid, password);
+    if (connected_ && connected_name_label_ != nullptr) {
+        lv_label_set_text(connected_name_label_, ssid.c_str());
+    }
     return last_result_ = connected_ ? ConnectionResult::Connected : ConnectionResult::BackendError;
 }
 
@@ -281,6 +296,21 @@ void WifiAdapter::network_selected_callback(lv_event_t *event)
     auto *label = lv_obj_get_child(row, 0);
     if (!lv_obj_check_type(label, &lv_label_class)) return;
     adapter->selected_ssid_ = lv_label_get_text(label);
+    if (adapter->connected_name_label_ != nullptr) {
+        lv_label_set_text(adapter->connected_name_label_, adapter->selected_ssid_.c_str());
+    }
+
+    const auto ap = std::find_if(
+        adapter->scan_results_.begin(), adapter->scan_results_.end(),
+        [&](const auto &item) { return item.ssid == adapter->selected_ssid_; }
+    );
+    if (ap != adapter->scan_results_.end() && !ap->is_locked) {
+        // Defer until the event dispatch finishes. The original row callback
+        // opens the password screen, regardless of AP security, and callback
+        // ordering is an LVGL implementation detail.
+        adapter->open_ap_pending_ = true;
+        adapter->open_ap_countdown_ms_ = 200;
+    }
 }
 
 void WifiAdapter::poll()
@@ -291,7 +321,19 @@ void WifiAdapter::poll()
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
     if (wlan_active) {
         attach_ui_handlers();
+        update_real_scan_ui();
         update_ui_status();
+    }
+
+    if (open_ap_pending_) {
+        open_ap_countdown_ms_ -= static_cast<int>(POLL_PERIOD_MS);
+        if (open_ap_countdown_ms_ <= 0) {
+            open_ap_pending_ = false;
+            (void)connect(selected_ssid_, "");
+            selected_ssid_.clear();
+            speaker_ui_show("wlan");
+            update_ui_status();
+        }
     }
 
     const bool password_active = speaker_ui_is_screen_active("wlan-connect");
@@ -316,20 +358,61 @@ void WifiAdapter::poll()
             update_ui_status();
         }
     }
+
+    if (!deterministic_stub()) {
+        status_poll_countdown_ms_ -= static_cast<int>(POLL_PERIOD_MS);
+        if (status_poll_countdown_ms_ <= 0) {
+            refresh_real_status();
+            update_ui_status();
+            status_poll_countdown_ms_ = REAL_STATUS_POLL_MS;
+        }
+    }
 }
 
 void WifiAdapter::attach_ui_handlers()
 {
     if (handlers_attached_) return;
+    size_t row_index = 0;
     for (const auto ssid : {"ESP-Lab", "NTT_Office", "Guest"}) {
         auto *label = find_label(lv_screen_active(), ssid);
         if (label == nullptr) return;
         auto *row = lv_obj_get_parent(label);
         if (row == nullptr) return;
         lv_obj_add_event_cb(row, network_selected_callback, LV_EVENT_CLICKED, this);
+        network_rows_[row_index] = row;
+        network_labels_[row_index] = label;
+        ++row_index;
     }
     status_label_ = find_label(lv_screen_active(), "Connected");
+    connected_name_label_ = find_label(lv_screen_active(), "Studio-WiFi");
     handlers_attached_ = status_label_ != nullptr;
+    scan_ui_dirty_ = true;
+}
+
+void WifiAdapter::update_real_scan_ui()
+{
+    if (deterministic_stub() || !handlers_attached_ || !scan_ui_dirty_) return;
+    for (size_t index = 0; index < network_rows_.size(); ++index) {
+        if (network_rows_[index] == nullptr || network_labels_[index] == nullptr) continue;
+        if (index >= scan_results_.size()) {
+            lv_obj_add_flag(network_rows_[index], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_label_set_text(network_labels_[index], scan_results_[index].ssid.c_str());
+        lv_obj_remove_flag(network_rows_[index], LV_OBJ_FLAG_HIDDEN);
+    }
+    scan_ui_dirty_ = false;
+}
+
+void WifiAdapter::refresh_real_status()
+{
+    if (deterministic_stub() || !connectivity_) return;
+    connected_ = connectivity_->get_status().is_local_network_ready();
+    if (connected_) {
+        last_result_ = ConnectionResult::Connected;
+    } else if (last_result_ == ConnectionResult::Connected) {
+        last_result_ = enabled_ ? ConnectionResult::Disconnected : ConnectionResult::Offline;
+    }
 }
 
 void WifiAdapter::update_ui_status()

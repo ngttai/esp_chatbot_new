@@ -882,10 +882,20 @@ int test_wifi_mock(InputInjector &input, WifiAdapter &wifi)
         return 65;
     }
 
-    auto guest = with_ui_lock([&]() { return wifi.connect("Guest", ""); });
-    if (guest != WifiAdapter::ConnectionResult::Connected || !wifi.connected() ||
+    const bool guest_selected = with_ui_lock([]() {
+        auto *row = find_clickable_with_label(lv_screen_active(), "Guest");
+        if (row == nullptr) return false;
+        lv_obj_send_event(row, LV_EVENT_CLICKED, nullptr);
+        return true;
+    });
+    input.pump(80);
+    if (!guest_selected || wifi.last_result() != WifiAdapter::ConnectionResult::Connected ||
+            !wifi.connected() || !active("wlan") ||
             !with_ui_lock([&]() { return wifi.disconnect(); })) {
-        std::fprintf(stderr, "Wi-Fi mock open-AP connection failed\n");
+        std::fprintf(stderr,
+                     "Wi-Fi mock open-AP UI connection failed: selected=%d result=%d connected=%d wlan=%d\n",
+                     static_cast<int>(guest_selected), static_cast<int>(wifi.last_result()),
+                     static_cast<int>(wifi.connected()), static_cast<int>(active("wlan")));
         return 66;
     }
 
@@ -914,6 +924,42 @@ int test_wifi_mock(InputInjector &input, WifiAdapter &wifi)
 
     with_ui_lock([&]() { return wifi.set_enabled(true); });
     std::puts("Wi-Fi mock passed: on/off, scan, auth, connect/disconnect, timeout/retry, SoftAP");
+    return 0;
+}
+
+int test_wifi_real_readonly(InputInjector &input, WifiAdapter &wifi)
+{
+    if (!wifi.real_backend_enabled()) {
+        std::fprintf(stderr, "Real Wi-Fi self-test requires a resolved NetworkManager backend\n");
+        return 71;
+    }
+    if (!wifi.enabled()) {
+        std::fprintf(stderr, "NetworkManager Wi-Fi backend did not start\n");
+        return 72;
+    }
+    if (wifi.scan_results().empty()) {
+        std::fprintf(stderr, "NetworkManager scan returned no access points\n");
+        return 73;
+    }
+    show("wlan");
+    input.pump(40);
+    const bool scan_is_bound_to_original_ui = with_ui_lock([&]() {
+        const size_t visible_count = std::min<size_t>(wifi.scan_results().size(), 3);
+        for (size_t index = 0; index < visible_count; ++index) {
+            if (find_label(lv_screen_active(), wifi.scan_results()[index].ssid) == nullptr) {
+                return false;
+            }
+        }
+        return true;
+    });
+    if (!scan_is_bound_to_original_ui) {
+        std::fprintf(stderr, "NetworkManager scan results were not bound to the original WLAN rows\n");
+        return 74;
+    }
+    std::printf(
+        "NetworkManager read-only check passed: access_points=%zu connected=%s\n",
+        wifi.scan_results().size(), wifi.connected() ? "yes" : "no"
+    );
     return 0;
 }
 
@@ -1080,7 +1126,7 @@ int test_persistence_defaults(uint32_t output_id)
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 19> options{{
+    static constexpr std::array<std::string_view, 20> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -1096,6 +1142,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-volume-simulation",
         "--self-test-power-simulation",
         "--self-test-wifi-mock",
+        "--self-test-wifi-real-readonly",
         "--self-test-persistence-write",
         "--self-test-persistence-read",
         "--self-test-factory-reset",
@@ -1131,6 +1178,10 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-wifi-mock") {
         if (wifi_adapter == nullptr) return 70;
         return test_wifi_mock(input, *wifi_adapter);
+    }
+    if (option == "--self-test-wifi-real-readonly") {
+        if (wifi_adapter == nullptr) return 70;
+        return test_wifi_real_readonly(input, *wifi_adapter);
     }
     if (option == "--self-test-persistence-write") {
         return test_persistence_write(input, backlight_output_id);

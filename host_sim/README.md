@@ -73,9 +73,10 @@ Accepted values are:
 | `HOST_SIM_WIFI_BACKEND` | `stub`, `auto`, `networkmanager` | `stub` |
 | `HOST_SIM_POWER_BACKEND` | `stub`, `auto`, `upower` | `stub` |
 
-`networkmanager` can change the computer's real network state once Wi-Fi service
-integration is enabled. Keep it at `stub` for normal development and CI. Camera,
-video, and BLE are outside this simulator's scope and remain disabled.
+`networkmanager` can change the computer's real network state. It is enabled
+only when that exact value is selected; Wi-Fi `auto` intentionally remains on
+the safe stub. Keep `stub` for normal development and CI. Camera, video, and BLE
+are outside this simulator's scope and remain disabled.
 
 The simulator currently covers the display/touch path and UI interactions. Audio
 AFE/wake-word, flash partitions, provisioning, and concrete AI-agent components
@@ -160,6 +161,44 @@ Linux Wi-Fi interfaces without reading or changing the host network:
 The adapter and credentials are simulator-only. No scan, connection, or SoftAP
 operation reaches the computer's network while the default `stub` backend is in
 use.
+
+## Real Wi-Fi through NetworkManager (opt-in)
+
+Install NetworkManager and its development metadata, then use a separate build
+directory so the normal deterministic build remains untouched:
+
+```sh
+sudo apt-get install network-manager libnm-dev
+cmake -S host_sim -B build-host-networkmanager -G Ninja \
+  -DHOST_SIM_WIFI_BACKEND=networkmanager
+cmake --build build-host-networkmanager
+./build-host-networkmanager/esp_chatbot_host_sim --print-capabilities
+SDL_VIDEODRIVER=dummy \
+  ./build-host-networkmanager/esp_chatbot_host_sim --self-test-wifi-real-readonly
+./build-host-networkmanager/esp_chatbot_host_sim
+```
+
+Before running the SDL application, verify that capability output contains both
+`wifi: networkmanager` and `wifi resolved: networkmanager`. A resolved value of
+`stub` means a required dependency (`libnm` development metadata or `nmcli`) is
+missing, so no real network operation will be attempted.
+
+With the real backend resolved:
+
+- Startup scans and reports status but never initiates a connection.
+- The first three NetworkManager scan results replace the text in the existing
+  three WLAN rows; no layout or imported UI source is changed.
+- Selecting a locked AP uses the original password screen. Selecting an open AP
+  connects without requesting a password.
+- Passwords are passed directly to the backend and are not written to source,
+  simulator storage, artifacts, or application logs.
+- Explicit WLAN off/disconnect and SoftAP actions can change the computer's real
+  network state. Merely closing the simulator does not disconnect Wi-Fi.
+- The deterministic Wi-Fi mock test is not registered when the real backend is
+  resolved, so CI must continue to use the default stub build.
+
+The read-only self-test performs scan/status only. It is intentionally not
+registered with CTest and does not connect, disconnect, or start SoftAP.
 
 ## Persistent simulator data and Factory Reset
 

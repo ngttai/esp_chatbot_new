@@ -80,7 +80,8 @@ int run_main(int argc, char **argv)
     const bool power_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-power-simulation");
     const bool wifi_runtime_enabled = !screenshot_mode &&
-        (!self_test_mode || option == "--self-test-wifi-mock");
+        (!self_test_mode || option == "--self-test-wifi-mock" ||
+         option == "--self-test-wifi-real-readonly");
     const bool persistence_test_mode = option == "--self-test-persistence-write" ||
         option == "--self-test-persistence-read" || option == "--self-test-factory-reset" ||
         option == "--self-test-persistence-defaults";

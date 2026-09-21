@@ -9,6 +9,7 @@ struct HostCapabilities {
     const char *storage;
     const char *media;
     const char *wifi;
+    const char *wifi_resolved;
     const char *power;
 };
 
