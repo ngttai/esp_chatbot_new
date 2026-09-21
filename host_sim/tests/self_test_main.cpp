@@ -1,10 +1,19 @@
 #include <array>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
+#include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "brookesia/gui_lvgl.hpp"
+#include "brookesia/hal_interface.hpp"
+#include "brookesia/hal_linux.hpp"
 #include "brookesia/hal_interface/interfaces/power/battery.hpp"
 #include "brookesia/hal_linux/power/device.hpp"
 #include "brookesia/lib_utils.hpp"
@@ -12,6 +21,7 @@
 #include "input_injector.hpp"
 #include "persistence_adapter.hpp"
 #include "wifi_adapter.hpp"
+#include "host_capabilities_config.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -748,6 +758,168 @@ int test_volume_simulation(InputInjector &input)
     return 0;
 }
 
+bool run_audio_playback_controls(const std::string &url, bool real_backend)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    constexpr auto timeout = esp_brookesia::service::helper::Timeout(3000);
+
+    auto play_result = AudioPlaybackHelper::call_function_sync(
+        AudioPlaybackHelper::FunctionId::Play, url, timeout
+    );
+    if (!play_result) {
+        std::fprintf(stderr, "Audio Play failed: %s\n", play_result.error().c_str());
+        return false;
+    }
+    if (real_backend) std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    auto pause_result = AudioPlaybackHelper::call_function_sync(
+        AudioPlaybackHelper::FunctionId::Pause, timeout
+    );
+    if (!pause_result) {
+        std::fprintf(stderr, "Audio Pause failed: %s\n", pause_result.error().c_str());
+        return false;
+    }
+    if (real_backend) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    auto resume_result = AudioPlaybackHelper::call_function_sync(
+        AudioPlaybackHelper::FunctionId::Resume, timeout
+    );
+    if (!resume_result) {
+        std::fprintf(stderr, "Audio Resume failed: %s\n", resume_result.error().c_str());
+        return false;
+    }
+    if (real_backend) std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    auto stop_result = AudioPlaybackHelper::call_function_sync(
+        AudioPlaybackHelper::FunctionId::Stop, timeout
+    );
+    if (!stop_result) {
+        std::fprintf(stderr, "Audio Stop failed: %s\n", stop_result.error().c_str());
+        return false;
+    }
+    return true;
+}
+
+auto acquire_audio_recorder()
+{
+    return esp_brookesia::hal::acquire_interface<
+        esp_brookesia::hal::audio::CodecRecorderIface
+    >(esp_brookesia::hal::AudioLinuxDevice::RECORDER_IFACE_NAME);
+}
+
+int test_audio_stub()
+{
+    if (HOST_SIM_MEDIA_BACKEND_FFMPEG_PORTAUDIO_ENABLED) {
+        std::fprintf(stderr, "Stub audio self-test is unavailable with the real media backend\n");
+        return 71;
+    }
+    if (!run_audio_playback_controls("file:///deterministic-stub.wav", false)) return 72;
+
+    auto recorder = acquire_audio_recorder();
+    if (!recorder || !recorder->open()) {
+        std::fprintf(stderr, "Could not open deterministic microphone stub\n");
+        return 73;
+    }
+    esp_brookesia::lib_utils::FunctionGuard close_recorder([&recorder]() {
+        recorder->close();
+    });
+    std::array<uint8_t, 640> samples{};
+    if (!recorder->read_data(samples.data(), samples.size()) ||
+        !std::all_of(samples.begin(), samples.end(), [](uint8_t value) {
+            return value == 0x5A;
+        })) {
+        std::fprintf(stderr, "Microphone stub did not return its deterministic sample pattern\n");
+        return 74;
+    }
+    std::puts("Deterministic audio passed: play/pause/resume/stop + microphone samples");
+    return 0;
+}
+
+void write_u16_le(std::ofstream &stream, uint16_t value)
+{
+    const std::array<char, 2> bytes{{
+        static_cast<char>(value & 0xFFU),
+        static_cast<char>((value >> 8U) & 0xFFU),
+    }};
+    stream.write(bytes.data(), bytes.size());
+}
+
+void write_u32_le(std::ofstream &stream, uint32_t value)
+{
+    write_u16_le(stream, static_cast<uint16_t>(value & 0xFFFFU));
+    write_u16_le(stream, static_cast<uint16_t>((value >> 16U) & 0xFFFFU));
+}
+
+bool write_audio_test_tone(const char *path)
+{
+    constexpr uint32_t sample_rate = 16000;
+    constexpr uint32_t duration_seconds = 3;
+    constexpr uint32_t sample_count = sample_rate * duration_seconds;
+    constexpr uint32_t data_size = sample_count * sizeof(int16_t);
+    constexpr double pi = 3.14159265358979323846;
+
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) return false;
+    stream.write("RIFF", 4);
+    write_u32_le(stream, 36U + data_size);
+    stream.write("WAVEfmt ", 8);
+    write_u32_le(stream, 16);
+    write_u16_le(stream, 1);
+    write_u16_le(stream, 1);
+    write_u32_le(stream, sample_rate);
+    write_u32_le(stream, sample_rate * sizeof(int16_t));
+    write_u16_le(stream, sizeof(int16_t));
+    write_u16_le(stream, 16);
+    stream.write("data", 4);
+    write_u32_le(stream, data_size);
+    for (uint32_t index = 0; index < sample_count; ++index) {
+        const double phase = 2.0 * pi * 440.0 * static_cast<double>(index) /
+            static_cast<double>(sample_rate);
+        const auto sample = static_cast<int16_t>(std::sin(phase) * 5000.0);
+        write_u16_le(stream, static_cast<uint16_t>(sample));
+    }
+    return stream.good();
+}
+
+int test_audio_real()
+{
+    if (!HOST_SIM_MEDIA_BACKEND_FFMPEG_PORTAUDIO_ENABLED) {
+        std::fprintf(stderr,
+                     "Real audio backend is not resolved; configure "
+                     "HOST_SIM_MEDIA_BACKEND=ffmpeg_portaudio\n");
+        return 75;
+    }
+    constexpr const char *tone_path = "/tmp/esp_chatbot_host_audio_test.wav";
+    if (!write_audio_test_tone(tone_path)) {
+        std::fprintf(stderr, "Could not create the temporary audio test tone\n");
+        return 76;
+    }
+    esp_brookesia::lib_utils::FunctionGuard remove_tone([tone_path]() {
+        std::remove(tone_path);
+    });
+    if (!run_audio_playback_controls(tone_path, true)) return 77;
+
+    auto recorder = acquire_audio_recorder();
+    if (!recorder || !recorder->open()) {
+        std::fprintf(stderr, "Could not open the host's default microphone\n");
+        return 78;
+    }
+    esp_brookesia::lib_utils::FunctionGuard close_recorder([&recorder]() {
+        recorder->close();
+    });
+    const auto &info = recorder->get_info();
+    const size_t bytes_per_frame = info.channels * sizeof(int16_t);
+    const size_t frame_count = std::max<size_t>(1, info.sample_rate / 5U);
+    std::vector<uint8_t> samples(frame_count * bytes_per_frame);
+    if (!recorder->read_data(samples.data(), samples.size())) {
+        std::fprintf(stderr, "Could not capture samples from the host's default microphone\n");
+        return 79;
+    }
+    std::printf("Real audio passed: playback controls + %zu microphone bytes (%u Hz, %u ch)\n",
+                samples.size(), info.sample_rate, info.channels);
+    return 0;
+}
+
 int test_power_simulation(InputInjector &input)
 {
     using BatteryIface = esp_brookesia::hal::power::BatteryIface;
@@ -1126,7 +1298,7 @@ int test_persistence_defaults(uint32_t output_id)
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 20> options{{
+    static constexpr std::array<std::string_view, 22> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -1140,6 +1312,8 @@ bool is_self_test_option(std::string_view option)
         "--self-test-quick-buttons",
         "--self-test-brightness-simulation",
         "--self-test-volume-simulation",
+        "--self-test-audio-stub",
+        "--self-test-audio-real",
         "--self-test-power-simulation",
         "--self-test-wifi-mock",
         "--self-test-wifi-real-readonly",
@@ -1174,6 +1348,8 @@ int run_self_test(std::string_view option, const std::string &output_name,
         return test_brightness_simulation(input, backlight_output_id);
     }
     if (option == "--self-test-volume-simulation") return test_volume_simulation(input);
+    if (option == "--self-test-audio-stub") return test_audio_stub();
+    if (option == "--self-test-audio-real") return test_audio_real();
     if (option == "--self-test-power-simulation") return test_power_simulation(input);
     if (option == "--self-test-wifi-mock") {
         if (wifi_adapter == nullptr) return 70;

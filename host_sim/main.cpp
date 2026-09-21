@@ -77,6 +77,8 @@ int run_main(int argc, char **argv)
     const bool self_test_mode = argc == 2 && host_sim::tests::is_self_test_option(argv[1]);
     const bool volume_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-volume-simulation");
+    const bool audio_test_mode = option == "--self-test-audio-stub" ||
+        option == "--self-test-audio-real";
     const bool power_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-power-simulation");
     const bool wifi_runtime_enabled = !screenshot_mode &&
@@ -87,7 +89,8 @@ int run_main(int argc, char **argv)
         option == "--self-test-persistence-defaults";
     const bool persistence_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-factory-reset");
-    const bool audio_service_enabled = volume_runtime_enabled || persistence_test_mode;
+    const bool audio_service_enabled = volume_runtime_enabled || persistence_test_mode ||
+        audio_test_mode;
 
     auto &display_device = hal::DisplayLinuxDevice::get_instance();
     if (!display_device.configure({

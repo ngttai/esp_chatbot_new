@@ -13,6 +13,7 @@ const HostCapabilities &configured_capabilities()
         .display = "sdl2",
         .storage = "linux-filesystem",
         .media = HOST_SIM_MEDIA_BACKEND,
+        .media_resolved = HOST_SIM_MEDIA_BACKEND_RESOLVED,
         .wifi = HOST_SIM_WIFI_BACKEND,
         .wifi_resolved = HOST_SIM_WIFI_BACKEND_RESOLVED,
         .power = HOST_SIM_POWER_BACKEND,
@@ -27,6 +28,7 @@ void print_configured_capabilities(std::ostream &stream)
            << "  display: " << capabilities.display << '\n'
            << "  storage: " << capabilities.storage << '\n'
            << "  media:   " << capabilities.media << '\n'
+           << "  media resolved: " << capabilities.media_resolved << '\n'
            << "  wifi:    " << capabilities.wifi << '\n'
            << "  wifi resolved: " << capabilities.wifi_resolved << '\n'
            << "  power:   " << capabilities.power << '\n';

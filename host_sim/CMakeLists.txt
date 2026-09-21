@@ -152,6 +152,15 @@ add_executable(esp_chatbot_host_sim
 set(HOST_SIM_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOST_SIM_GENERATED_DIR}")
 find_program(HOST_SIM_NMCLI_EXECUTABLE nmcli)
+if((HOST_SIM_MEDIA_BACKEND STREQUAL "auto" OR
+    HOST_SIM_MEDIA_BACKEND STREQUAL "ffmpeg_portaudio") AND
+   BROOKESIA_HAL_LINUX_FFMPEG_PORTAUDIO_FOUND)
+    set(HOST_SIM_MEDIA_BACKEND_FFMPEG_PORTAUDIO_ENABLED 1)
+    set(HOST_SIM_MEDIA_BACKEND_RESOLVED "ffmpeg_portaudio")
+else()
+    set(HOST_SIM_MEDIA_BACKEND_FFMPEG_PORTAUDIO_ENABLED 0)
+    set(HOST_SIM_MEDIA_BACKEND_RESOLVED "stub")
+endif()
 if(HOST_SIM_WIFI_BACKEND STREQUAL "networkmanager" AND
    BROOKESIA_HAL_LINUX_NETWORKMANAGER_FOUND AND
    HOST_SIM_NMCLI_EXECUTABLE)
@@ -203,6 +212,7 @@ if(BUILD_TESTING)
         --self-test-quick-buttons
         --self-test-brightness-simulation
         --self-test-volume-simulation
+        --self-test-audio-stub
         --self-test-power-simulation
         --self-test-persistence-write
         --self-test-persistence-read
@@ -211,6 +221,9 @@ if(BUILD_TESTING)
     )
     if(NOT HOST_SIM_WIFI_BACKEND_NETWORKMANAGER_ENABLED)
         list(APPEND SPEAKER_UI_SELF_TEST_OPTIONS --self-test-wifi-mock)
+    endif()
+    if(HOST_SIM_MEDIA_BACKEND_FFMPEG_PORTAUDIO_ENABLED)
+        list(REMOVE_ITEM SPEAKER_UI_SELF_TEST_OPTIONS --self-test-audio-stub)
     endif()
     foreach(SELF_TEST_OPTION IN LISTS SPEAKER_UI_SELF_TEST_OPTIONS)
         string(REPLACE "--self-test-" "" SELF_TEST_NAME "${SELF_TEST_OPTION}")

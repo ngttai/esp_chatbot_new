@@ -8,6 +8,7 @@ struct HostCapabilities {
     const char *display;
     const char *storage;
     const char *media;
+    const char *media_resolved;
     const char *wifi;
     const char *wifi_resolved;
     const char *power;

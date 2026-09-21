@@ -78,9 +78,10 @@ only when that exact value is selected; Wi-Fi `auto` intentionally remains on
 the safe stub. Keep `stub` for normal development and CI. Camera, video, and BLE
 are outside this simulator's scope and remain disabled.
 
-The simulator currently covers the display/touch path and UI interactions. Audio
-AFE/wake-word, flash partitions, provisioning, and concrete AI-agent components
-remain firmware-only and are not started by this host target.
+The simulator covers the display/touch path, UI interactions, audio playback,
+and microphone capture. ESP AFE/wake-word/echo cancellation, flash partitions,
+provisioning, and concrete AI-agent components remain firmware-only and are not
+started by this host target.
 
 ## UI controls
 
@@ -254,6 +255,35 @@ Audio Playback service:
 ```sh
 ./build-host/esp_chatbot_host_sim --self-test-volume-simulation
 ```
+
+The default media stub also has a deterministic playback/microphone test. It
+does not access the computer's speaker or microphone:
+
+```sh
+SDL_VIDEODRIVER=dummy \
+  ./build-host/esp_chatbot_host_sim --self-test-audio-stub
+```
+
+Real audio is opt-in. Install FFmpeg/PortAudio development packages, configure
+the explicit backend, and confirm `media resolved: ffmpeg_portaudio` before
+running the manual device test:
+
+```sh
+sudo apt install ffmpeg libavformat-dev libavcodec-dev libavutil-dev \
+  libswresample-dev libswscale-dev libavdevice-dev portaudio19-dev
+
+cmake -S host_sim -B build-host-audio -G Ninja \
+  -DHOST_SIM_MEDIA_BACKEND=ffmpeg_portaudio
+cmake --build build-host-audio
+./build-host-audio/esp_chatbot_host_sim --print-capabilities
+SDL_VIDEODRIVER=dummy \
+  ./build-host-audio/esp_chatbot_host_sim --self-test-audio-real
+```
+
+The real test plays a short generated tone and captures about 200 ms from the
+default microphone. Captured samples are not saved; the temporary tone is
+deleted when the test exits. This manual test is intentionally not registered
+with CTest because it accesses real host devices.
 
 The power test verifies the deterministic battery state and the unchanged Quick
 Settings widgets:

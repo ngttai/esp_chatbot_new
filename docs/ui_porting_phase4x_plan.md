@@ -194,6 +194,29 @@ Trạng thái: **COMPLETE (2026-09-21)**.
 
 Checkpoint: `P4.7 Host audio pass`.
 
+Tiến độ:
+
+- Capability output phân biệt media backend được yêu cầu và backend thực tế đã
+  resolve (`stub` hoặc `ffmpeg_portaudio`).
+- Playback test đi qua đúng Brookesia `AudioPlayback` service với chuỗi
+  play/pause/resume/stop.
+- Microphone test đọc đúng `AudioLinux:Recorder`; stub mặc định trả mẫu `0x5A`
+  deterministic và không chạm speaker/microphone của máy tính.
+- Self-test mặc định `--self-test-audio-stub` đã được thêm vào CTest.
+- Self-test thật `--self-test-audio-real` tạo tone WAV tạm, phát qua
+  FFmpeg/PortAudio và capture khoảng 200 ms từ microphone mặc định; không lưu
+  sample thu âm và không chạy trong CI.
+- Khi dependency thật chưa có, `auto` resolve về `stub` và test thật từ chối
+  chạy rõ ràng, không giả báo pass.
+- Regression stub: **21/21 CTest pass**.
+- Build opt-in đã resolve đúng `media resolved: ffmpeg_portaudio`; CTest build
+  thật không đăng ký audio stub.
+- Self-test thật đã phát tone qua FFmpeg/PortAudio và capture thành công
+  **12.800 byte**, **16 kHz**, **2 channel** từ microphone mặc định.
+- Không thêm AFE, wake word hoặc echo cancellation giả lập.
+
+Trạng thái: **COMPLETE (2026-09-21)**.
+
 ## P4.8 — Clock, SNTP và Weather
 
 - Mock cố định tiếp tục dùng cho screenshot regression.
