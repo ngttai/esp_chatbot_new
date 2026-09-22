@@ -101,6 +101,11 @@ the original Clock/UI files remain unchanged.
 The host target includes the exact Launcher, Quick Settings, Settings, AI Profile,
 and Clock UI from the source simulator.
 
+The host keyboard adapter keeps the imported UI files unchanged while applying
+two requested WLAN password keyboard refinements: Number and Special have no
+hide-key button, and Special contains separate comma and period keys. Lowercase
+and uppercase retain their existing hide-key behavior.
+
 ## Simulated brightness
 
 The Linux HAL simulates LCD backlight brightness by applying a black alpha

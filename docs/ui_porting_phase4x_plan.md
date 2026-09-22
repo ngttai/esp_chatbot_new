@@ -275,6 +275,18 @@ Kết quả:
 
 Trạng thái: **COMPLETE (2026-09-21)**.
 
+## Post-P4.9 — WLAN keyboard refinement
+
+- Giữ nguyên toàn bộ source UI import; thay đổi được áp dụng bằng host adapter.
+- Number keyboard bỏ nút ẩn bàn phím.
+- Special keyboard bỏ nút ẩn và có hai phím riêng `,` và `.`.
+- Lowercase/uppercase giữ nguyên nút ẩn hiện tại.
+- WLAN keyboard self-test kiểm tra trực tiếp cả bốn layout.
+- Regression gate: **22/22 CTest pass**, visual parity pass và **74/74 UI hash
+  pass**.
+
+Trạng thái: **COMPLETE (2026-09-22)**.
+
 ## Thứ tự thực hiện
 
 ```text

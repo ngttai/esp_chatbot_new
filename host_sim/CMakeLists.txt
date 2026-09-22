@@ -156,6 +156,7 @@ list(FILTER SPEAKER_UI_SOURCES EXCLUDE REGEX "/src/flip_clock/weather_source\\.c
 add_executable(esp_chatbot_host_sim
     brightness_adapter.cpp
     host_capabilities.cpp
+    keyboard_adapter.cpp
     main.cpp
     persistence_adapter.cpp
     power_adapter.cpp

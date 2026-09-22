@@ -20,6 +20,7 @@
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "input_injector.hpp"
+#include "keyboard_adapter.hpp"
 #include "persistence_adapter.hpp"
 #include "wifi_adapter.hpp"
 #include "weather_adapter.hpp"
@@ -468,6 +469,12 @@ int test_wlan_keyboard(InputInjector &input)
         std::fprintf(stderr,
                      "Opening the WLAN password screen should show a keyboard bound to the password field\n");
         return 25;
+    }
+
+    if (!with_ui_lock([]() { return keyboard_layout_tweaks_are_active(); })) {
+        std::fprintf(stderr,
+                     "Number/special keyboard layouts do not match the requested key set\n");
+        return 94;
     }
 
     with_ui_lock([]() {

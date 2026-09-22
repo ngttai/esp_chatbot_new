@@ -24,6 +24,7 @@
 #include "brookesia/service_manager.hpp"
 #include "brightness_adapter.hpp"
 #include "host_capabilities.hpp"
+#include "keyboard_adapter.hpp"
 #include "persistence_adapter.hpp"
 #include "power_adapter.hpp"
 #include "screenshot_capture.hpp"
@@ -218,7 +219,11 @@ int run_main(int argc, char **argv)
     gui::lvgl::lock_thread();
     speaker_ui_create();
     speaker_ui_set_input(input);
+    const bool keyboard_tweaks_applied = host_sim::apply_keyboard_layout_tweaks();
     gui::lvgl::unlock_thread();
+    if (!keyboard_tweaks_applied) {
+        return fail("keyboard adapter", "could not locate the WLAN keyboard");
+    }
 
     host_sim::BrightnessAdapter brightness_adapter;
     if (!screenshot_mode && backlight_output != outputs.end()) {
