@@ -24,7 +24,7 @@ const char *const special_map[] = {
     WLAN_KB_PHR_STR, "~", "@", "#", "!", "%", "&", "*", "(", ")", WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, WLAN_KB_LOWER_STR, "'", "/", "-", "_", ":", ";", "?",
     WLAN_KB_PHR_STR, "\n",
-    WLAN_KB_PHR_STR, WLAN_KB_NUMBER_STR, ",", ".", WLAN_KB_SPACE_STR,
+    WLAN_KB_PHR_STR, WLAN_KB_NUMBER_STR, ",", WLAN_KB_SPACE_STR, ".",
     LV_SYMBOL_BACKSPACE, WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, LV_SYMBOL_LEFT, LV_SYMBOL_OK, LV_SYMBOL_RIGHT, WLAN_KB_PHR_STR, ""
 };
@@ -36,7 +36,7 @@ const lv_buttonmatrix_ctrl_t special_ctrl[] = {
     WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(1),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2),
     WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
-    WLAN_KB_PHR(2), WLAN_KB_BTN(3), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(5),
+    WLAN_KB_PHR(2), WLAN_KB_BTN(3), WLAN_KB_BTN(2), WLAN_KB_BTN(5), WLAN_KB_BTN(2),
     WLAN_KB_BTN(4), WLAN_KB_PHR(2),
     WLAN_KB_PHR(3), WLAN_KB_BTN(4), WLAN_KB_BTN(6), WLAN_KB_BTN(4), WLAN_KB_PHR(3)
 };
@@ -49,7 +49,7 @@ const char *const number_map[] = {
 };
 
 const lv_buttonmatrix_ctrl_t number_ctrl[] = {
-    WLAN_KB_PHR(1), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(3),
+    WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2)
@@ -75,6 +75,20 @@ bool map_contains(const char *const *map, const char *text)
     return false;
 }
 
+bool map_contains_sequence(const char *const *map, const char *const *sequence, size_t count)
+{
+    if (map == nullptr || sequence == nullptr || count == 0) return false;
+    for (size_t start = 0; map[start][0] != '\0'; ++start) {
+        size_t offset = 0;
+        while (offset < count && map[start + offset][0] != '\0' &&
+               std::strcmp(map[start + offset], sequence[offset]) == 0) {
+            ++offset;
+        }
+        if (offset == count) return true;
+    }
+    return false;
+}
+
 bool active_map_contains(lv_keyboard_mode_t mode, const char *text)
 {
     lv_keyboard_set_mode(keyboard, mode);
@@ -96,11 +110,26 @@ bool apply_keyboard_layout_tweaks()
 bool keyboard_layout_tweaks_are_active()
 {
     if (keyboard == nullptr) return false;
+    static const char *const special_function_row[] = {
+        WLAN_KB_NUMBER_STR, ",", WLAN_KB_SPACE_STR, ".", LV_SYMBOL_BACKSPACE
+    };
+    static const char *const number_first_row[] = {
+        WLAN_KB_PHR_STR, "1", "2", "3", LV_SYMBOL_BACKSPACE, WLAN_KB_PHR_STR
+    };
     const lv_keyboard_mode_t original_mode = lv_keyboard_get_mode(keyboard);
-    const bool special_is_valid = active_map_contains(LV_KEYBOARD_MODE_SPECIAL, ",") &&
-                                  active_map_contains(LV_KEYBOARD_MODE_SPECIAL, ".") &&
-                                  !active_map_contains(LV_KEYBOARD_MODE_SPECIAL, LV_SYMBOL_KEYBOARD);
-    const bool number_is_valid = !active_map_contains(LV_KEYBOARD_MODE_NUMBER, LV_SYMBOL_KEYBOARD);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_SPECIAL);
+    const auto *active_special_map = lv_keyboard_get_map_array(keyboard);
+    const bool special_is_valid =
+        map_contains_sequence(active_special_map, special_function_row,
+                              sizeof(special_function_row) / sizeof(special_function_row[0])) &&
+        !map_contains(active_special_map, LV_SYMBOL_KEYBOARD);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_NUMBER);
+    const auto *active_number_map = lv_keyboard_get_map_array(keyboard);
+    const bool number_is_valid =
+        map_contains_sequence(active_number_map, number_first_row,
+                              sizeof(number_first_row) / sizeof(number_first_row[0])) &&
+        !map_contains(active_number_map, LV_SYMBOL_KEYBOARD) &&
+        (number_ctrl[0] & 0x0F) == (number_ctrl[5] & 0x0F);
     const bool text_modes_unchanged = active_map_contains(LV_KEYBOARD_MODE_TEXT_LOWER,
                                                           LV_SYMBOL_KEYBOARD) &&
                                       active_map_contains(LV_KEYBOARD_MODE_TEXT_UPPER,

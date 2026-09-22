@@ -103,8 +103,9 @@ and Clock UI from the source simulator.
 
 The host keyboard adapter keeps the imported UI files unchanged while applying
 two requested WLAN password keyboard refinements: Number and Special have no
-hide-key button, and Special contains separate comma and period keys. Lowercase
-and uppercase retain their existing hide-key behavior.
+hide-key button, the Number `1 2 3 Backspace` row is centered, and Special uses
+the function-key order `123 , Space . Backspace`. Lowercase and uppercase retain
+their existing hide-key behavior.
 
 ## Simulated brightness
 
