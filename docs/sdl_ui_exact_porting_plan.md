@@ -168,6 +168,10 @@ Tiêu chí hoàn thành: tất cả màn đạt visual parity hoặc có báo c�
 
 ## Phase 5 — Build nguyên UI trong ESP-IDF
 
+Trạng thái build checkpoint: **COMPLETE (2026-09-22)**. Source UI đã compile nguyên
+vẹn vào `main` component; xem `docs/ui_porting_phase5.md`. Việc nối lifecycle vào
+Display và xác nhận LCD 360×360 vẫn thuộc Phase 6 và Phase 7.
+
 1. Đưa cùng source UI vào `main` component.
 2. Bật các cấu hình LVGL cần thiết trong `sdkconfig.defaults`.
 3. Không thêm mock SDL vào firmware.
@@ -270,7 +274,7 @@ P1: Source integrity pass — COMPLETE (2026-09-18)
 P2: Host build pass — COMPLETE (2026-09-18)
 P3: 11/11 self-test pass — COMPLETE (2026-09-18)
 P4: Visual parity pass — COMPLETE (2026-09-18)
-P5: ESP-IDF build pass
+P5: ESP-IDF build pass — COMPLETE (2026-09-22)
 P6: Shell integration pass
 P7: VoCat runtime pass
 P8: Service integration

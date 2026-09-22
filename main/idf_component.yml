@@ -1,5 +1,13 @@
 ## IDF Component Manager Manifest File
 dependencies:
+  # The main component creates the littlefs_data partition image directly.
+  joltwallet/littlefs:
+    version: "1.*"
+
+  # 0.8.4 contains the packaged ESP-IDF CMake fix; 0.8.5 expects unreleased HAL headers.
+  espressif/brookesia_service_helper:
+    version: "0.8.4"
+
   # Hal
   espressif/brookesia_hal_adaptor:
     version: "0.8.*"

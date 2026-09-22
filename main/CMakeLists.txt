@@ -11,8 +11,21 @@ endif()
 
 idf_component_register(
     SRCS ${SRCS}
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS
+        "."
+        "compat"
+        "modules/display/speaker_ui/src"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/apps/brookesia_app_ai_profile/ui"
     EMBED_TXTFILES ${EMBEDDED_FILES}
+)
+
+# Keep imported UI sources byte-identical while accepting their LVGL integer format.
+set_source_files_properties(
+    "${CMAKE_CURRENT_LIST_DIR}/modules/display/speaker_ui/src/speaker_ui.c"
+    PROPERTIES COMPILE_OPTIONS "-Wno-error=format"
 )
 
 littlefs_create_partition_image(littlefs_data ../littlefs FLASH_IN_PROJECT)
