@@ -195,6 +195,10 @@ Tiêu chí hoàn thành:
 
 ## Phase 6 — Tích hợp shell vào Display
 
+Trạng thái tích hợp build/link: **COMPLETE (2026-09-22)**. Wrapper firmware đã chọn
+Speaker UI làm shell chính, lấy input từ Brookesia LVGL và giữ nguyên navigation nội
+bộ; xem `docs/ui_porting_phase6.md`. Xác nhận LCD/touch thật thuộc Phase 7.
+
 Tạo wrapper tối thiểu, ví dụ:
 
 ```text
@@ -275,7 +279,7 @@ P2: Host build pass — COMPLETE (2026-09-18)
 P3: 11/11 self-test pass — COMPLETE (2026-09-18)
 P4: Visual parity pass — COMPLETE (2026-09-18)
 P5: ESP-IDF build pass — COMPLETE (2026-09-22)
-P6: Shell integration pass
+P6: Shell integration pass — COMPLETE (2026-09-22)
 P7: VoCat runtime pass
 P8: Service integration
 ```

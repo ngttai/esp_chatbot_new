@@ -13,6 +13,7 @@
 #include "brookesia/service_manager.hpp"
 #include "brookesia/service_helper/media/display.hpp"
 #include "screens/common.hpp"
+#include "screens/speaker_shell.hpp"
 
 class Display {
 public:
@@ -70,6 +71,7 @@ private:
     Display &operator=(Display &&) = delete;
 
     bool start_lvgl_display_source();
+    bool start_speaker_shell();
     bool start_display_service();
     bool start_expression_emote_assets();
     bool start_gesture();
@@ -95,5 +97,6 @@ private:
     esp_brookesia::service::EventRegistry::SignalConnection gesture_event_connection_;
 
     std::unique_ptr<esp_brookesia::lib_utils::StateMachine> ui_state_machine_;
+    std::unique_ptr<ScreenSpeakerShell> speaker_shell_;
     bool is_ui_state_action_triggered_ = false;
 };

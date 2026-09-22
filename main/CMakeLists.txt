@@ -28,6 +28,34 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-Wno-error=format"
 )
 
+# LVGL and the Emote graphics component both bundle Nayuki qrcodegen with public
+# symbols. Prefix LVGL's private copy so the imported SoftAP QR screen can coexist
+# with the existing Emote dependency in the same firmware image.
+idf_component_get_property(LVGL_COMPONENT_LIB lvgl__lvgl COMPONENT_LIB)
+set(LVGL_QRCODEGEN_SYMBOLS
+    qrcodegen_calcSegmentBufferSize
+    qrcodegen_encodeBinary
+    qrcodegen_encodeSegments
+    qrcodegen_encodeSegmentsAdvanced
+    qrcodegen_encodeText
+    qrcodegen_getMinFitVersion
+    qrcodegen_getModule
+    qrcodegen_getSize
+    qrcodegen_isAlphanumeric
+    qrcodegen_isNumeric
+    qrcodegen_makeAlphanumeric
+    qrcodegen_makeBytes
+    qrcodegen_makeEci
+    qrcodegen_makeNumeric
+    qrcodegen_version2size
+)
+foreach(QRCODEGEN_SYMBOL IN LISTS LVGL_QRCODEGEN_SYMBOLS)
+    target_compile_definitions(
+        ${LVGL_COMPONENT_LIB} PRIVATE
+        "${QRCODEGEN_SYMBOL}=lvgl_${QRCODEGEN_SYMBOL}"
+    )
+endforeach()
+
 littlefs_create_partition_image(littlefs_data ../littlefs FLASH_IN_PROJECT)
 
 set(ASSETS_PARTITION_NAME "anim_icon")

@@ -17,6 +17,7 @@
 #include "brookesia/gui_lvgl.hpp"
 #include "screens/settings.hpp"
 #include "screens/emote.hpp"
+#include "screens/speaker_shell.hpp"
 #include "display.hpp"
 
 using namespace esp_brookesia;
@@ -44,18 +45,12 @@ bool Display::start(const Config &config)
 
     BROOKESIA_CHECK_FALSE_RETURN(start_display_service(), false, "Failed to start display service");
 
-    // Start LVGL and expression emote first
+    // The imported Speaker UI owns the LVGL screen lifecycle and navigation.
     BROOKESIA_CHECK_FALSE_RETURN(
         start_lvgl_display_source(), false, "Failed to start LVGL"
     );
-    BROOKESIA_CHECK_FALSE_RETURN(
-        start_expression_emote_assets(), false, "Failed to start expression emote"
-    );
     BROOKESIA_CHECK_FALSE_RETURN(set_active_source_role(DrawSource::Lvgl), false, "Failed to activate LVGL source");
-    BROOKESIA_CHECK_FALSE_RETURN(start_ui_state_machine(), false, "Failed to start UI state machine");
-
-    // Start gesture detection
-    BROOKESIA_CHECK_FALSE_RETURN(start_gesture(), false, "Failed to start gesture");
+    BROOKESIA_CHECK_FALSE_RETURN(start_speaker_shell(), false, "Failed to start Speaker UI shell");
 
     auto delayed_task = []() {
         auto result = DisplayHelper::call_function_async(
@@ -120,6 +115,19 @@ bool Display::start_lvgl_display_source()
 
     auto &source = LvglDisplaySource::get_instance();
     BROOKESIA_CHECK_FALSE_RETURN(source.start(config), false, "Failed to start LVGL display source");
+
+    return true;
+}
+
+bool Display::start_speaker_shell()
+{
+    BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+
+    BROOKESIA_CHECK_EXCEPTION_RETURN(
+        speaker_shell_ = std::make_unique<ScreenSpeakerShell>(), false,
+        "Failed to create Speaker UI shell"
+    );
+    BROOKESIA_CHECK_FALSE_RETURN(speaker_shell_->start(), false, "Failed to initialize Speaker UI shell");
 
     return true;
 }
