@@ -128,7 +128,7 @@ bool Display::start_speaker_shell()
         "Failed to create Speaker UI shell"
     );
     BROOKESIA_CHECK_FALSE_RETURN(
-        speaker_shell_->start(display_output_id_), false, "Failed to initialize Speaker UI shell"
+        speaker_shell_->start(display_output_id_, task_scheduler_), false, "Failed to initialize Speaker UI shell"
     );
 
     return true;
