@@ -127,7 +127,9 @@ bool Display::start_speaker_shell()
         speaker_shell_ = std::make_unique<ScreenSpeakerShell>(), false,
         "Failed to create Speaker UI shell"
     );
-    BROOKESIA_CHECK_FALSE_RETURN(speaker_shell_->start(), false, "Failed to initialize Speaker UI shell");
+    BROOKESIA_CHECK_FALSE_RETURN(
+        speaker_shell_->start(display_output_id_), false, "Failed to initialize Speaker UI shell"
+    );
 
     return true;
 }
