@@ -108,6 +108,7 @@ private:
     bool wifi_events_subscribed_ = false;
     bool wifi_handlers_attached_ = false;
     bool wifi_screen_was_active_ = false;
+    bool wifi_scan_after_enable_pending_ = false;
     bool wifi_open_ap_pending_ = false;
     uint8_t wifi_open_ap_countdown_ = 0;
     size_t wifi_scan_visible_count_ = 0;

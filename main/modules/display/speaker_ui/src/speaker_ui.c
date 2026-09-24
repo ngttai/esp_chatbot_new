@@ -117,6 +117,7 @@ static lv_obj_t *wlan_keyboard_container, *wlan_keyboard;
  * NVS-backed flag) onto the Settings > WLAN switch, the Quick Settings Wi-Fi button and
  * status icon, and the visibility of the WLAN screen's connected/available/SoftAP groups. */
 static bool wlan_enabled = true;
+static bool wlan_managed_externally = false;
 static lv_indev_t *gesture_input;
 static lv_timer_t *gesture_poll_timer;
 static int page_index;
@@ -1064,7 +1065,7 @@ static void set_wlan_enabled(bool enabled, lv_obj_t *source)
     for(size_t i = 0; i < sizeof(wlan_network_rows) / sizeof(wlan_network_rows[0]); i++) {
         if(wlan_network_rows[i] != NULL) lv_obj_add_flag(wlan_network_rows[i], LV_OBJ_FLAG_HIDDEN);
     }
-    if(enabled) {
+    if(enabled && !wlan_managed_externally) {
         wlan_entry_list_timer = lv_timer_create(wlan_entry_reveal_list_cb, 3200, NULL);
         lv_timer_set_repeat_count(wlan_entry_list_timer, 1);
         wlan_entry_connect_timer = lv_timer_create(wlan_entry_reveal_connected_cb, 4100, NULL);
@@ -1707,6 +1708,20 @@ void speaker_ui_set_input(lv_indev_t *input)
     lv_indev_add_event_cb(input, input_gesture_event, LV_EVENT_RELEASED, NULL);
     lv_indev_add_event_cb(input, input_gesture_event, LV_EVENT_PRESS_LOST, NULL);
     if(gesture_poll_timer == NULL) gesture_poll_timer = lv_timer_create(poll_home_gesture, 20, NULL);
+}
+
+void speaker_ui_set_wifi_managed_externally(bool managed)
+{
+    wlan_managed_externally = managed;
+    if(!managed) return;
+
+    if(wlan_entry_list_timer != NULL) { lv_timer_delete(wlan_entry_list_timer); wlan_entry_list_timer = NULL; }
+    if(wlan_entry_connect_timer != NULL) { lv_timer_delete(wlan_entry_connect_timer); wlan_entry_connect_timer = NULL; }
+    if(wlan_entry_settle_timer != NULL) { lv_timer_delete(wlan_entry_settle_timer); wlan_entry_settle_timer = NULL; }
+    if(settings_wlan_connected_group != NULL) lv_obj_add_flag(settings_wlan_connected_group, LV_OBJ_FLAG_HIDDEN);
+    for(size_t i = 0; i < sizeof(wlan_network_rows) / sizeof(wlan_network_rows[0]); i++) {
+        if(wlan_network_rows[i] != NULL) lv_obj_add_flag(wlan_network_rows[i], LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 bool speaker_ui_is_launcher_active(void)

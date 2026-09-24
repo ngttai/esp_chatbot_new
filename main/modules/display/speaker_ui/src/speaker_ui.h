@@ -6,6 +6,7 @@
 
 void speaker_ui_create(void);
 void speaker_ui_set_input(lv_indev_t *input);
+void speaker_ui_set_wifi_managed_externally(bool managed);
 bool speaker_ui_is_launcher_active(void);
 bool speaker_ui_is_idle_active(void);
 bool speaker_ui_is_screen_active(const char *screen_name);

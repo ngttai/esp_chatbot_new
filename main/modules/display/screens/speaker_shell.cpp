@@ -154,6 +154,7 @@ bool ScreenSpeakerShell::start(
     });
 
     speaker_ui_create();
+    speaker_ui_set_wifi_managed_externally(true);
     speaker_ui_set_input(input);
 
     display_output_id_ = display_output_id;
@@ -575,8 +576,18 @@ void ScreenSpeakerShell::poll_wifi()
     ensure_wifi_event_subscriptions();
 
     const bool enabled = speaker_ui_is_wlan_on();
+    const bool wlan_active = speaker_ui_is_screen_active("wlan");
     if (enabled != last_wlan_enabled_) {
         last_wlan_enabled_ = enabled;
+        wifi_scan_after_enable_pending_ = enabled && wlan_active;
+        if (!enabled) {
+            wifi_state_ = static_cast<int>(WifiHelper::GeneralState::Max);
+        }
+        {
+            std::lock_guard lock(wifi_scan_mutex_);
+            wifi_scan_entries_.clear();
+        }
+        wifi_scan_dirty_ = true;
         request_wifi_enabled(enabled);
     }
 
@@ -584,16 +595,19 @@ void ScreenSpeakerShell::poll_wifi()
         wifi_state_poll_count_ = 0;
         request_wifi_state();
     }
-    const bool wlan_active = speaker_ui_is_screen_active("wlan");
     if (wlan_active) {
         attach_wifi_ui_handlers();
         const bool connecting = wifi_state_.load() == static_cast<int>(WifiHelper::GeneralState::Connecting);
-        if (!wifi_screen_was_active_ && enabled && !connecting && !wifi_connect_in_flight_.load()) {
+        const bool scan_after_enable = wifi_scan_after_enable_pending_ && !wifi_action_in_flight_.load();
+        if ((!wifi_screen_was_active_ || scan_after_enable) && enabled && !connecting &&
+                !wifi_connect_in_flight_.load()) {
+            wifi_scan_after_enable_pending_ = false;
             request_wifi_scan();
         }
         update_wifi_scan_ui();
         update_wifi_status_ui();
     } else if (wifi_screen_was_active_) {
+        wifi_scan_after_enable_pending_ = false;
         request_wifi_scan_stop();
     }
     wifi_screen_was_active_ = wlan_active;
@@ -743,6 +757,7 @@ void ScreenSpeakerShell::request_wifi_state()
                     }
                 }
             }
+            wifi_scan_dirty_ = true;
         } else {
             BROOKESIA_LOGE("Failed to query Speaker UI WiFi state: %1%", state_result.error());
         }
@@ -784,7 +799,7 @@ void ScreenSpeakerShell::ensure_wifi_event_subscriptions()
         });
 
         std::vector<WifiScanEntry> entries;
-        entries.reserve(3);
+        entries.reserve(ap_infos.size());
         for (const auto &ap : ap_infos) {
             if (ap.ssid.empty() || std::any_of(entries.begin(), entries.end(), [&](const auto &entry) {
                     return entry.ssid == ap.ssid;
@@ -792,9 +807,6 @@ void ScreenSpeakerShell::ensure_wifi_event_subscriptions()
                 continue;
             }
             entries.push_back({.ssid = ap.ssid, .locked = ap.is_locked, .rssi = ap.rssi});
-            if (entries.size() == 3) {
-                break;
-            }
         }
         {
             std::lock_guard lock(wifi_scan_mutex_);
@@ -966,16 +978,26 @@ void ScreenSpeakerShell::update_wifi_scan_ui()
             std::lock_guard lock(wifi_scan_mutex_);
             entries = wifi_scan_entries_;
         }
-        wifi_scan_visible_count_ = entries.size();
+        std::string connected_ssid;
+        if (wifi_state_.load() == static_cast<int>(service::helper::Wifi::GeneralState::Connected)) {
+            std::lock_guard lock(wifi_state_mutex_);
+            connected_ssid = wifi_ssid_;
+        }
+        wifi_scan_visible_count_ = 0;
 
-        for (size_t index = 0; index < entries.size(); ++index) {
+        for (const auto &entry : entries) {
+            if (!connected_ssid.empty() && (entry.ssid == connected_ssid)) {
+                continue;
+            }
+            if (wifi_scan_visible_count_ >= wifi_network_rows_.size()) {
+                break;
+            }
+            const size_t index = wifi_scan_visible_count_++;
             auto *row = wifi_network_rows_[index];
             auto *label = wifi_network_labels_[index];
             if ((row == nullptr) || (label == nullptr)) {
                 continue;
             }
-
-            const auto &entry = entries[index];
             lv_label_set_text(label, entry.ssid.c_str());
             lv_obj_remove_flag(row, LV_OBJ_FLAG_HIDDEN);
 
@@ -1031,8 +1053,11 @@ void ScreenSpeakerShell::update_wifi_status_ui()
     }
 
     const int state = wifi_state_.load();
-    const bool connected = state == static_cast<int>(WifiHelper::GeneralState::Connected);
-    const bool connecting = state == static_cast<int>(WifiHelper::GeneralState::Connecting);
+    const bool wlan_enabled = speaker_ui_is_wlan_on();
+    const bool connected = wlan_enabled &&
+                           (state == static_cast<int>(WifiHelper::GeneralState::Connected));
+    const bool connecting = wlan_enabled &&
+                            (state == static_cast<int>(WifiHelper::GeneralState::Connecting));
     if (wifi_connected_group_ != nullptr) {
         if (connected || connecting) {
             lv_obj_remove_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
@@ -1043,7 +1068,7 @@ void ScreenSpeakerShell::update_wifi_status_ui()
     if (wifi_connected_status_label_ != nullptr) {
         lv_label_set_text(wifi_connected_status_label_, connected ? "Connected" : "Connecting...");
     }
-    if (connected && (wifi_connected_name_label_ != nullptr)) {
+    if ((connected || connecting) && (wifi_connected_name_label_ != nullptr)) {
         std::lock_guard lock(wifi_state_mutex_);
         if (!wifi_ssid_.empty()) {
             lv_label_set_text(wifi_connected_name_label_, wifi_ssid_.c_str());
