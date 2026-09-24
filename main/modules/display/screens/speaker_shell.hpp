@@ -32,6 +32,7 @@ private:
     };
 
     static void service_timer_callback(lv_timer_t *timer);
+    static void factory_reset_clicked_callback(lv_event_t *event);
     static void wifi_network_selected_callback(lv_event_t *event);
     static void wifi_password_ready_callback(lv_event_t *event);
     void poll_service_controls();
@@ -39,6 +40,11 @@ private:
     void poll_volume();
     void poll_wifi();
     void poll_memory();
+    void poll_factory_reset();
+    void perform_factory_reset();
+    void ensure_control_event_subscriptions();
+    void refresh_control_state();
+    void sync_service_control_ui();
     void apply_brightness(int percent);
     void apply_quick_volume(int level);
     void apply_volume(int percent);
@@ -67,10 +73,18 @@ private:
     int last_slider_volume_ = -1;
     int pending_slider_volume_ = -1;
     uint8_t volume_slider_stable_poll_count_ = 0;
+    std::atomic_int service_brightness_{-1};
+    std::atomic_int service_volume_{-1};
+    std::atomic_int service_muted_{-1};
+    int synced_service_brightness_ = -1;
+    int synced_effective_volume_ = -1;
+    bool control_events_subscribed_ = false;
     lv_obj_t *memory_internal_bar_ = nullptr;
     lv_obj_t *memory_external_bar_ = nullptr;
     uint16_t memory_poll_count_ = 0;
     bool memory_snapshot_logged_ = false;
+    bool factory_reset_handler_attached_ = false;
+    bool factory_reset_in_progress_ = false;
     lv_obj_t *wifi_connected_group_ = nullptr;
     lv_obj_t *wifi_connected_name_label_ = nullptr;
     lv_obj_t *wifi_connected_status_label_ = nullptr;
@@ -99,4 +113,7 @@ private:
     size_t wifi_scan_visible_count_ = 0;
     std::atomic_bool wifi_scan_dirty_{false};
     esp_brookesia::service::EventRegistry::SignalConnection wifi_scan_event_connection_;
+    esp_brookesia::service::EventRegistry::SignalConnection brightness_event_connection_;
+    esp_brookesia::service::EventRegistry::SignalConnection volume_event_connection_;
+    esp_brookesia::service::EventRegistry::SignalConnection mute_event_connection_;
 };

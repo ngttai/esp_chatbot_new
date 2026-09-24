@@ -23,6 +23,8 @@ bool speaker_ui_get_quick_volume_button_center(int32_t *x, int32_t *y);
 bool speaker_ui_get_quick_brightness_button_center(int32_t *x, int32_t *y);
 int speaker_ui_get_quick_volume_level(void);
 int speaker_ui_get_quick_brightness_level(void);
+bool speaker_ui_set_quick_volume_level(int level);
+bool speaker_ui_set_quick_brightness_level(int level);
 bool speaker_ui_is_wlan_keyboard_visible(void);
 bool speaker_ui_wlan_keyboard_bound(void);
 bool speaker_ui_set_wlan_password(const char *text);

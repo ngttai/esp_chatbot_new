@@ -4,8 +4,10 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 #include "esp_lv_adapter.h"
+#include "esp_system.h"
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <string_view>
 #include "private/utils.hpp"
 #include "brookesia/gui_lvgl.hpp"
@@ -106,6 +108,21 @@ const lv_image_dsc_t *wifi_signal_image(int rssi)
     return &esp_brookesia_app_icon_wlan_level1_36_36;
 }
 
+template <size_t N>
+int nearest_level(int percent, const std::array<int, N> &levels)
+{
+    int best_level = 0;
+    int best_distance = std::abs(percent - levels[0]);
+    for (size_t index = 1; index < levels.size(); ++index) {
+        const int distance = std::abs(percent - levels[index]);
+        if (distance < best_distance) {
+            best_level = static_cast<int>(index);
+            best_distance = distance;
+        }
+    }
+    return best_level;
+}
+
 } // namespace
 
 bool ScreenSpeakerShell::start(
@@ -144,6 +161,8 @@ bool ScreenSpeakerShell::start(
     last_quick_brightness_level_ = speaker_ui_get_quick_brightness_level();
     last_quick_volume_level_ = speaker_ui_get_quick_volume_level();
     last_wlan_enabled_ = speaker_ui_is_wlan_on();
+    ensure_control_event_subscriptions();
+    refresh_control_state();
     service_timer_ = lv_timer_create(service_timer_callback, SERVICE_POLL_PERIOD_MS, this);
     BROOKESIA_CHECK_NULL_RETURN(service_timer_, false, "Failed to create Speaker UI service adapter timer");
 
@@ -163,10 +182,177 @@ void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)
 
 void ScreenSpeakerShell::poll_service_controls()
 {
+    sync_service_control_ui();
     poll_brightness();
     poll_volume();
     poll_wifi();
     poll_memory();
+    poll_factory_reset();
+}
+
+void ScreenSpeakerShell::ensure_control_event_subscriptions()
+{
+    using AudioPlaybackHelper = service::helper::AudioPlayback;
+
+    if (control_events_subscribed_) {
+        return;
+    }
+
+    brightness_event_connection_ = DisplayHelper::subscribe_event(
+                                       DisplayHelper::EventId::BacklightBrightnessChanged,
+    [this](const std::string &, double output_id, const std::string &, double brightness) {
+        if (static_cast<uint32_t>(output_id) == display_output_id_) {
+            service_brightness_.store(static_cast<int>(brightness));
+        }
+    });
+    volume_event_connection_ = AudioPlaybackHelper::subscribe_event(
+                                   AudioPlaybackHelper::EventId::VolumeChanged,
+    [this](const std::string &, double volume) {
+        service_volume_.store(static_cast<int>(volume));
+    });
+    mute_event_connection_ = AudioPlaybackHelper::subscribe_event(
+                                 AudioPlaybackHelper::EventId::MuteChanged,
+    [this](const std::string &, bool muted) {
+        service_muted_.store(muted ? 1 : 0);
+    });
+
+    control_events_subscribed_ = brightness_event_connection_.connected() &&
+                                 volume_event_connection_.connected() && mute_event_connection_.connected();
+    if (!control_events_subscribed_) {
+        BROOKESIA_LOGE("Failed to subscribe to Speaker UI brightness/volume events");
+    }
+}
+
+void ScreenSpeakerShell::refresh_control_state()
+{
+    using AudioPlaybackHelper = service::helper::AudioPlayback;
+
+    auto brightness_result = DisplayHelper::call_function_sync<double>(
+                                 DisplayHelper::FunctionId::GetBacklightBrightness,
+                                 display_output_id_, service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                             );
+    if (brightness_result) {
+        service_brightness_.store(static_cast<int>(brightness_result.value()));
+    } else {
+        BROOKESIA_LOGE("Failed to read Speaker UI brightness: %1%", brightness_result.error());
+    }
+
+    auto volume_result = AudioPlaybackHelper::call_function_sync<double>(
+                             AudioPlaybackHelper::FunctionId::GetVolume,
+                             service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                         );
+    if (volume_result) {
+        service_volume_.store(static_cast<int>(volume_result.value()));
+    } else {
+        BROOKESIA_LOGE("Failed to read Speaker UI volume: %1%", volume_result.error());
+    }
+
+    auto mute_result = AudioPlaybackHelper::call_function_sync<bool>(
+                           AudioPlaybackHelper::FunctionId::GetMute,
+                           service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                       );
+    if (mute_result) {
+        service_muted_.store(mute_result.value() ? 1 : 0);
+    } else {
+        BROOKESIA_LOGE("Failed to read Speaker UI mute state: %1%", mute_result.error());
+    }
+}
+
+void ScreenSpeakerShell::sync_service_control_ui()
+{
+    const int brightness = service_brightness_.load();
+    if ((brightness >= 0) && (brightness != synced_service_brightness_)) {
+        const int quick_level = nearest_level(brightness, QUICK_BRIGHTNESS_PERCENT);
+        if (speaker_ui_set_quick_brightness_level(quick_level)) {
+            last_quick_brightness_level_ = quick_level;
+        }
+        if ((observed_brightness_slider_ != nullptr) && (pending_slider_brightness_ < 0)) {
+            lv_slider_set_value(observed_brightness_slider_, brightness, LV_ANIM_OFF);
+            last_slider_brightness_ = brightness;
+        }
+        synced_service_brightness_ = brightness;
+    }
+
+    const int volume = service_volume_.load();
+    const int muted = service_muted_.load();
+    if ((volume >= 0) && (muted >= 0)) {
+        const int effective_volume = muted != 0 ? 0 : volume;
+        if (effective_volume != synced_effective_volume_) {
+            const int quick_level = muted != 0 ? -1 : nearest_level(volume, QUICK_VOLUME_PERCENT);
+            if (speaker_ui_set_quick_volume_level(quick_level)) {
+                last_quick_volume_level_ = quick_level;
+            }
+            if ((observed_volume_slider_ != nullptr) && (pending_slider_volume_ < 0)) {
+                lv_slider_set_value(observed_volume_slider_, effective_volume, LV_ANIM_OFF);
+                last_slider_volume_ = effective_volume;
+            }
+            synced_effective_volume_ = effective_volume;
+        }
+    }
+}
+
+void ScreenSpeakerShell::factory_reset_clicked_callback(lv_event_t *event)
+{
+    auto *shell = static_cast<ScreenSpeakerShell *>(lv_event_get_user_data(event));
+    if ((shell != nullptr) && !shell->factory_reset_in_progress_) {
+        shell->factory_reset_in_progress_ = true;
+        shell->perform_factory_reset();
+    }
+}
+
+void ScreenSpeakerShell::poll_factory_reset()
+{
+    if (factory_reset_handler_attached_ || !speaker_ui_is_screen_active("restore")) {
+        return;
+    }
+
+    auto *button_label = find_label(lv_screen_active(), "Restore settings");
+    auto *button = button_label == nullptr ? nullptr : lv_obj_get_parent(button_label);
+    if ((button == nullptr) || !lv_obj_check_type(button, &lv_button_class)) {
+        BROOKESIA_LOGE("Failed to locate Speaker UI factory-reset button");
+        return;
+    }
+
+    lv_obj_add_event_cb(button, factory_reset_clicked_callback, LV_EVENT_CLICKED, this);
+    factory_reset_handler_attached_ = true;
+    BROOKESIA_LOGI("Speaker UI factory-reset handler attached");
+}
+
+void ScreenSpeakerShell::perform_factory_reset()
+{
+    using AgentHelper = service::helper::AgentManager;
+    using AudioPlaybackHelper = service::helper::AudioPlayback;
+    using WifiHelper = service::helper::Wifi;
+
+    BROOKESIA_LOGI("Speaker UI factory reset started");
+
+    if (WifiHelper::is_running()) {
+        auto result = WifiHelper::call_function_sync(WifiHelper::FunctionId::ResetData);
+        if (!result) {
+            BROOKESIA_LOGE("Failed to reset Wi-Fi data: %1%", result.error());
+        }
+    }
+    if (AgentHelper::is_running()) {
+        auto result = AgentHelper::call_function_sync(AgentHelper::FunctionId::ResetData);
+        if (!result) {
+            BROOKESIA_LOGE("Failed to reset agent data: %1%", result.error());
+        }
+    }
+    if (DisplayHelper::is_running()) {
+        auto result = DisplayHelper::call_function_sync(DisplayHelper::FunctionId::ResetData, 0);
+        if (!result) {
+            BROOKESIA_LOGE("Failed to reset display data: %1%", result.error());
+        }
+    }
+    if (AudioPlaybackHelper::is_running()) {
+        auto result = AudioPlaybackHelper::call_function_sync(AudioPlaybackHelper::FunctionId::ResetData);
+        if (!result) {
+            BROOKESIA_LOGE("Failed to reset audio playback data: %1%", result.error());
+        }
+    }
+
+    BROOKESIA_LOGI("Speaker UI factory reset complete; restarting");
+    esp_restart();
 }
 
 void ScreenSpeakerShell::attach_memory_ui()
@@ -249,13 +435,16 @@ void ScreenSpeakerShell::poll_brightness()
         return;
     }
 
-    const int brightness = lv_slider_get_value(slider);
     if (slider != observed_brightness_slider_) {
         observed_brightness_slider_ = slider;
-        last_slider_brightness_ = brightness;
+        const int service_brightness = service_brightness_.load();
+        if (service_brightness >= 0) {
+            lv_slider_set_value(slider, service_brightness, LV_ANIM_OFF);
+        }
+        last_slider_brightness_ = lv_slider_get_value(slider);
         pending_slider_brightness_ = -1;
         slider_stable_poll_count_ = 0;
-    } else if (brightness != last_slider_brightness_) {
+    } else if (const int brightness = lv_slider_get_value(slider); brightness != last_slider_brightness_) {
         last_slider_brightness_ = brightness;
         pending_slider_brightness_ = brightness;
         slider_stable_poll_count_ = 0;
@@ -277,6 +466,8 @@ void ScreenSpeakerShell::apply_brightness(int percent)
                   );
     if (!result) {
         BROOKESIA_LOGE("Failed to set Speaker UI brightness to %1%%%: %2%", percent, result.error());
+    } else {
+        service_brightness_.store(percent);
     }
 }
 
@@ -304,13 +495,17 @@ void ScreenSpeakerShell::poll_volume()
         return;
     }
 
-    const int volume = lv_slider_get_value(slider);
     if (slider != observed_volume_slider_) {
         observed_volume_slider_ = slider;
-        last_slider_volume_ = volume;
+        const int service_volume = service_volume_.load();
+        const int service_muted = service_muted_.load();
+        if ((service_volume >= 0) && (service_muted >= 0)) {
+            lv_slider_set_value(slider, service_muted != 0 ? 0 : service_volume, LV_ANIM_OFF);
+        }
+        last_slider_volume_ = lv_slider_get_value(slider);
         pending_slider_volume_ = -1;
         volume_slider_stable_poll_count_ = 0;
-    } else if (volume != last_slider_volume_) {
+    } else if (const int volume = lv_slider_get_value(slider); volume != last_slider_volume_) {
         last_slider_volume_ = volume;
         pending_slider_volume_ = volume;
         volume_slider_stable_poll_count_ = 0;
@@ -334,6 +529,8 @@ void ScreenSpeakerShell::apply_quick_volume(int level)
                       );
         if (!result) {
             BROOKESIA_LOGE("Failed to mute Speaker UI audio: %1%", result.error());
+        } else {
+            service_muted_.store(1);
         }
         return;
     }
@@ -361,6 +558,9 @@ void ScreenSpeakerShell::apply_volume(int percent)
                        );
     if (!volume_result || !mute_result) {
         BROOKESIA_LOGE("Failed to set Speaker UI volume to %1%%%", percent);
+    } else {
+        service_volume_.store(percent);
+        service_muted_.store(percent == 0 ? 1 : 0);
     }
 }
 

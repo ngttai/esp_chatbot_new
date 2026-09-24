@@ -1111,7 +1111,7 @@ static void wlan_network_selected(lv_event_t *e)
 static void restore_mock_clicked(lv_event_t *e)
 {
     LV_UNUSED(e);
-    lv_label_set_text(restore_status_label, "Mock restore complete");
+    lv_label_set_text(restore_status_label, "Restoring device settings...");
     lv_obj_set_style_text_color(restore_status_label, WHITE, 0);
 }
 
@@ -1221,7 +1221,7 @@ static void create_settings_restore(void)
 {
     lv_obj_t *scroller = create_settings_child(&settings_restore, &factory_home_bar, "Settings", &settings);
     lv_obj_t *restore_group = group(scroller, 78, "Restore Factory");
-    lv_obj_t *description = plain_row(restore_group, "Erase mock settings", NULL);
+    lv_obj_t *description = plain_row(restore_group, "Erase device settings", NULL);
     lv_obj_set_height(description, 56);
 
     lv_obj_t *button = lv_button_create(scroller);
@@ -1232,7 +1232,7 @@ static void create_settings_restore(void)
     lv_obj_center(button_label);
     lv_obj_add_event_cb(button, restore_mock_clicked, LV_EVENT_CLICKED, NULL);
 
-    restore_status_label = text(scroller, "No device data will be erased", &esp_brookesia_font_maison_neue_book_14, MUTED);
+    restore_status_label = text(scroller, "Wi-Fi and preferences will be erased", &esp_brookesia_font_maison_neue_book_14, MUTED);
     lv_obj_align(restore_status_label, LV_ALIGN_TOP_MID, 0, 265);
 }
 
@@ -1888,6 +1888,22 @@ int speaker_ui_get_quick_volume_level(void)
 int speaker_ui_get_quick_brightness_level(void)
 {
     return quick_brightness_level;
+}
+
+bool speaker_ui_set_quick_volume_level(int level)
+{
+    if(level < -1 || level > 2) return false;
+    quick_volume_level = level;
+    quick_update_volume_icon();
+    return true;
+}
+
+bool speaker_ui_set_quick_brightness_level(int level)
+{
+    if(level < 0 || level > 2) return false;
+    quick_brightness_level = level;
+    quick_update_brightness_icon();
+    return true;
 }
 
 bool speaker_ui_is_wlan_keyboard_visible(void)
