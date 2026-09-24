@@ -38,6 +38,7 @@ private:
     void poll_brightness();
     void poll_volume();
     void poll_wifi();
+    void poll_memory();
     void apply_brightness(int percent);
     void apply_quick_volume(int level);
     void apply_volume(int percent);
@@ -50,6 +51,7 @@ private:
     void attach_wifi_ui_handlers();
     void update_wifi_scan_ui();
     void update_wifi_status_ui();
+    void attach_memory_ui();
 
     bool started_ = false;
     uint32_t display_output_id_ = 0;
@@ -65,6 +67,10 @@ private:
     int last_slider_volume_ = -1;
     int pending_slider_volume_ = -1;
     uint8_t volume_slider_stable_poll_count_ = 0;
+    lv_obj_t *memory_internal_bar_ = nullptr;
+    lv_obj_t *memory_external_bar_ = nullptr;
+    uint16_t memory_poll_count_ = 0;
+    bool memory_snapshot_logged_ = false;
     lv_obj_t *wifi_connected_group_ = nullptr;
     lv_obj_t *wifi_connected_name_label_ = nullptr;
     lv_obj_t *wifi_connected_status_label_ = nullptr;

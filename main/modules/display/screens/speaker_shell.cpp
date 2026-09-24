@@ -34,6 +34,7 @@ constexpr uint32_t SERVICE_POLL_PERIOD_MS = 20;
 constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
+constexpr uint16_t MEMORY_POLL_TICKS = 50;
 constexpr uint8_t WIFI_OPEN_AP_DELAY_TICKS = 10;
 constexpr std::array<int, 3> QUICK_BRIGHTNESS_PERCENT{{40, 70, 100}};
 constexpr std::array<int, 3> QUICK_VOLUME_PERCENT{{30, 60, 90}};
@@ -165,6 +166,60 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_brightness();
     poll_volume();
     poll_wifi();
+    poll_memory();
+}
+
+void ScreenSpeakerShell::attach_memory_ui()
+{
+    auto find_memory_bar = [](const char *label_text) -> lv_obj_t * {
+        auto *label = find_label(lv_layer_top(), label_text);
+        auto *row = label == nullptr ? nullptr : lv_obj_get_parent(label);
+        if ((row == nullptr) || (lv_obj_get_child_count(row) < 2)) {
+            return nullptr;
+        }
+        auto *bar = lv_obj_get_child(row, 1);
+        return lv_obj_check_type(bar, &lv_bar_class) ? bar : nullptr;
+    };
+
+    memory_internal_bar_ = find_memory_bar("  SRAM:");
+    memory_external_bar_ = find_memory_bar("PSRAM:");
+    if ((memory_internal_bar_ == nullptr) || (memory_external_bar_ == nullptr)) {
+        BROOKESIA_LOGE("Failed to locate Speaker UI memory bars");
+    }
+}
+
+void ScreenSpeakerShell::poll_memory()
+{
+    if (++memory_poll_count_ < MEMORY_POLL_TICKS) {
+        return;
+    }
+    memory_poll_count_ = 0;
+
+    if ((memory_internal_bar_ == nullptr) || (memory_external_bar_ == nullptr)) {
+        attach_memory_ui();
+        if ((memory_internal_bar_ == nullptr) || (memory_external_bar_ == nullptr)) {
+            return;
+        }
+    }
+
+    auto snapshot = lib_utils::MemoryProfiler::get_instance().get_profiling_latest_snapshot();
+    if (snapshot == nullptr) {
+        return;
+    }
+
+    lv_bar_set_value(
+        memory_internal_bar_, static_cast<int32_t>(snapshot->memory.internal.used_percent), LV_ANIM_OFF
+    );
+    lv_bar_set_value(
+        memory_external_bar_, static_cast<int32_t>(snapshot->memory.external.used_percent), LV_ANIM_OFF
+    );
+    if (!memory_snapshot_logged_) {
+        BROOKESIA_LOGI(
+            "Speaker UI memory bars: SRAM %1%%% used, PSRAM %2%%% used",
+            snapshot->memory.internal.used_percent, snapshot->memory.external.used_percent
+        );
+        memory_snapshot_logged_ = true;
+    }
 }
 
 void ScreenSpeakerShell::poll_brightness()
