@@ -5,13 +5,16 @@
  */
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "brookesia/lib_utils/task_scheduler.hpp"
+#include "brookesia/service_manager/event/registry.hpp"
 #include "lvgl.h"
 
 class ScreenSpeakerShell {
@@ -22,7 +25,15 @@ public:
     );
 
 private:
+    struct WifiScanEntry {
+        std::string ssid;
+        bool locked = false;
+        int rssi = 0;
+    };
+
     static void service_timer_callback(lv_timer_t *timer);
+    static void wifi_network_selected_callback(lv_event_t *event);
+    static void wifi_password_ready_callback(lv_event_t *event);
     void poll_service_controls();
     void poll_brightness();
     void poll_volume();
@@ -32,6 +43,12 @@ private:
     void apply_volume(int percent);
     void request_wifi_enabled(bool enabled);
     void request_wifi_state();
+    void request_wifi_scan();
+    void request_wifi_scan_stop();
+    void request_wifi_connect(std::string ssid, std::string password);
+    void ensure_wifi_event_subscriptions();
+    void attach_wifi_ui_handlers();
+    void update_wifi_scan_ui();
     void update_wifi_status_ui();
 
     bool started_ = false;
@@ -55,7 +72,25 @@ private:
     uint16_t wifi_state_poll_count_ = 0;
     std::atomic_bool wifi_action_in_flight_{false};
     std::atomic_bool wifi_state_request_in_flight_{false};
+    std::atomic_bool wifi_scan_request_in_flight_{false};
+    std::atomic_bool wifi_scan_stop_in_flight_{false};
+    std::atomic_bool wifi_connect_in_flight_{false};
     std::atomic_int wifi_state_{-1};
     std::mutex wifi_state_mutex_;
     std::string wifi_ssid_;
+    std::mutex wifi_scan_mutex_;
+    std::vector<WifiScanEntry> wifi_scan_entries_;
+    std::array<lv_obj_t *, 3> wifi_network_rows_{};
+    std::array<lv_obj_t *, 3> wifi_network_labels_{};
+    std::array<lv_obj_t *, 3> wifi_network_lock_icons_{};
+    lv_obj_t *wifi_keyboard_ = nullptr;
+    std::string wifi_selected_ssid_;
+    bool wifi_events_subscribed_ = false;
+    bool wifi_handlers_attached_ = false;
+    bool wifi_screen_was_active_ = false;
+    bool wifi_open_ap_pending_ = false;
+    uint8_t wifi_open_ap_countdown_ = 0;
+    size_t wifi_scan_visible_count_ = 0;
+    std::atomic_bool wifi_scan_dirty_{false};
+    esp_brookesia::service::EventRegistry::SignalConnection wifi_scan_event_connection_;
 };

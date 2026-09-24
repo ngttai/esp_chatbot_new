@@ -1281,7 +1281,7 @@ static void wlan_keyboard_cancelled(lv_event_t *e)
     LV_UNUSED(e);
     /* Firmware has no dismiss key of its own (see create_wlan_keyboard()'s comment), but
      * a simulator with a mouse instead of a finger has no tap-outside-the-keyboard
-     * gesture to fall back on, so this keyboard gets its own dismiss key -- LV_SYMBOL_
+     * gesture to fall back on, so the text layouts get a dismiss key -- LV_SYMBOL_
      * KEYBOARD, which LVGL's own default handler already recognizes and turns into this
      * CANCEL event (lv_keyboard_def_event_cb). Tapping the password field again (see
      * wlan_password_pressed above) brings it back. */
@@ -1343,7 +1343,7 @@ static const char *const wlan_kb_map_spec[] = {
     "+", "|", "\\", "\"", "<", ">", "{", "}", "[", "]", "\n",
     WLAN_KB_PHR_STR, "~", "@", "#", "!", "%", "&", "*", "(", ")", WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, WLAN_KB_LOWER_STR, "'", "/", "-", "_", ":", ";", "?", WLAN_KB_PHR_STR, "\n",
-    WLAN_KB_PHR_STR, WLAN_KB_NUMBER_STR, ".", WLAN_KB_SPACE_STR, LV_SYMBOL_BACKSPACE, LV_SYMBOL_KEYBOARD,
+    WLAN_KB_PHR_STR, WLAN_KB_NUMBER_STR, ",", WLAN_KB_SPACE_STR, ".", LV_SYMBOL_BACKSPACE,
     WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, LV_SYMBOL_LEFT, LV_SYMBOL_OK, LV_SYMBOL_RIGHT, WLAN_KB_PHR_STR, ""
 };
@@ -1354,20 +1354,19 @@ static const lv_buttonmatrix_ctrl_t wlan_kb_ctrl_spec[] = {
     WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(1),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2),
     WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
-    WLAN_KB_PHR(2), WLAN_KB_BTN(3), WLAN_KB_BTN(2), WLAN_KB_BTN(5), WLAN_KB_BTN(4), WLAN_KB_BTN(2),
+    WLAN_KB_PHR(2), WLAN_KB_BTN(3), WLAN_KB_BTN(2), WLAN_KB_BTN(5), WLAN_KB_BTN(2), WLAN_KB_BTN(4),
     WLAN_KB_PHR(2),
     WLAN_KB_PHR(3), WLAN_KB_BTN(4), WLAN_KB_BTN(6), WLAN_KB_BTN(4), WLAN_KB_PHR(3)
 };
 
 static const char *const wlan_kb_map_num[] = {
-    WLAN_KB_PHR_STR, "1", "2", "3", LV_SYMBOL_BACKSPACE, LV_SYMBOL_KEYBOARD, WLAN_KB_PHR_STR, "\n",
+    WLAN_KB_PHR_STR, "1", "2", "3", LV_SYMBOL_BACKSPACE, WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, "4", "5", "6", WLAN_KB_LOWER_STR, WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, "7", "8", "9", WLAN_KB_SPEC_STR, WLAN_KB_PHR_STR, "\n",
     WLAN_KB_PHR_STR, LV_SYMBOL_LEFT, "0", LV_SYMBOL_RIGHT, LV_SYMBOL_OK, WLAN_KB_PHR_STR, ""
 };
 static const lv_buttonmatrix_ctrl_t wlan_kb_ctrl_num[] = {
-    WLAN_KB_PHR(1), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2),
-    WLAN_KB_PHR(1),
+    WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2),
     WLAN_KB_PHR(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_BTN(2), WLAN_KB_PHR(2)
@@ -1474,9 +1473,10 @@ static void wlan_keyboard_draw_task(lv_event_t *e)
  * and hides it on the way out. This mirrors that lifecycle for the one password field
  * the simulator has. Firmware itself has no dedicated "hide keyboard" key -- it relies
  * on a tap-outside-the-keyboard gesture this simulator doesn't reproduce (see README) --
- * but a mouse-driven simulator has no such gesture to fall back on, so this build adds
- * one: LV_SYMBOL_KEYBOARD next to backspace on every mode, wired to wlan_keyboard_
- * cancelled() below. Tapping the password field again brings the keyboard back. */
+ * but a mouse-driven simulator has no such gesture to fall back on, so the text layouts
+ * add LV_SYMBOL_KEYBOARD next to backspace, wired to wlan_keyboard_cancelled() below.
+ * Number and special layouts intentionally omit it. Tapping the password field again
+ * brings the keyboard back. */
 static void create_wlan_keyboard(void)
 {
     wlan_keyboard_container = lv_obj_create(lv_layer_top());
