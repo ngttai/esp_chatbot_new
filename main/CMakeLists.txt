@@ -19,6 +19,12 @@ idf_component_register(
         "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker"
         "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
         "modules/display/speaker_ui/vendor/esp_speaker_ui/main/apps/brookesia_app_ai_profile/ui"
+    PRIV_REQUIRES
+        bq27220
+        esp_board_manager
+        esp_event
+        esp_lvgl_adapter
+        esp_wifi
     EMBED_TXTFILES ${EMBEDDED_FILES}
 )
 

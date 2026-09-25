@@ -13,6 +13,8 @@
 #include "brookesia/gui_lvgl.hpp"
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
+#include "modules/battery_monitor.hpp"
+#include "modules/touch_sensor.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -162,6 +164,9 @@ bool ScreenSpeakerShell::start(
     last_quick_brightness_level_ = speaker_ui_get_quick_brightness_level();
     last_quick_volume_level_ = speaker_ui_get_quick_volume_level();
     last_wlan_enabled_ = speaker_ui_is_wlan_on();
+    touch_sensor_user_enabled_ = TouchSensor::get_instance().is_enabled();
+    touch_sensor_effective_enabled_ = touch_sensor_user_enabled_;
+    speaker_ui_set_touch_sensor_on(touch_sensor_user_enabled_);
     ensure_control_event_subscriptions();
     refresh_control_state();
     service_timer_ = lv_timer_create(service_timer_callback, SERVICE_POLL_PERIOD_MS, this);
@@ -188,7 +193,40 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_volume();
     poll_wifi();
     poll_memory();
+    poll_battery();
+    poll_touch_sensor();
     poll_factory_reset();
+}
+
+void ScreenSpeakerShell::poll_battery()
+{
+    const auto snapshot = BatteryMonitor::get_instance().get_snapshot();
+    if (!snapshot.valid || (snapshot.revision == battery_revision_)) {
+        return;
+    }
+    if (speaker_ui_set_battery_state(snapshot.charging, snapshot.percentage)) {
+        battery_revision_ = snapshot.revision;
+    }
+}
+
+void ScreenSpeakerShell::poll_touch_sensor()
+{
+    const bool user_enabled = speaker_ui_is_touch_sensor_on();
+    if (user_enabled != touch_sensor_user_enabled_) {
+        touch_sensor_user_enabled_ = user_enabled;
+    }
+
+    // The black Idle screen is the current Home placeholder. The future eye
+    // screen will replace this content while preserving the same screen role.
+    const bool effective_enabled = touch_sensor_user_enabled_ && speaker_ui_is_idle_active();
+    if (effective_enabled == touch_sensor_effective_enabled_) {
+        return;
+    }
+    if (TouchSensor::get_instance().set_enabled(effective_enabled)) {
+        touch_sensor_effective_enabled_ = effective_enabled;
+    } else {
+        speaker_ui_set_touch_sensor_on(touch_sensor_user_enabled_);
+    }
 }
 
 void ScreenSpeakerShell::ensure_control_event_subscriptions()

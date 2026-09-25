@@ -1,5 +1,15 @@
 ## IDF Component Manager Manifest File
 dependencies:
+  # Match esp_speaker's GPIO43 head-LED feedback for Wi-Fi and touch.
+  espressif/led_indicator:
+    version: "^2.1.2"
+
+  # The 0.1.0 touch_button package currently resolves incompatible transitive
+  # FSM versions on ESP-IDF 6.1. Use the IDF-6-compatible low-level driver and
+  # keep the VoCat click/long-press state machine in the application.
+  espressif/touch_sensor_lowlevel:
+    version: "^1.0.1"
+
   # The main component creates the littlefs_data partition image directly.
   joltwallet/littlefs:
     version: "1.*"

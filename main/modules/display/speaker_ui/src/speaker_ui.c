@@ -55,6 +55,10 @@ LV_IMAGE_DECLARE(img_app_usbd_ncm);
 LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_wifi_48_48);
 LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_wifi_close_20_20);
 LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_battery_charge_20_20);
+LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_battery_level1_20_20);
+LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_battery_level2_20_20);
+LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_battery_level3_20_20);
+LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_battery_level4_20_20);
 LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_volume_high_48_48);
 LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_volume_medium_48_48);
 LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_volume_low_48_48);
@@ -94,6 +98,7 @@ static lv_obj_t *developer_home_bar, *factory_home_bar;
 static lv_obj_t *wlan_verify_home_bar, *softap_home_bar;
 static lv_obj_t *settings_wlan_value_label, *wlan_connected_name_label, *restore_status_label;
 static lv_obj_t *settings_wlan_switch;
+static lv_obj_t *settings_touch_switch;
 static lv_obj_t *settings_wlan_connected_group, *settings_wlan_available_group, *settings_wlan_softap_group;
 /* Mock the real device's Wi-Fi-on reveal sequence (see set_wlan_enabled()): switching
  * WLAN on shows the Available networks group empty at first and the Connected network
@@ -105,7 +110,8 @@ static lv_obj_t *settings_wlan_connected_group, *settings_wlan_available_group, 
 static lv_obj_t *wlan_connected_status_label;
 static lv_obj_t *wlan_network_rows[3];
 static lv_timer_t *wlan_entry_list_timer, *wlan_entry_connect_timer, *wlan_entry_settle_timer;
-static lv_obj_t *quick_wifi_button, *quick_wifi_status_icon;
+static lv_obj_t *quick_wifi_button, *quick_wifi_status_icon, *quick_time_label;
+static lv_obj_t *quick_battery_status_icon, *quick_battery_percent_label;
 static lv_obj_t *quick_volume_button, *quick_brightness_button;
 /* VolumeLevel: MUTE(-1), LEVEL_1(0), LEVEL_2(1), LEVEL_3(2); BrightnessLevel: LEVEL_1(0)..LEVEL_3(2)
  * (no mute) -- mirrors firmware's QuickSettings::VolumeLevel / BrightnessLevel enums. */
@@ -130,6 +136,20 @@ static bool launcher_gesture_tracking;
 static bool quick_gesture_tracking;
 static bool quick_gesture_from_bottom;
 static bool quick_open;
+
+static void quick_time_update(lv_timer_t *timer)
+{
+    LV_UNUSED(timer);
+    if(quick_time_label == NULL) return;
+
+    time_t now = time(NULL);
+    struct tm local;
+    char formatted[16];
+    localtime_r(&now, &local);
+    if(strftime(formatted, sizeof(formatted), "%I:%M %p", &local) > 0) {
+        lv_label_set_text(quick_time_label, formatted);
+    }
+}
 
 static void show_settings(lv_event_t *e);
 static void show_ai(lv_event_t *e);
@@ -687,8 +707,13 @@ static void create_quick(void)
      * mirroring the child order firmware builds in ui_comp_quicksettings.c. */
     lv_obj_t *status = lv_obj_get_child(quick_component, 0);
     lv_obj_t *status_top = lv_obj_get_child(lv_obj_get_child(status, 0), 0);
+    quick_time_label = lv_obj_get_child(status_top, 0);
     lv_obj_t *status_right = lv_obj_get_child(status_top, 1);
     quick_wifi_status_icon = lv_obj_get_child(status_right, 0);
+    quick_battery_status_icon = lv_obj_get_child(status_right, 1);
+    quick_battery_percent_label = lv_obj_get_child(status_right, 2);
+    quick_time_update(NULL);
+    lv_timer_create(quick_time_update, 1000, NULL);
 
     lv_obj_t *memory = lv_obj_get_child(quick_component, 2);
     lv_obj_t *memory_internal = lv_obj_get_child(memory, 0);
@@ -980,7 +1005,7 @@ static void create_settings(void)
     lv_obj_t *input = group(settings_scroller, 318, "Input");
     lv_obj_t *touch_row = row(input, &esp_brookesia_app_icon_input_touch_48_48,
                               "Touch", NULL, false);
-    add_switch(touch_row, true);
+    settings_touch_switch = add_switch(touch_row, true);
 
     lv_obj_t *more = group(settings_scroller, 422, "More");
     lv_obj_t *about_row = row(more, &esp_brookesia_app_icon_more_about_48_48,
@@ -1918,6 +1943,36 @@ bool speaker_ui_set_quick_brightness_level(int level)
     if(level < 0 || level > 2) return false;
     quick_brightness_level = level;
     quick_update_brightness_icon();
+    return true;
+}
+
+bool speaker_ui_set_battery_state(bool charging, int percentage)
+{
+    if(quick_battery_status_icon == NULL || quick_battery_percent_label == NULL ||
+       percentage < 0 || percentage > 100) return false;
+
+    const lv_image_dsc_t *source = &speaker_image_middle_quick_settings_battery_charge_20_20;
+    if(!charging) {
+        if(percentage <= 25) source = &speaker_image_middle_quick_settings_battery_level1_20_20;
+        else if(percentage <= 50) source = &speaker_image_middle_quick_settings_battery_level2_20_20;
+        else if(percentage <= 75) source = &speaker_image_middle_quick_settings_battery_level3_20_20;
+        else source = &speaker_image_middle_quick_settings_battery_level4_20_20;
+    }
+    lv_image_set_src(quick_battery_status_icon, source);
+    lv_label_set_text_fmt(quick_battery_percent_label, "%d%%", percentage);
+    return true;
+}
+
+bool speaker_ui_is_touch_sensor_on(void)
+{
+    return settings_touch_switch != NULL && lv_obj_has_state(settings_touch_switch, LV_STATE_CHECKED);
+}
+
+bool speaker_ui_set_touch_sensor_on(bool enabled)
+{
+    if(settings_touch_switch == NULL) return false;
+    if(enabled) lv_obj_add_state(settings_touch_switch, LV_STATE_CHECKED);
+    else lv_obj_remove_state(settings_touch_switch, LV_STATE_CHECKED);
     return true;
 }
 

@@ -265,6 +265,18 @@ Chỉ bắt đầu khi bản port chính xác đã được xác nhận. Đây l
 - Brightness thật.
 - Memory stats thật.
 - Factory reset thật.
+- Battery/power thật: VoCat v1.0 dùng fuel gauge TI BQ27220 trên I2C. Tham khảo
+  driver, profile CEDV 650 mAh và `BatteryMonitor` từ project `esp_speaker`, nhưng
+  adapter của project này phải dùng chung bus Board Manager `i2c_master` hiện có
+  (không khởi tạo lại I2C port 0). Đưa SOC và trạng thái sạc thật vào đúng widget
+  Quick Settings gốc; không dùng `100%` mock làm kết quả và không đổi layout UI.
+- Clock/NTP thật: SNTP service đồng bộ system time, timezone phải đúng thiết bị
+  (`UTC+7` cho cấu hình Việt Nam), và Clock UI gốc tiếp tục đọc qua `localtime()`.
+- Touch sensor thật: tham khảo `TouchSensor` từ project `esp_speaker`, dùng pad
+  cảm ứng vật lý GPIO7 của VoCat v1.0 và giữ touch slider ở trạng thái tắt như
+  implementation gốc. Nối công tắc Settings → Input → Touch với callback thật;
+  single click dùng để wake hoặc interrupt agent, long press dùng để sleep. Không
+  thay đổi gesture của LCD touch hoặc layout UI.
 - Native Emote.
 - Agent integration.
 

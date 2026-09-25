@@ -1,0 +1,4 @@
+version: "0.0.0"
+description: bq27220 battery fuel gauge driver
+dependencies:
+  idf: ">=5.4"

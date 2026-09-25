@@ -40,6 +40,8 @@ private:
     void poll_volume();
     void poll_wifi();
     void poll_memory();
+    void poll_battery();
+    void poll_touch_sensor();
     void poll_factory_reset();
     void perform_factory_reset();
     void ensure_control_event_subscriptions();
@@ -83,6 +85,9 @@ private:
     lv_obj_t *memory_external_bar_ = nullptr;
     uint16_t memory_poll_count_ = 0;
     bool memory_snapshot_logged_ = false;
+    uint32_t battery_revision_ = 0;
+    bool touch_sensor_user_enabled_ = true;
+    bool touch_sensor_effective_enabled_ = true;
     bool factory_reset_handler_attached_ = false;
     bool factory_reset_in_progress_ = false;
     lv_obj_t *wifi_connected_group_ = nullptr;

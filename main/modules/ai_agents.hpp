@@ -37,6 +37,8 @@ public:
     void init_coze();
     void init_openai();
     void init_xiaozhi();
+    void handle_touch_sensor_click();
+    void handle_touch_sensor_long_press();
 
 private:
     AI_Agents() = default;

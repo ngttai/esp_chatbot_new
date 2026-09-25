@@ -476,6 +476,67 @@ void AI_Agents::stop_agent()
     );
 }
 
+void AI_Agents::handle_touch_sensor_click()
+{
+    // A sleeping agent is intentionally not reported as running by the
+    // service helper. Handle this state first so touch behaves like a wake
+    // word instead of being discarded by the generic running-state guard.
+    if (is_sleeping()) {
+        BROOKESIA_LOGI("Touch single click: wake sleeping Xiaozhi");
+        AgentHelper::call_function_async(
+            AgentHelper::FunctionId::TriggerGeneralAction,
+            BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::WakeUp)
+        );
+        return;
+    }
+
+    if (!AgentHelper::is_running()) {
+        BROOKESIA_LOGD("Agent is not running, ignore touch click");
+        return;
+    }
+
+    if (is_suspended()) {
+        BROOKESIA_LOGD("Agent is suspended, ignore touch click");
+    } else if (is_speaking()) {
+        BROOKESIA_LOGI("Touch single click: interrupt speaking");
+        AgentHelper::call_function_async(AgentHelper::FunctionId::InterruptSpeaking);
+    } else {
+        // Match esp_speaker: a single click only wakes a sleeping chat or
+        // interrupts speech. It does nothing while already listening/idle.
+        BROOKESIA_LOGD("Xiaozhi is awake and not speaking, ignore touch click");
+    }
+}
+
+void AI_Agents::handle_touch_sensor_long_press()
+{
+    if (is_sleeping()) {
+        BROOKESIA_LOGD("Xiaozhi is already sleeping, ignore touch long press");
+        return;
+    }
+    if (!AgentHelper::is_running()) {
+        BROOKESIA_LOGD("Agent is not running, ignore touch long press");
+        return;
+    }
+    if (is_suspended()) {
+        BROOKESIA_LOGD("Agent is suspended, ignore touch long press");
+        return;
+    }
+
+    BROOKESIA_LOGI("Touch long press: sleep Xiaozhi");
+    const std::vector<std::string> urls{
+        XIAO_ZHI_AUDIO_URL_PREFIX "sleep_goodbye.mp3",
+    };
+    AudioPlaybackHelper::call_function_async(
+        AudioPlaybackHelper::FunctionId::PlayUrls,
+        BROOKESIA_DESCRIBE_TO_JSON(urls).as_array(),
+        BROOKESIA_DESCRIBE_TO_JSON(AudioHelper::PlayUrlConfig{}).as_object()
+    );
+    AgentHelper::call_function_async(
+        AgentHelper::FunctionId::TriggerGeneralAction,
+        BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Sleep)
+    );
+}
+
 void AI_Agents::process_agent_general_events()
 {
     // Process unexpected general events:

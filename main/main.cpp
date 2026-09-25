@@ -13,6 +13,9 @@
 #include "modules/wifi_provisioning.hpp"
 #include "modules/ai_agents.hpp"
 #include "modules/general_services.hpp"
+#include "modules/battery_monitor.hpp"
+#include "modules/head_led.hpp"
+#include "modules/touch_sensor.hpp"
 #include "modules/profiler.hpp"
 #include "modules/display/display.hpp"
 
@@ -76,6 +79,14 @@ extern "C" void app_main(void)
         GeneralServices::get_instance().start_device();
         GeneralServices::get_instance().start_bt_speaker();
 
+        if (!HeadLed::get_instance().init()) {
+            BROOKESIA_LOGW("VoCat head LED is unavailable; continue without Wi-Fi/touch LED feedback");
+        }
+
+        if (!BatteryMonitor::get_instance().init()) {
+            BROOKESIA_LOGW("BQ27220 battery monitor is unavailable; continue without battery telemetry");
+        }
+
         /* Initialize AI agents */
         AI_Agents::get_instance().init({
             .task_scheduler = backend_scheduler,
@@ -83,6 +94,10 @@ extern "C" void app_main(void)
         AI_Agents::get_instance().init_coze();
         AI_Agents::get_instance().init_openai();
         AI_Agents::get_instance().init_xiaozhi();
+
+        if (!TouchSensor::get_instance().init()) {
+            BROOKESIA_LOGW("VoCat touch sensor is unavailable; continue without touch-button input");
+        }
 
         /* Start display UI */
         Display::get_instance().start({
