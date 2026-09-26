@@ -97,6 +97,13 @@ static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_
 static lv_obj_t *developer_home_bar, *factory_home_bar;
 static lv_obj_t *wlan_verify_home_bar, *softap_home_bar;
 static lv_obj_t *settings_wlan_value_label, *wlan_connected_name_label, *restore_status_label;
+static lv_obj_t *about_firmware_label, *about_os_label, *about_os_version_label;
+static lv_obj_t *about_ui_label, *about_ui_version_label;
+static lv_obj_t *about_manufacturer_label, *about_board_label, *about_resolution_label;
+static lv_obj_t *about_flash_label, *about_ram_main_label, *about_ram_minor_label;
+static lv_obj_t *about_battery_capacity_label, *about_battery_voltage_label, *about_battery_current_label;
+static lv_obj_t *about_chip_name_label, *about_chip_version_label, *about_chip_mac_label;
+static lv_obj_t *about_chip_features_label;
 static lv_obj_t *settings_wlan_switch;
 static lv_obj_t *settings_touch_switch;
 static lv_obj_t *settings_wlan_connected_group, *settings_wlan_available_group, *settings_wlan_softap_group;
@@ -839,7 +846,8 @@ static lv_obj_t *add_switch(lv_obj_t *parent, bool checked)
     return sw;
 }
 
-static lv_obj_t *plain_row(lv_obj_t *parent, const char *name, const char *value)
+static lv_obj_t *plain_row_bound(lv_obj_t *parent, const char *name, const char *value,
+                                 lv_obj_t **value_label_out)
 {
     lv_obj_t *r = cell(parent, 48, 20);
     lv_obj_t *name_label = text(r, name, &esp_brookesia_font_maison_neue_book_22, WHITE);
@@ -847,12 +855,19 @@ static lv_obj_t *plain_row(lv_obj_t *parent, const char *name, const char *value
     if(value != NULL) {
         lv_obj_t *value_label = text(r, value, &esp_brookesia_font_maison_neue_book_20, MUTED);
         lv_obj_align(value_label, LV_ALIGN_RIGHT_MID, -20, 0);
+        if(value_label_out != NULL) *value_label_out = value_label;
     }
     return r;
 }
 
-static lv_obj_t *double_value_row(lv_obj_t *parent, const char *name,
-                                  const char *main_value, const char *minor_value)
+static lv_obj_t *plain_row(lv_obj_t *parent, const char *name, const char *value)
+{
+    return plain_row_bound(parent, name, value, NULL);
+}
+
+static lv_obj_t *double_value_row_bound(lv_obj_t *parent, const char *name,
+                                        const char *main_value, const char *minor_value,
+                                        lv_obj_t **main_label_out, lv_obj_t **minor_label_out)
 {
     lv_obj_t *r = cell(parent, 72, 20);
     lv_obj_t *name_label = text(r, name, &esp_brookesia_font_maison_neue_book_22, WHITE);
@@ -861,6 +876,8 @@ static lv_obj_t *double_value_row(lv_obj_t *parent, const char *name,
     lv_obj_align(main_label, LV_ALIGN_TOP_RIGHT, -20, 8);
     lv_obj_t *minor_label = text(r, minor_value, &esp_brookesia_font_maison_neue_book_20, MUTED);
     lv_obj_align(minor_label, LV_ALIGN_BOTTOM_RIGHT, -20, -8);
+    if(main_label_out != NULL) *main_label_out = main_label;
+    if(minor_label_out != NULL) *minor_label_out = minor_label;
     return r;
 }
 
@@ -1205,27 +1222,28 @@ static void create_settings_about(void)
 {
     lv_obj_t *scroller = create_settings_child(&settings_about, &about_home_bar, "Settings", &settings);
     lv_obj_t *system = group(scroller, 72, "System");
-    plain_row(system, "Firmware", "v1.0.0");
-    plain_row(system, "OS", "FreeRTOS");
-    plain_row(system, "OS version", "11.1.0");
-    plain_row(system, "UI", "ESP-Brookesia");
-    plain_row(system, "UI version", "LVGL 9.2.2");
+    plain_row_bound(system, "Firmware", "v1.0.0", &about_firmware_label);
+    plain_row_bound(system, "OS", "FreeRTOS", &about_os_label);
+    plain_row_bound(system, "OS version", "11.1.0", &about_os_version_label);
+    plain_row_bound(system, "UI", "ESP-Brookesia", &about_ui_label);
+    plain_row_bound(system, "UI version", "LVGL 9.2.2", &about_ui_version_label);
 
     lv_obj_t *device = group(scroller, 380, "Device");
-    plain_row(device, "Manufacturer", "Espressif");
-    plain_row(device, "Board", "ESP-VoCat");
-    plain_row(device, "Resolution", "360x360");
-    plain_row(device, "Flash", "16MB");
-    double_value_row(device, "RAM", "512KB", "16MB");
-    plain_row(device, "Battery capacity", "2000 mAh");
-    plain_row(device, "Battery voltage", "4.05 V");
-    plain_row(device, "Battery current", "-120 mA");
+    plain_row_bound(device, "Manufacturer", "Espressif", &about_manufacturer_label);
+    plain_row_bound(device, "Board", "ESP-VoCat", &about_board_label);
+    plain_row_bound(device, "Resolution", "360x360", &about_resolution_label);
+    plain_row_bound(device, "Flash", "16MB", &about_flash_label);
+    double_value_row_bound(device, "RAM", "512KB", "16MB",
+                           &about_ram_main_label, &about_ram_minor_label);
+    plain_row_bound(device, "Battery capacity", "2000 mAh", &about_battery_capacity_label);
+    plain_row_bound(device, "Battery voltage", "4.05 V", &about_battery_voltage_label);
+    plain_row_bound(device, "Battery current", "-120 mA", &about_battery_current_label);
 
     lv_obj_t *chip = group(scroller, 832, "Chip");
-    plain_row(chip, "Name", "ESP32-S3");
-    plain_row(chip, "Version", "v0.2");
-    plain_row(chip, "MAC", "A4:CF:12:34");
-    plain_row(chip, "Features", "Wi-Fi / BLE");
+    plain_row_bound(chip, "Name", "ESP32-S3", &about_chip_name_label);
+    plain_row_bound(chip, "Version", "v0.2", &about_chip_version_label);
+    plain_row_bound(chip, "MAC", "A4:CF:12:34", &about_chip_mac_label);
+    plain_row_bound(chip, "Features", "Wi-Fi / BLE", &about_chip_features_label);
 }
 
 static void create_settings_developer(void)
@@ -1960,6 +1978,50 @@ bool speaker_ui_set_battery_state(bool charging, int percentage)
     }
     lv_image_set_src(quick_battery_status_icon, source);
     lv_label_set_text_fmt(quick_battery_percent_label, "%d%%", percentage);
+    return true;
+}
+
+bool speaker_ui_set_about_info(const speaker_ui_about_info_t *info)
+{
+    if(info == NULL || about_firmware_label == NULL || about_os_label == NULL ||
+       about_os_version_label == NULL || about_ui_label == NULL || about_ui_version_label == NULL ||
+       about_manufacturer_label == NULL || about_board_label == NULL || about_resolution_label == NULL ||
+       about_flash_label == NULL || about_ram_main_label == NULL || about_ram_minor_label == NULL ||
+       about_battery_capacity_label == NULL || about_battery_voltage_label == NULL ||
+       about_battery_current_label == NULL || about_chip_name_label == NULL ||
+       about_chip_version_label == NULL || about_chip_mac_label == NULL ||
+       about_chip_features_label == NULL) return false;
+
+    lv_label_set_text(about_firmware_label, info->firmware);
+    lv_label_set_text(about_os_label, info->os);
+    lv_label_set_text(about_os_version_label, info->os_version);
+    lv_label_set_text(about_ui_label, info->ui);
+    lv_label_set_text(about_ui_version_label, info->ui_version);
+    lv_label_set_text(about_manufacturer_label, info->manufacturer);
+    lv_label_set_text(about_board_label, info->board);
+    lv_label_set_text(about_resolution_label, info->resolution);
+    lv_label_set_text(about_flash_label, info->flash);
+    lv_label_set_text(about_ram_main_label, info->ram_main);
+    lv_label_set_text(about_ram_minor_label, info->ram_minor);
+    lv_label_set_text(about_battery_capacity_label, info->battery_capacity);
+    lv_label_set_text(about_battery_voltage_label, "--");
+    lv_label_set_text(about_battery_current_label, "--");
+    lv_label_set_text(about_chip_name_label, info->chip_name);
+    lv_label_set_text(about_chip_version_label, info->chip_version);
+    lv_label_set_text(about_chip_mac_label, info->chip_mac);
+    lv_label_set_text(about_chip_features_label, info->chip_features);
+    return true;
+}
+
+bool speaker_ui_set_about_battery_measurements(int voltage_mv, int current_ma)
+{
+    if(about_battery_voltage_label == NULL || about_battery_current_label == NULL || voltage_mv < 0) {
+        return false;
+    }
+
+    const int centivolts = (voltage_mv + 5) / 10;
+    lv_label_set_text_fmt(about_battery_voltage_label, "%d.%02d V", centivolts / 100, centivolts % 100);
+    lv_label_set_text_fmt(about_battery_current_label, "%d mA", current_ma);
     return true;
 }
 

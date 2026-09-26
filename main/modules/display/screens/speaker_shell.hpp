@@ -43,6 +43,7 @@ private:
     void poll_battery();
     void poll_touch_sensor();
     void poll_factory_reset();
+    void configure_about();
     void perform_factory_reset();
     void ensure_control_event_subscriptions();
     void refresh_control_state();

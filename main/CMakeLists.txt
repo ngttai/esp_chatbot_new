@@ -22,9 +22,12 @@ idf_component_register(
     PRIV_REQUIRES
         bq27220
         esp_board_manager
+        esp_app_format
         esp_event
+        esp_hw_support
         esp_lvgl_adapter
         esp_wifi
+        spi_flash
     EMBED_TXTFILES ${EMBEDDED_FILES}
 )
 

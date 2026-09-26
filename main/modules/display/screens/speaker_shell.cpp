@@ -4,9 +4,15 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 #include "esp_lv_adapter.h"
+#include "esp_app_desc.h"
+#include "esp_chip_info.h"
+#include "esp_flash.h"
+#include "esp_mac.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <string_view>
 #include "private/utils.hpp"
@@ -158,6 +164,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_create();
     speaker_ui_set_wifi_managed_externally(true);
     speaker_ui_set_input(input);
+    configure_about();
 
     display_output_id_ = display_output_id;
     task_scheduler_ = std::move(task_scheduler);
@@ -204,8 +211,81 @@ void ScreenSpeakerShell::poll_battery()
     if (!snapshot.valid || (snapshot.revision == battery_revision_)) {
         return;
     }
-    if (speaker_ui_set_battery_state(snapshot.charging, snapshot.percentage)) {
+    if (speaker_ui_set_battery_state(snapshot.charging, snapshot.percentage) &&
+            speaker_ui_set_about_battery_measurements(snapshot.voltage_mv, snapshot.current_ma)) {
         battery_revision_ = snapshot.revision;
+    }
+}
+
+void ScreenSpeakerShell::configure_about()
+{
+    std::array<char, 24> ui_version{};
+    std::array<char, 16> resolution{};
+    std::array<char, 16> flash{};
+    std::array<char, 16> chip_version{};
+    std::array<char, 24> chip_mac{};
+    std::array<char, 24> chip_features{};
+
+    std::snprintf(
+        ui_version.data(), ui_version.size(), "LVGL %d.%d.%d",
+        LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH
+    );
+    std::snprintf(
+        resolution.data(), resolution.size(), "%lux%lu",
+        static_cast<unsigned long>(SPEAKER_UI_WIDTH), static_cast<unsigned long>(SPEAKER_UI_HEIGHT)
+    );
+
+    uint32_t flash_bytes = 0;
+    if (esp_flash_get_size(nullptr, &flash_bytes) == ESP_OK) {
+        std::snprintf(flash.data(), flash.size(), "%luMB",
+                      static_cast<unsigned long>(flash_bytes / (1024U * 1024U)));
+    } else {
+        std::snprintf(flash.data(), flash.size(), "Unknown");
+    }
+
+    esp_chip_info_t chip_info{};
+    esp_chip_info(&chip_info);
+    std::snprintf(
+        chip_version.data(), chip_version.size(), "v%u.%u",
+        static_cast<unsigned>(chip_info.revision / 100),
+        static_cast<unsigned>(chip_info.revision % 100)
+    );
+    std::snprintf(
+        chip_features.data(), chip_features.size(), "%u CPU cores",
+        static_cast<unsigned>(chip_info.cores)
+    );
+
+    uint8_t mac[6]{};
+    if (esp_efuse_mac_get_default(mac) == ESP_OK) {
+        std::snprintf(
+            chip_mac.data(), chip_mac.size(), "%02X:%02X:%02X:%02X:%02X:%02X",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        );
+    } else {
+        std::snprintf(chip_mac.data(), chip_mac.size(), "Unknown");
+    }
+
+    const auto *app_description = esp_app_get_description();
+    const speaker_ui_about_info_t info{
+        .firmware = (app_description != nullptr) ? app_description->version : "Unknown",
+        .os = "FreeRTOS",
+        .os_version = tskKERNEL_VERSION_NUMBER,
+        .ui = "ESP-Brookesia",
+        .ui_version = ui_version.data(),
+        .manufacturer = "Espressif",
+        .board = "ESP-VoCat V1.0",
+        .resolution = resolution.data(),
+        .flash = flash.data(),
+        .ram_main = "512KB",
+        .ram_minor = "16MB",
+        .battery_capacity = "650 mAh",
+        .chip_name = "ESP32-S3",
+        .chip_version = chip_version.data(),
+        .chip_mac = chip_mac.data(),
+        .chip_features = chip_features.data(),
+    };
+    if (!speaker_ui_set_about_info(&info)) {
+        BROOKESIA_LOGW("Failed to populate Settings About information");
     }
 }
 
