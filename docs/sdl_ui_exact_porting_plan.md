@@ -226,6 +226,10 @@ State machine cũ được giữ lại trong source cho đến khi shell chạy 
 
 ## Phase 7 — Kiểm thử trên VoCat
 
+Trạng thái: **COMPLETE (2026-09-26)**. UI 360x360 đã được flash và kiểm tra trực
+tiếp trên ESP VoCat v1.0: launcher, Quick Settings, Clock, Settings, WLAN,
+keyboard, Factory Reset, Developer Mode, LCD touch và navigation đều hoạt động.
+
 Kiểm tra thủ công:
 
 1. Boot vào idle.
@@ -257,6 +261,11 @@ Việc đo không đồng nghĩa với tối ưu hoặc thay đổi behavior.
 Tiêu chí hoàn thành: toàn bộ flow UI hoạt động trên VoCat và không phát hiện lỗi runtime nghiêm trọng.
 
 ## Phase 8 — Service integration sau parity
+
+Trạng thái: **COMPLETE (2026-09-26)**. Wi-Fi, volume, brightness, memory stats,
+Factory Reset, BQ27220 battery, SNTP, touch GPIO7, native Emote, XiaoZhi,
+head LED và BMI270 any-motion đã được nối qua adapter/module firmware mà không
+thay đổi layout của UI đã port.
 
 Chỉ bắt đầu khi bản port chính xác đã được xác nhận. Đây là phase riêng:
 
@@ -292,8 +301,8 @@ P3: 11/11 self-test pass — COMPLETE (2026-09-18)
 P4: Visual parity pass — COMPLETE (2026-09-18)
 P5: ESP-IDF build pass — COMPLETE (2026-09-22)
 P6: Shell integration pass — COMPLETE (2026-09-22)
-P7: VoCat runtime pass
-P8: Service integration
+P7: VoCat runtime pass — COMPLETE (2026-09-26)
+P8: Service integration — COMPLETE (2026-09-26)
 ```
 
 Không chuyển sang checkpoint tiếp theo nếu checkpoint hiện tại chưa đạt hoặc chưa có báo cáo khác biệt rõ ràng.

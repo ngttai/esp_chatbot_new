@@ -64,7 +64,7 @@ echo "[4/6] Comparing all screens with the frozen baseline"
 "$script_directory/visual_parity.sh" \
     "$host_executable" "$golden_directory" "$parity_output"
 
-echo "[5/6] Verifying the 74 imported UI files"
+echo "[5/6] Verifying the 74-file UI release baseline"
 if ! hash_report=$(cd "$ui_directory" && sha256sum -c SOURCE_FILES.sha256); then
     printf '%s\n' "$hash_report" >&2
     exit 1
@@ -76,7 +76,7 @@ if [[ "$hash_count" -ne 74 ]]; then
 fi
 if ! git -C "$project_root" diff --quiet -- main/modules/display/speaker_ui ||
    ! git -C "$project_root" diff --cached --quiet -- main/modules/display/speaker_ui; then
-    echo "Imported UI directory contains tracked modifications" >&2
+    echo "UI release baseline contains uncommitted tracked modifications" >&2
     exit 1
 fi
 untracked_ui=$(git -C "$project_root" ls-files --others --exclude-standard -- \
@@ -114,4 +114,4 @@ if [[ -n "$tracked_sensitive_files" ]]; then
     exit 1
 fi
 
-echo "P4.9 regression PASS: safe defaults, tests, visual parity, UI hashes, credentials."
+echo "Release regression PASS: safe defaults, tests, visual parity, UI hashes, credentials."

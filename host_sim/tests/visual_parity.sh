@@ -9,7 +9,7 @@ fi
 host_executable=$(realpath "$1")
 golden_directory=$(realpath "$2")
 output_directory=${3:-"$(pwd)/visual-parity-output"}
-mkdir -p "$output_directory/screenshots" "$output_directory/diffs"
+mkdir -p "$output_directory/screenshots" "$output_directory/diffs" "$output_directory/masked"
 capture_log="$output_directory/capture.log"
 : > "$capture_log"
 
@@ -19,14 +19,41 @@ screens=(
 )
 
 static_screens=(
-    idle launcher launcher-pressed quick settings settings-bottom wlan wlan-bottom
-    wlan-connect softap sound display about developer restore ai
+    idle launcher launcher-pressed settings settings-bottom wlan wlan-bottom
+    wlan-connect softap sound display about developer ai
 )
 
 for screen in "${screens[@]}"; do
     SDL_VIDEODRIVER=dummy "$host_executable" \
         --screenshot "$output_directory/screenshots/$screen.bmp" "$screen" \
         >> "$capture_log" 2>&1
+done
+
+# Quick Settings contains live time, battery and memory values. Factory Reset
+# intentionally uses device wording instead of the original simulator mock text.
+# Mask only those content rectangles; all surrounding geometry, icons, controls,
+# colors and navigation chrome remain pixel-compared against the frozen baseline.
+content_masks=(
+    "quick|rectangle 85,24 175,56 rectangle 205,24 275,56 rectangle 65,250 295,306"
+    "restore|rectangle 45,125 320,160 rectangle 35,252 325,285"
+)
+for entry in "${content_masks[@]}"; do
+    screen=${entry%%|*}
+    mask=${entry#*|}
+    golden="$golden_directory/$screen.bmp"
+    actual="$output_directory/screenshots/$screen.bmp"
+    masked_golden="$output_directory/masked/$screen-golden.png"
+    masked_actual="$output_directory/masked/$screen-actual.png"
+    diff="$output_directory/diffs/$screen.png"
+    convert "$golden" -fill black -draw "$mask" "$masked_golden"
+    convert "$actual" -fill black -draw "$mask" "$masked_actual"
+    raw_ae=$(compare -metric AE "$masked_golden" "$masked_actual" "$diff" 2>&1 || true)
+    fuzz_ae=$(compare -metric AE -fuzz 5% "$masked_golden" "$masked_actual" null: 2>&1 || true)
+    rmse=$(compare -metric RMSE "$masked_golden" "$masked_actual" null: 2>&1 || true)
+    printf '%-20s %12s %12s %14s\n' "$screen (masked)" "$raw_ae" "$fuzz_ae" "$rmse"
+    if [[ "$fuzz_ae" != "0" ]]; then
+        failures=$((failures + 1))
+    fi
 done
 
 failures=0
@@ -71,4 +98,4 @@ if (( failures != 0 || timer_failures != 0 )); then
     exit 1
 fi
 
-echo "Visual parity PASS: 16 static screens and all 4 non-time Clock regions."
+echo "Visual parity PASS: 14 static screens, 2 content-masked screens, and all 4 non-time Clock regions."

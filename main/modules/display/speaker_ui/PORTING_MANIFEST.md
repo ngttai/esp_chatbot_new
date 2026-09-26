@@ -12,7 +12,15 @@
 
 Every imported UI source, header, generated component, font, icon, and animation declaration is copied byte-for-byte. No include, formatting, symbol, layout, style, behavior, or API change was made during Phase 1.
 
-`SOURCE_PATHS.txt` contains the 74 imported paths relative to both the source repository and this module. `SOURCE_FILES.sha256` records their source-baseline SHA-256 values.
+`SOURCE_PATHS.txt` contains the 74 imported paths relative to both the source
+repository and this module. For Phase 1 through Phase 4,
+`SOURCE_FILES.sha256` recorded their source-baseline SHA-256 values.
+
+For release v1.0.0, 72 vendor/import files remain byte-identical. The two
+integration surfaces, `src/speaker_ui.c` and `src/speaker_ui.h`, intentionally
+carry the hardware/service bindings accepted during later phases. Their entries
+now record the frozen v1.0.0 release hashes; layout and imported vendor assets
+remain unchanged.
 
 Verify the imported tree from this directory with:
 
@@ -108,3 +116,9 @@ These exclusions are recorded, not substitutions. Their hashes remain available 
 - Auto adjust is intentionally not simulated because no ambient-light input is
   present.
 - Imported UI source changes: none.
+
+## Release v1.0.0 integrity baseline
+
+- Vendor/import files unchanged from the original source: 72/72.
+- Integration surfaces frozen at the accepted release state: 2/2.
+- Total release integrity manifest: 74/74.

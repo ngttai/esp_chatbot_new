@@ -10,6 +10,8 @@ cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
+set(PROJECT_VER "1.0.0")
+
 # Work around esp-idf-configdep mapping CONFIG_ESP_LVGL_ADAPTER_PARTIAL_AUX_IMG_CACHE
 # to a Windows-invalid path containing the reserved device name "aux".
 # Only force this off on Windows: elsewhere it makes idf.py's default
