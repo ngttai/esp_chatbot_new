@@ -51,6 +51,10 @@ bool Display::start(const Config &config)
     );
     BROOKESIA_CHECK_FALSE_RETURN(set_active_source_role(DrawSource::Lvgl), false, "Failed to activate LVGL source");
     if (!config.developer_mode) {
+        emote_ready_ = start_expression_emote_assets();
+        if (!emote_ready_) {
+            BROOKESIA_LOGW("Native Emote is unavailable; keep the black LVGL idle screen");
+        }
         BROOKESIA_CHECK_FALSE_RETURN(start_speaker_shell(), false, "Failed to start Speaker UI shell");
     }
 
@@ -183,8 +187,14 @@ bool Display::show_video()
     return set_active_source_role(DrawSource::Video);
 }
 
+bool Display::show_ui()
+{
+    return set_active_source_role(DrawSource::Lvgl);
+}
+
 bool Display::show_emote()
 {
+    BROOKESIA_CHECK_FALSE_RETURN(emote_ready_, false, "Native Emote is not ready");
     return set_active_source_role(DrawSource::Emote);
 }
 
@@ -228,6 +238,15 @@ bool Display::start_expression_emote_assets()
                           service::helper::Timeout(LOAD_ASSETS_TIMEOUT_MS)
                       );
         BROOKESIA_CHECK_FALSE_RETURN(result.has_value(), false, "Failed to load emote assets: %1%", result.error());
+    }
+
+    {
+        auto result = EmoteHelper::call_function_sync(
+                          EmoteHelper::FunctionId::SetEmoji, "neutral"
+                      );
+        BROOKESIA_CHECK_FALSE_RETURN(
+            result.has_value(), false, "Failed to set initial emote emoji: %1%", result.error()
+        );
     }
 
     {

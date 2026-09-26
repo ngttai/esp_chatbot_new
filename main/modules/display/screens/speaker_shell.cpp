@@ -22,6 +22,7 @@
 #include "modules/battery_monitor.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/developer_mode.hpp"
+#include "modules/display/display.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -211,6 +212,7 @@ void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)
 
 void ScreenSpeakerShell::poll_service_controls()
 {
+    poll_display_mode();
     sync_service_control_ui();
     poll_brightness();
     poll_volume();
@@ -219,6 +221,29 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_battery();
     poll_touch_sensor();
     poll_factory_reset();
+}
+
+void ScreenSpeakerShell::poll_display_mode()
+{
+    auto &display = Display::get_instance();
+    if (!display.emote_ready()) {
+        return;
+    }
+
+    const bool idle_active = speaker_ui_is_idle_active();
+    if (idle_display_mode_initialized_ && (idle_active == idle_display_mode_)) {
+        return;
+    }
+
+    const bool switched = idle_active ? display.show_emote() : display.show_ui();
+    if (!switched) {
+        BROOKESIA_LOGE("Failed to switch display source for Speaker UI idle state");
+        return;
+    }
+
+    idle_display_mode_ = idle_active;
+    idle_display_mode_initialized_ = true;
+    BROOKESIA_LOGI("Speaker UI display source: %1%", idle_active ? "Native Emote" : "LVGL");
 }
 
 void ScreenSpeakerShell::poll_battery()

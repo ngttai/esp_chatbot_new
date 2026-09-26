@@ -41,8 +41,13 @@ public:
     };
 
     bool start(const Config &config);
+    bool show_ui();
     bool show_video();
     bool show_emote();
+    bool emote_ready() const
+    {
+        return emote_ready_;
+    }
     const std::string &output_name() const
     {
         return display_output_name_;
@@ -100,4 +105,5 @@ private:
     std::unique_ptr<esp_brookesia::lib_utils::StateMachine> ui_state_machine_;
     std::unique_ptr<ScreenSpeakerShell> speaker_shell_;
     bool is_ui_state_action_triggered_ = false;
+    bool emote_ready_ = false;
 };

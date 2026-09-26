@@ -44,6 +44,7 @@ private:
     void poll_battery();
     void poll_touch_sensor();
     void poll_factory_reset();
+    void poll_display_mode();
     void configure_about();
     void attach_developer_mode_handler();
     void perform_factory_reset();
@@ -93,6 +94,8 @@ private:
     bool touch_sensor_effective_enabled_ = true;
     bool factory_reset_handler_attached_ = false;
     bool factory_reset_in_progress_ = false;
+    bool idle_display_mode_initialized_ = false;
+    bool idle_display_mode_ = false;
     lv_obj_t *wifi_connected_group_ = nullptr;
     lv_obj_t *wifi_connected_name_label_ = nullptr;
     lv_obj_t *wifi_connected_status_label_ = nullptr;
