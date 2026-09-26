@@ -1,4 +1,27 @@
-file(GLOB_RECURSE SRCS "${CMAKE_CURRENT_LIST_DIR}/*.cpp" "${CMAKE_CURRENT_LIST_DIR}/*.c")
+set(SRCS
+    "main.cpp"
+    "modules/ai_agents.cpp"
+    "modules/battery_monitor.cpp"
+    "modules/developer_mode.cpp"
+    "modules/display/display.cpp"
+    "modules/display/screens/speaker_shell.cpp"
+    "modules/general_services.cpp"
+    "modules/head_led.cpp"
+    "modules/imu_gesture.cpp"
+    "modules/profiler.cpp"
+    "modules/touch_sensor.cpp"
+    "modules/usb_msc.c"
+    "modules/wifi_provisioning.cpp"
+)
+
+# Limit imported source discovery to the active Speaker UI tree. This
+# prevents archived or experimental files elsewhere under main/ from silently
+# becoming part of the firmware.
+file(GLOB_RECURSE SPEAKER_UI_SRCS
+    "${CMAKE_CURRENT_LIST_DIR}/modules/display/speaker_ui/src/*.c"
+    "${CMAKE_CURRENT_LIST_DIR}/modules/display/speaker_ui/vendor/*.c"
+)
+list(APPEND SRCS ${SPEAKER_UI_SRCS})
 set(EMBEDDED_FILES "")
 
 if (CONFIG_EXAMPLE_AGENTS_COZE_PRIVATE_KEY_FILE_PATH)
@@ -15,10 +38,10 @@ idf_component_register(
         "."
         "compat"
         "modules/display/speaker_ui/src"
-        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems"
-        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker"
-        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
-        "modules/display/speaker_ui/vendor/esp_speaker_ui/main/apps/brookesia_app_ai_profile/ui"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/core/brookesia_core/systems"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
+        "modules/display/speaker_ui/vendor/esp_speaker_ui/apps/brookesia_app_ai_profile/ui"
     PRIV_REQUIRES
         bq27220
         esp_board_manager

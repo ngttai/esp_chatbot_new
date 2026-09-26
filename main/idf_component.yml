@@ -43,11 +43,6 @@ dependencies:
     version: "0.8.*"
   espressif/brookesia_service_video:
     version: "0.8.*"
-  espressif/brookesia_service_bt_speaker:
-    rules:
-      - if: target in [esp32s31]
-    version: "0.8.*"
-
   # Agents
   espressif/brookesia_agent_coze:
     version: "0.8.*"

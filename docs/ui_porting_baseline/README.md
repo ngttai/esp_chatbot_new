@@ -8,7 +8,7 @@ The source simulator was rebuilt from a clean temporary build directory, all 11 
 
 ## Source identity
 
-- Repository: `/home/nttai/ntt_ws/esp_project/sdl_ui_simulator`
+- Repository: `~/ntt_ws/esp_project/sdl_ui_simulator`
 - Commit: `5a4bb94089ce47a66e4ecd01546adc724d1589a7`
 - Commit date: `2026-09-17T15:47:35+00:00`
 - Subject: `Add boot splash overlay, ported from HTC_Flip_Clock_with_weather`

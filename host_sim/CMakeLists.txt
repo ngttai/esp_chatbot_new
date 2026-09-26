@@ -198,10 +198,10 @@ target_include_directories(esp_chatbot_host_sim PRIVATE
     "${HOST_SIM_GENERATED_DIR}"
     "${HOST_SIM_DIR}/tests"
     "${SPEAKER_UI_DIR}/src"
-    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/main/core/brookesia_core/systems"
-    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker"
-    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/main/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
-    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/main/apps/brookesia_app_ai_profile/ui"
+    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems"
+    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker"
+    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
+    "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/apps/brookesia_app_ai_profile/ui"
 )
 target_link_libraries(esp_chatbot_host_sim PRIVATE
     brookesia::gui_lvgl

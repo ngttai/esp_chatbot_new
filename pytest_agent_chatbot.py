@@ -21,9 +21,9 @@ Steps to run these test cases:
 
 3. Build the test app:
 
-   **Build for a specific board:** (replace `esp32p4` and `esp32_p4x_function_ev` with your target chip and board name)
+   **Build for ESP VoCat:**
    ```bash
-   python .gitlab/tools/build_apps.py examples/agent/chatbot -t esp32p4 --config "sdkconfig.ci.board.esp32_p4x_function_ev=esp32_p4x_function_ev"
+   python .gitlab/tools/build_apps.py examples/agent/chatbot -t esp32s3 --config "sdkconfig.ci.board.esp_vocat_board_v1_0=esp_vocat_board_v1_0"
    ```
 
 ## Test
@@ -36,9 +36,9 @@ Steps to run these test cases:
 
 2. Run pytest with appropriate target and environment:
 
-   **esp32p4x_function_ev_board examples:**
+   **ESP VoCat examples:**
    ```bash
-   pytest examples/agent/chatbot --target esp32p4 --env esp32p4x_function_ev_board
+   pytest examples/agent/chatbot --target esp32s3 --env esp_vocat
    ```
 '''
 
@@ -59,22 +59,9 @@ def run_test(dut: Dut)-> None:
 @pytest.mark.parametrize(
     'target, config',
     [
-        ('esp32s3', 'esp_vocat_board_v1_2'),
+        ('esp32s3', 'esp_vocat_board_v1_0'),
     ],
 )
 @pytest.mark.timeout(TIMEOUT_S)
-def test_esp_vocat_board_v1_2(dut: Dut)-> None:
-    run_test(dut)
-
-
-@pytest.mark.target('esp32p4')
-@pytest.mark.env('esp32p4x_function_ev_board')
-@pytest.mark.parametrize(
-    'target, config',
-    [
-        ('esp32p4', 'esp32_p4x_function_ev'),
-    ],
-)
-@pytest.mark.timeout(TIMEOUT_S)
-def test_esp32_p4x_function_ev(dut: Dut)-> None:
+def test_esp_vocat_boards(dut: Dut)-> None:
     run_test(dut)

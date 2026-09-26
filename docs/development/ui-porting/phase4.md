@@ -87,10 +87,11 @@ final state are unchanged.
 - Clock/weather layout: pass.
 - Flip animation: same implementation and states; only capture phase differs.
 
-Review aids:
-
-- `docs/ui_porting_phase4/contact-sheet.png`
-- `docs/ui_porting_phase4/diff-contact-sheet.png`
+The generated contact sheets, captures, and pixel diffs are development
+artifacts rather than release inputs. They are archived locally under
+`.local-artifacts/porting-history/phase4-visual-output/` and can be regenerated
+with the command below. The versioned golden baseline remains the release
+oracle.
 
 Reproduce the automated comparison with:
 

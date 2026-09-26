@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Source repository: `/home/nttai/ntt_ws/esp_project/sdl_ui_simulator`
+- Source repository: `~/ntt_ws/esp_project/sdl_ui_simulator`
 - Source commit: `5a4bb94089ce47a66e4ecd01546adc724d1589a7`
 - Baseline report: `docs/ui_porting_baseline/README.md`
 - Import date: `2026-09-18`
@@ -103,7 +103,7 @@ These exclusions are recorded, not substitutions. Their hashes remain available 
   the live Clock value/flip-animation phase; no geometry or state mismatch was
   found.
 - Imported file integrity remains 74/74 after Phase 4.
-- Detailed evidence: `docs/ui_porting_phase4.md`.
+- Detailed evidence: `docs/development/ui-porting/phase4.md`.
 
 ## Post-Phase 4 host brightness simulation
 

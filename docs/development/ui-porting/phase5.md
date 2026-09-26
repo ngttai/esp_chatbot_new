@@ -11,7 +11,7 @@ nối lifecycle và hiển thị trên LCD thuộc Phase 6 và Phase 7.
 ## Lệnh build chuẩn
 
 ```sh
-source /home/nttai/.espressif/v6.1/esp-idf/export.sh
+source ~/.espressif/v6.1/esp-idf/export.sh
 idf.py bmgr -b esp_vocat_board_v1_0
 idf.py build
 ```
@@ -44,4 +44,3 @@ Các symbol `speaker_ui_*` chưa xuất hiện trong ELF cuối vì chưa có co
 chúng. Đây là trạng thái mong đợi ở checkpoint build. Phase 6 sẽ tạo wrapper Display,
 gọi `speaker_ui_create()`/`speaker_ui_set_input()` và khi đó linker sẽ giữ UI trong ELF.
 Phase 7 mới xác nhận render/touch thật trên màn 360×360 của VoCat.
-

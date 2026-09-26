@@ -9,24 +9,13 @@
 #include <memory>
 #include <string>
 #include "brookesia/lib_utils/task_scheduler.hpp"
-#include "brookesia/lib_utils/state_machine.hpp"
 #include "brookesia/service_manager.hpp"
 #include "brookesia/service_helper/media/display.hpp"
-#include "screens/common.hpp"
 #include "screens/speaker_shell.hpp"
 
 class Display {
 public:
-    friend class ScreenEmote;
-    friend class ScreenSettings;
-
     static constexpr const char *TASK_GROUP_NAME = "Display";
-
-    using GestureDirection = esp_brookesia::service::helper::Display::TouchGestureDirection;
-    using GestureArea = esp_brookesia::service::helper::Display::TouchGestureArea;
-    using GestureEventType = esp_brookesia::service::helper::Display::TouchGestureEventType;
-    using GestureData = esp_brookesia::service::helper::Display::TouchGestureConfig;
-    using GestureInfo = esp_brookesia::service::helper::Display::TouchGestureInfo;
 
     static Display &get_instance()
     {
@@ -36,7 +25,6 @@ public:
 
     struct Config {
         std::shared_ptr<esp_brookesia::lib_utils::TaskScheduler> task_scheduler;
-        GestureData gesture_data{};
         bool developer_mode = false;
     };
 
@@ -80,13 +68,7 @@ private:
     bool start_speaker_shell();
     bool start_display_service();
     bool start_expression_emote_assets();
-    bool start_gesture();
-    void stop_gesture();
-
     bool set_active_source_role(DrawSource source);
-
-    bool start_ui_state_machine();
-    DisplayAction get_ui_action_from_gesture(const GestureInfo &info) const;
 
     bool send_display_task(esp_brookesia::lib_utils::TaskScheduler::OnceTask &&task);
 
@@ -99,11 +81,6 @@ private:
     uint32_t display_width_ = 0;
     uint32_t display_height_ = 0;
 
-    GestureData gesture_data_{};
-    esp_brookesia::service::EventRegistry::SignalConnection gesture_event_connection_;
-
-    std::unique_ptr<esp_brookesia::lib_utils::StateMachine> ui_state_machine_;
     std::unique_ptr<ScreenSpeakerShell> speaker_shell_;
-    bool is_ui_state_action_triggered_ = false;
     bool emote_ready_ = false;
 };

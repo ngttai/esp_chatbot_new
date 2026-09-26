@@ -2,7 +2,7 @@
 
 ## Mục tiêu
 
-Port nguyên trạng UI từ `/home/nttai/ntt_ws/esp_project/sdl_ui_simulator` vào project `esp_chatbot_v1`, bao gồm:
+Port nguyên trạng UI từ `~/ntt_ws/esp_project/sdl_ui_simulator` vào project `esp_chatbot_v1`, bao gồm:
 
 - Launcher.
 - Idle/Home.
@@ -19,7 +19,7 @@ UI phải chạy bằng cùng một source trên ESP VoCat v1.0 và PC simulator
 
 ## Nguyên tắc
 
-- `/home/nttai/ntt_ws/esp_project/sdl_ui_simulator` là bản chuẩn đối chiếu.
+- `~/ntt_ws/esp_project/sdl_ui_simulator` là bản chuẩn đối chiếu.
 - Không chỉnh layout, màu, font, animation, gesture hoặc navigation.
 - Giữ nguyên `speaker_ui.c`, `speaker_ui.h` và public self-test API tối đa có thể.
 - Mọi khác biệt bắt buộc do Brookesia hoặc ESP-IDF phải nằm trong wrapper hay adapter bên ngoài.
@@ -169,7 +169,7 @@ Tiêu chí hoàn thành: tất cả màn đạt visual parity hoặc có báo c�
 ## Phase 5 — Build nguyên UI trong ESP-IDF
 
 Trạng thái build checkpoint: **COMPLETE (2026-09-22)**. Source UI đã compile nguyên
-vẹn vào `main` component; xem `docs/ui_porting_phase5.md`. Việc nối lifecycle vào
+vẹn vào `main` component; xem `docs/development/ui-porting/phase5.md`. Việc nối lifecycle vào
 Display và xác nhận LCD 360×360 vẫn thuộc Phase 6 và Phase 7.
 
 1. Đưa cùng source UI vào `main` component.
@@ -197,7 +197,7 @@ Tiêu chí hoàn thành:
 
 Trạng thái tích hợp build/link: **COMPLETE (2026-09-22)**. Wrapper firmware đã chọn
 Speaker UI làm shell chính, lấy input từ Brookesia LVGL và giữ nguyên navigation nội
-bộ; xem `docs/ui_porting_phase6.md`. Xác nhận LCD/touch thật thuộc Phase 7.
+bộ; xem `docs/development/ui-porting/phase6.md`. Xác nhận LCD/touch thật thuộc Phase 7.
 
 Tạo wrapper tối thiểu, ví dụ:
 
