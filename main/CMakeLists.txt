@@ -27,6 +27,7 @@ idf_component_register(
         esp_hw_support
         esp_lvgl_adapter
         esp_wifi
+        espressif__i2c_bus
         fatfs
         spi_flash
     EMBED_TXTFILES ${EMBEDDED_FILES}

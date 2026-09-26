@@ -1,5 +1,9 @@
 ## IDF Component Manager Manifest File
 dependencies:
+  # Match esp_speaker's BMI270 any-motion gesture used by the Emote home.
+  espressif2022/bmi270:
+    version: "^1.1.0~2"
+
   # Match esp_speaker's GPIO43 head-LED feedback for Wi-Fi and touch.
   espressif/led_indicator:
     version: "^2.1.2"

@@ -15,6 +15,7 @@
 #include "modules/general_services.hpp"
 #include "modules/battery_monitor.hpp"
 #include "modules/head_led.hpp"
+#include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/profiler.hpp"
 #include "modules/developer_mode.hpp"
@@ -117,6 +118,10 @@ extern "C" void app_main(void)
         Display::get_instance().start({
             .task_scheduler = backend_scheduler,
         });
+
+        if (!ImuGesture::get_instance().init()) {
+            BROOKESIA_LOGW("BMI270 motion gesture is unavailable; continue without motion-triggered emotes");
+        }
 
         /* Start WiFi provisioning module */
         WifiProvisioning::get_instance().init({
