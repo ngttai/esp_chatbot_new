@@ -112,6 +112,11 @@ bool Display::start_lvgl_display_source()
     gui::lvgl::DisplaySourceConfig config{};
     config.output_name = "";
     config.task_core_id = CONFIG_BROOKESIA_HAL_ADAPTOR_DISPLAY_LCD_PANEL_INIT_THREAD_CORE_ID;
+    // Match the original ESP-Speaker hardware path: render complete frames into
+    // two PSRAM buffers instead of exposing each small partial stripe on the LCD.
+    config.buffer_height = static_cast<uint16_t>(display_height_);
+    config.use_psram = true;
+    config.require_double_buffer = true;
 
     auto &source = LvglDisplaySource::get_instance();
     BROOKESIA_CHECK_FALSE_RETURN(source.start(config), false, "Failed to start LVGL display source");

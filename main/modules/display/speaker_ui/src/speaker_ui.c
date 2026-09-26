@@ -235,8 +235,13 @@ static lv_obj_t *screen_content(lv_obj_t *screen, lv_color_t color)
     lv_obj_center(content);
     lv_obj_set_style_bg_color(content, color, 0);
     lv_obj_set_style_bg_opa(content, LV_OPA_COVER, 0);
+#if !defined(ESP_PLATFORM)
+    /* SDL uses a square window, so mask it to emulate the round panel. On
+     * hardware the physical VoCat display already provides that mask; keeping
+     * the LVGL mask there only adds software clipping work. */
     lv_obj_set_style_radius(content, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_clip_corner(content, true, 0);
+#endif
     lv_obj_set_style_text_color(content, WHITE, 0);
     return content;
 }

@@ -55,3 +55,4 @@ dependencies:
   # GUI
   espressif/brookesia_gui_lvgl:
     version: "0.8.*"
+    override_path: "../components/brookesia_gui_lvgl"
