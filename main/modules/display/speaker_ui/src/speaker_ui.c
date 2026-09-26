@@ -88,6 +88,7 @@ typedef struct { const char *name; const lv_image_dsc_t *image; lv_event_cb_t cb
 static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen;
 static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about;
 static lv_obj_t *settings_developer, *settings_restore;
+static lv_obj_t *settings_developer_row;
 static lv_obj_t *settings_wlan_verify, *settings_softap;
 static lv_obj_t *page_box, *dots;
 static lv_obj_t *timer_clock_widget;
@@ -1033,9 +1034,9 @@ static void create_settings(void)
     lv_obj_t *about_row = row(more, &esp_brookesia_app_icon_more_about_48_48,
                               "About", NULL, true);
     make_clickable(about_row, show_screen_ref, &settings_about);
-    lv_obj_t *developer_row = row(more, &esp_brookesia_app_icon_more_developer_mode_48_48,
-                                  "Developer Mode", NULL, false);
-    make_clickable(developer_row, show_screen_ref, &settings_developer);
+    settings_developer_row = row(more, &esp_brookesia_app_icon_more_developer_mode_48_48,
+                                 "Developer Mode", NULL, false);
+    make_clickable(settings_developer_row, show_screen_ref, &settings_developer);
     lv_obj_t *restore_row = row(more, &esp_brookesia_app_icon_more_restart_48_48,
                                 "Restore Factory", NULL, false);
     make_clickable(restore_row, show_screen_ref, &settings_restore);
@@ -2027,6 +2028,14 @@ bool speaker_ui_set_about_battery_measurements(int voltage_mv, int current_ma)
     const int centivolts = (voltage_mv + 5) / 10;
     lv_label_set_text_fmt(about_battery_voltage_label, "%d.%02d V", centivolts / 100, centivolts % 100);
     lv_label_set_text_fmt(about_battery_current_label, "%d mA", current_ma);
+    return true;
+}
+
+bool speaker_ui_set_developer_mode_callback(lv_event_cb_t callback, void *user_data)
+{
+    if(settings_developer_row == NULL || callback == NULL) return false;
+    lv_obj_remove_event_cb(settings_developer_row, show_screen_ref);
+    lv_obj_add_event_cb(settings_developer_row, callback, LV_EVENT_CLICKED, user_data);
     return true;
 }
 

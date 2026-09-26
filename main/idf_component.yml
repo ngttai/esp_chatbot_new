@@ -10,6 +10,10 @@ dependencies:
   espressif/touch_sensor_lowlevel:
     version: "^1.0.1"
 
+  # Match esp_speaker Developer Mode: expose the VoCat SD card over USB MSC.
+  espressif/esp_tinyusb:
+    version: "^2.0.0"
+
   # The main component creates the littlefs_data partition image directly.
   joltwallet/littlefs:
     version: "1.*"

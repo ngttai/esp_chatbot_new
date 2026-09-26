@@ -20,6 +20,7 @@ public:
     bool init();
     void set_touch_pressed(bool pressed);
     void set_wifi_connected(bool connected);
+    void set_developer_mode();
 
 private:
     HeadLed() = default;

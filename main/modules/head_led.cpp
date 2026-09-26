@@ -21,6 +21,7 @@ enum BlinkType {
     BLINK_TOUCH_PRESS_DOWN = 0,
     BLINK_WIFI_CONNECTED,
     BLINK_WIFI_DISCONNECTED,
+    BLINK_DEVELOPER_MODE,
     BLINK_MAX,
 };
 
@@ -40,10 +41,19 @@ const blink_step_t WIFI_DISCONNECTED_PATTERN[] = {
     {LED_BLINK_LOOP, 0, 0},
 };
 
+const blink_step_t DEVELOPER_MODE_PATTERN[] = {
+    {LED_BLINK_BREATHE, LED_STATE_ON, 1000},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_ON, 500},
+    {LED_BLINK_BREATHE, LED_STATE_OFF, 1000},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 500},
+    {LED_BLINK_LOOP, 0, 0},
+};
+
 blink_step_t const *BLINK_LISTS[] = {
     [BLINK_TOUCH_PRESS_DOWN] = TOUCH_PRESS_DOWN_PATTERN,
     [BLINK_WIFI_CONNECTED] = WIFI_CONNECTED_PATTERN,
     [BLINK_WIFI_DISCONNECTED] = WIFI_DISCONNECTED_PATTERN,
+    [BLINK_DEVELOPER_MODE] = DEVELOPER_MODE_PATTERN,
     [BLINK_MAX] = nullptr,
 };
 
@@ -122,4 +132,15 @@ void HeadLed::set_wifi_connected(bool connected)
     led_indicator_stop(handle_, connected ? BLINK_WIFI_DISCONNECTED : BLINK_WIFI_CONNECTED);
     led_indicator_start(handle_, connected ? BLINK_WIFI_CONNECTED : BLINK_WIFI_DISCONNECTED);
     ESP_LOGI(TAG, "Wi-Fi LED state: %s", connected ? "connected" : "disconnected");
+}
+
+void HeadLed::set_developer_mode()
+{
+    if (!initialized_.load()) {
+        return;
+    }
+    led_indicator_stop(handle_, BLINK_WIFI_CONNECTED);
+    led_indicator_stop(handle_, BLINK_WIFI_DISCONNECTED);
+    led_indicator_start(handle_, BLINK_DEVELOPER_MODE);
+    ESP_LOGI(TAG, "Developer-mode LED pattern started");
 }

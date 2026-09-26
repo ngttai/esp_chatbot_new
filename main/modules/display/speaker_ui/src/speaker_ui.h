@@ -48,6 +48,7 @@ bool speaker_ui_set_quick_brightness_level(int level);
 bool speaker_ui_set_battery_state(bool charging, int percentage);
 bool speaker_ui_set_about_info(const speaker_ui_about_info_t *info);
 bool speaker_ui_set_about_battery_measurements(int voltage_mv, int current_ma);
+bool speaker_ui_set_developer_mode_callback(lv_event_cb_t callback, void *user_data);
 bool speaker_ui_is_touch_sensor_on(void);
 bool speaker_ui_set_touch_sensor_on(bool enabled);
 bool speaker_ui_is_wlan_keyboard_visible(void);

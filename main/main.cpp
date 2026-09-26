@@ -17,6 +17,7 @@
 #include "modules/head_led.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/profiler.hpp"
+#include "modules/developer_mode.hpp"
 #include "modules/display/display.hpp"
 
 using namespace esp_brookesia;
@@ -70,13 +71,26 @@ extern "C" void app_main(void)
     auto setup_task = [backend_scheduler]() {
         /* Initialize general services */
         GeneralServices::get_instance().init(backend_scheduler);
-        GeneralServices::get_instance().init_audio();
 
         /* Start ServiceManager */
         auto &service_manager = service::ServiceManager::get_instance();
         BROOKESIA_CHECK_FALSE_EXIT(service_manager.start(), "Failed to start ServiceManager");
 
         GeneralServices::get_instance().start_device();
+
+        if (DeveloperMode::is_requested()) {
+            if (!HeadLed::get_instance().init()) {
+                BROOKESIA_LOGW("VoCat head LED is unavailable in Developer Mode");
+            }
+            Display::get_instance().start({
+                .task_scheduler = backend_scheduler,
+                .developer_mode = true,
+            });
+            DeveloperMode::start();
+            return;
+        }
+
+        GeneralServices::get_instance().init_audio();
         GeneralServices::get_instance().start_bt_speaker();
 
         if (!HeadLed::get_instance().init()) {

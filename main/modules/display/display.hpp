@@ -37,6 +37,7 @@ public:
     struct Config {
         std::shared_ptr<esp_brookesia::lib_utils::TaskScheduler> task_scheduler;
         GestureData gesture_data{};
+        bool developer_mode = false;
     };
 
     bool start(const Config &config);

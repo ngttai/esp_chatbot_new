@@ -21,6 +21,7 @@
 #include "brookesia/service_helper.hpp"
 #include "modules/battery_monitor.hpp"
 #include "modules/touch_sensor.hpp"
+#include "modules/developer_mode.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -165,6 +166,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_set_wifi_managed_externally(true);
     speaker_ui_set_input(input);
     configure_about();
+    attach_developer_mode_handler();
 
     display_output_id_ = display_output_id;
     task_scheduler_ = std::move(task_scheduler);
@@ -183,6 +185,20 @@ bool ScreenSpeakerShell::start(
 
     BROOKESIA_LOGI("Speaker UI shell started on %1%x%2%", source.width(), source.height());
     return true;
+}
+
+void ScreenSpeakerShell::developer_mode_clicked_callback(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    DeveloperMode::request_and_restart();
+}
+
+void ScreenSpeakerShell::attach_developer_mode_handler()
+{
+    BROOKESIA_CHECK_FALSE_EXIT(
+        speaker_ui_set_developer_mode_callback(developer_mode_clicked_callback, this),
+        "Failed to attach Speaker UI developer-mode handler"
+    );
 }
 
 void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)

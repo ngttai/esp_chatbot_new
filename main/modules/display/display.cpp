@@ -50,7 +50,9 @@ bool Display::start(const Config &config)
         start_lvgl_display_source(), false, "Failed to start LVGL"
     );
     BROOKESIA_CHECK_FALSE_RETURN(set_active_source_role(DrawSource::Lvgl), false, "Failed to activate LVGL source");
-    BROOKESIA_CHECK_FALSE_RETURN(start_speaker_shell(), false, "Failed to start Speaker UI shell");
+    if (!config.developer_mode) {
+        BROOKESIA_CHECK_FALSE_RETURN(start_speaker_shell(), false, "Failed to start Speaker UI shell");
+    }
 
     auto delayed_task = []() {
         auto result = DisplayHelper::call_function_async(

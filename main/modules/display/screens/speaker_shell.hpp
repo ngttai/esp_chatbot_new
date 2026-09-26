@@ -33,6 +33,7 @@ private:
 
     static void service_timer_callback(lv_timer_t *timer);
     static void factory_reset_clicked_callback(lv_event_t *event);
+    static void developer_mode_clicked_callback(lv_event_t *event);
     static void wifi_network_selected_callback(lv_event_t *event);
     static void wifi_password_ready_callback(lv_event_t *event);
     void poll_service_controls();
@@ -44,6 +45,7 @@ private:
     void poll_touch_sensor();
     void poll_factory_reset();
     void configure_about();
+    void attach_developer_mode_handler();
     void perform_factory_reset();
     void ensure_control_event_subscriptions();
     void refresh_control_state();
