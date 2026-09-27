@@ -45,6 +45,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
+            imagemagick \
             libboost-all-dev \
             libsdl2-dev \
             libssl-dev \
