@@ -13,11 +13,6 @@ host_executable="$build_directory/esp_chatbot_host_sim"
 golden_directory="$project_root/docs/ui_porting_baseline/screenshots"
 ui_directory="$project_root/main/modules/display/speaker_ui"
 
-if [[ ! -x "$host_executable" ]]; then
-    echo "Host executable not found: $host_executable" >&2
-    exit 2
-fi
-
 temporary_output=""
 if [[ $# -eq 2 ]]; then
     parity_output=$(realpath -m "$2")
@@ -35,6 +30,10 @@ trap cleanup EXIT
 
 echo "[1/6] Building the default simulator"
 cmake --build "$build_directory"
+if [[ ! -x "$host_executable" ]]; then
+    echo "Host executable not found after build: $host_executable" >&2
+    exit 2
+fi
 
 echo "[2/6] Verifying deterministic default capabilities"
 capabilities=$("$host_executable" --print-capabilities)

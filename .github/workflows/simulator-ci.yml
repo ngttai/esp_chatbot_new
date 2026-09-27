@@ -1,0 +1,75 @@
+name: Simulator CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev/simulator-ui-port
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simulator-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Linux simulator regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v7
+
+      - name: Check out ESP-Brookesia
+        uses: actions/checkout@v7
+        with:
+          repository: espressif/esp-brookesia
+          ref: 2c09459a97a82c8d477c543eb2b43f4956b8a5be
+          path: _deps/esp-brookesia
+
+      - name: Check out LVGL 9.5.0
+        uses: actions/checkout@v7
+        with:
+          repository: lvgl/lvgl
+          ref: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
+          path: _deps/lvgl
+
+      - name: Install Linux simulator dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            imagemagick \
+            libboost-all-dev \
+            libsdl2-dev \
+            libssl-dev \
+            ninja-build \
+            pkg-config
+
+      - name: Configure simulator
+        run: |
+          cmake -S host_sim -B build-host-ci -G Ninja \
+            -DBROOKESIA_SOURCE_DIR="${GITHUB_WORKSPACE}/_deps/esp-brookesia" \
+            -DLVGL_SOURCE_DIR="${GITHUB_WORKSPACE}/_deps/lvgl" \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Run release regression gate
+        run: |
+          host_sim/tests/regression_gate.sh \
+            build-host-ci \
+            .local-artifacts/ci-parity
+
+      - name: Upload visual diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: simulator-visual-diffs
+          path: .local-artifacts/ci-parity/
+          if-no-files-found: ignore
+          retention-days: 7

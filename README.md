@@ -1,5 +1,7 @@
 # ESP VoCat AI Chatbot
 
+[![Simulator CI](https://github.com/ngttai/esp_chatbot_new/actions/workflows/simulator-ci.yml/badge.svg)](https://github.com/ngttai/esp_chatbot_new/actions/workflows/simulator-ci.yml)
+
 ESP-IDF 6.1 firmware for **ESP VoCat v1.0**, built with ESP-Brookesia and the
 ported ESP Speaker UI. The same UI can run on the board or in the Linux/SDL2
 simulator.
