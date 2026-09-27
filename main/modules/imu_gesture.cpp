@@ -217,13 +217,15 @@ bool ImuGesture::init()
         return false;
     }
 
-    ret = gpio_install_isr_service(0);
-    if ((ret != ESP_OK) && (ret != ESP_ERR_INVALID_STATE)) {
-        ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(ret));
-        cleanup();
-        return false;
-    }
+    // Display/touch normally owns the shared GPIO ISR service and starts before
+    // the IMU. Reuse it first to avoid a misleading "already installed" error.
     ret = gpio_isr_handler_add(BMI270_INTERRUPT_GPIO, gpio_isr, this);
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ret = gpio_install_isr_service(0);
+        if (ret == ESP_OK) {
+            ret = gpio_isr_handler_add(BMI270_INTERRUPT_GPIO, gpio_isr, this);
+        }
+    }
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add BMI270 GPIO ISR: %s", esp_err_to_name(ret));
         cleanup();

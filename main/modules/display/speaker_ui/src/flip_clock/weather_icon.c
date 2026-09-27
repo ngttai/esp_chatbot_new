@@ -69,7 +69,6 @@ static void draw_sun(lv_layer_t * layer, const lv_area_t * coords, int32_t size,
     ldsc.round_end = 1;
     ldsc.round_start = 1;
     for(int i = 0; i < 8; i++) {
-        float ang = (float)i * (3.14159265f / 4.0f);
         int32_t r1 = (int32_t)(r * 1.35f);
         int32_t r2 = (int32_t)(r * 1.85f);
         ldsc.p1.x = cx + (int32_t)(r1 * lv_trigo_cos(i * 45) / 32767.0f);
