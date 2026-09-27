@@ -60,7 +60,7 @@ main/modules/display/       Display integration and Speaker UI
 host_sim/                   Linux/SDL2 simulator
 components/                 Local ESP-IDF components
 littlefs/                   Files packaged into LittleFS
-docs/                       Porting notes and visual baselines
+docs/                       Release notes and visual baselines
 ```
 
 The imported Speaker UI is kept under
