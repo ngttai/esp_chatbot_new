@@ -1,5 +1,7 @@
 #include "speaker_ui.h"
 
+#include <inttypes.h>
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -215,7 +217,7 @@ void del_component_child_event_cb(lv_event_t *e)
 void _ui_arc_set_text_value(lv_obj_t *target, lv_obj_t *source,
                             const char *prefix, const char *postfix)
 {
-    lv_label_set_text_fmt(target, "%s%d%s", prefix, lv_arc_get_value(source), postfix);
+    lv_label_set_text_fmt(target, "%s%" PRId32 "%s", prefix, lv_arc_get_value(source), postfix);
 }
 
 static void bare(lv_obj_t *o)
