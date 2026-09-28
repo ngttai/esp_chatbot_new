@@ -684,6 +684,9 @@ void AI_Agents::process_emote_when_general_action_triggered()
         case AgentHelper::GeneralAction::Sleep: {
             is_sleeping_ = true;
             EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "sleepy");
+            EmoteHelper::call_function_async(
+                EmoteHelper::FunctionId::InsertAnimation, "sleep_transition", 4000
+            );
             if (!is_suspended()) {
                 EmoteHelper::call_function_async(
                     EmoteHelper::FunctionId::SetEventMessage,

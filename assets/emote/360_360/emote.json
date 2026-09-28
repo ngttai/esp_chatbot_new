@@ -1,0 +1,23 @@
+[
+    {"emote": "happy",       "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "laughing",    "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "funny",       "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "loving",      "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "embarrassed", "src": "pack_question.eaf",     "loop": true, "fps": 20},
+    {"emote": "confident",   "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "delicious",   "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "sad",         "src": "pack_sad.eaf",          "loop": true, "fps": 20},
+    {"emote": "crying",      "src": "pack_cry.eaf",          "loop": true, "fps": 20},
+    {"emote": "sleepy",      "src": "pack_asleep.eaf",       "loop": true, "fps": 5},
+    {"emote": "sleep_transition", "src": "pack_yawn.eaf",    "loop": false, "fps": 20},
+    {"emote": "silly",       "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "angry",       "src": "pack_angry.eaf",        "loop": true, "fps": 20},
+    {"emote": "surprised",   "src": "pack_shocked.eaf",      "loop": true, "fps": 20},
+    {"emote": "shocked",     "src": "pack_shocked.eaf",      "loop": true, "fps": 20},
+    {"emote": "thinking",    "src": "pack_question.eaf",     "loop": true, "fps": 20},
+    {"emote": "winking",     "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "relaxed",     "src": "pack_smile.eaf",        "loop": true, "fps": 20},
+    {"emote": "confused",    "src": "pack_question.eaf",     "loop": true, "fps": 20},
+    {"emote": "neutral",     "src": "pack_smile_static.eaf", "loop": true, "fps": 20},
+    {"emote": "idle",        "src": "pack_smile.eaf",        "loop": true, "fps": 20}
+]
