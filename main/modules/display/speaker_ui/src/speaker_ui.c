@@ -129,6 +129,7 @@ static int quick_volume_level = -1;
 static int quick_brightness_level = 0;
 static lv_obj_t *settings_wlan_password;
 static lv_obj_t *wlan_keyboard_container, *wlan_keyboard;
+static lv_obj_t *softap_qr, *softap_info_label;
 /* Single source of truth for the WLAN on/off state, mirrored (like firmware's shared
  * NVS-backed flag) onto the Settings > WLAN switch, the Quick Settings Wi-Fi button and
  * status icon, and the visibility of the WLAN screen's connected/available/SoftAP groups. */
@@ -1596,21 +1597,21 @@ static void create_settings_softap(void)
     lv_obj_set_style_pad_all(qr_cell, 10, 0);
     lv_obj_set_style_pad_row(qr_cell, 10, 0);
 
-    lv_obj_t *qr = lv_qrcode_create(qr_cell);
-    lv_qrcode_set_size(qr, 100);
-    lv_qrcode_set_dark_color(qr, lv_color_hex(0x000000));
-    lv_qrcode_set_light_color(qr, WHITE);
-    lv_obj_set_style_border_color(qr, WHITE, 0);
-    lv_obj_set_style_border_width(qr, 10, 0);
+    softap_qr = lv_qrcode_create(qr_cell);
+    lv_qrcode_set_size(softap_qr, 100);
+    lv_qrcode_set_dark_color(softap_qr, lv_color_hex(0x000000));
+    lv_qrcode_set_light_color(softap_qr, WHITE);
+    lv_obj_set_style_border_color(softap_qr, WHITE, 0);
+    lv_obj_set_style_border_width(softap_qr, 10, 0);
     const char *qr_data = "WIFI:T:WPA;S:ESP-Speaker-Setup;P:esp123456;;";
-    lv_qrcode_update(qr, qr_data, strlen(qr_data));
+    lv_qrcode_update(softap_qr, qr_data, strlen(qr_data));
 
-    lv_obj_t *info = text(qr_cell,
-                          "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
-                          "Option 2: Join Wi-Fi 'ESP-Speaker-Setup' -> visit '192.168.4.1' in browser",
-                          &esp_brookesia_font_maison_neue_book_16, WHITE);
-    lv_obj_set_width(info, 280);
-    lv_label_set_long_mode(info, LV_LABEL_LONG_WRAP);
+    softap_info_label = text(qr_cell,
+                              "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
+                              "Option 2: Join Wi-Fi 'ESP-Speaker-Setup' -> visit '192.168.4.1' in browser",
+                              &esp_brookesia_font_maison_neue_book_16, WHITE);
+    lv_obj_set_width(softap_info_label, 280);
+    lv_label_set_long_mode(softap_info_label, LV_LABEL_LONG_WRAP);
 }
 
 static void create_settings_subpages(void)
@@ -2075,5 +2076,55 @@ bool speaker_ui_set_wlan_password(const char *text)
 bool speaker_ui_confirm_wlan_password(void)
 {
     wlan_password_ready(NULL);
+    return true;
+}
+
+static bool wifi_qr_escape(const char *input, char *output, size_t output_size)
+{
+    if(input == NULL || output == NULL || output_size == 0) return false;
+    size_t used = 0;
+    for(const char *cursor = input; *cursor != '\0'; ++cursor) {
+        const bool escaped = *cursor == '\\' || *cursor == ';' || *cursor == ',' ||
+                             *cursor == ':' || *cursor == '"';
+        if(used + (escaped ? 2U : 1U) >= output_size) return false;
+        if(escaped) output[used++] = '\\';
+        output[used++] = *cursor;
+    }
+    output[used] = '\0';
+    return true;
+}
+
+bool speaker_ui_set_softap_credentials(const char *ssid, const char *password)
+{
+    if(softap_qr == NULL || softap_info_label == NULL || ssid == NULL || ssid[0] == '\0') return false;
+    if(password == NULL) password = "";
+
+    char escaped_ssid[65];
+    char escaped_password[129];
+    char qr_data[256];
+    if(!wifi_qr_escape(ssid, escaped_ssid, sizeof(escaped_ssid)) ||
+       !wifi_qr_escape(password, escaped_password, sizeof(escaped_password))) return false;
+
+    const char *security = password[0] == '\0' ? "nopass" : "WPA";
+    int length = snprintf(qr_data, sizeof(qr_data), "WIFI:T:%s;S:%s;P:%s;;",
+                          security, escaped_ssid, escaped_password);
+    if(length < 0 || (size_t)length >= sizeof(qr_data)) return false;
+    lv_qrcode_update(softap_qr, qr_data, (uint32_t)length);
+
+    if(password[0] == '\0') {
+        lv_label_set_text_fmt(
+            softap_info_label,
+            "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
+            "Option 2: Join Wi-Fi '%s' -> visit '192.168.4.1' in browser",
+            ssid
+        );
+    } else {
+        lv_label_set_text_fmt(
+            softap_info_label,
+            "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
+            "Option 2: Join Wi-Fi '%s' (password: %s) -> visit '192.168.4.1' in browser",
+            ssid, password
+        );
+    }
     return true;
 }

@@ -57,9 +57,16 @@ blink_step_t const *BLINK_LISTS[] = {
     [BLINK_MAX] = nullptr,
 };
 
-void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, void *)
+void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        const auto *event = static_cast<const wifi_event_sta_disconnected_t *>(event_data);
+        if (event != nullptr) {
+            ESP_LOGW(
+                TAG, "Wi-Fi station disconnected: reason=%u, rssi=%d",
+                static_cast<unsigned>(event->reason), event->rssi
+            );
+        }
         HeadLed::get_instance().set_wifi_connected(false);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         HeadLed::get_instance().set_wifi_connected(true);

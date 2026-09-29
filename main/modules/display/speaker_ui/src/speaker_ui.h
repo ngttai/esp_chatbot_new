@@ -55,5 +55,6 @@ bool speaker_ui_is_wlan_keyboard_visible(void);
 bool speaker_ui_wlan_keyboard_bound(void);
 bool speaker_ui_set_wlan_password(const char *text);
 bool speaker_ui_confirm_wlan_password(void);
+bool speaker_ui_set_softap_credentials(const char *ssid, const char *password);
 
 #endif

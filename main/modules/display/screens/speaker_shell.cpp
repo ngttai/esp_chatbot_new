@@ -734,8 +734,26 @@ void ScreenSpeakerShell::poll_wifi()
 
     ensure_wifi_event_subscriptions();
 
+    if (softap_stopped_event_.exchange(false) && speaker_ui_is_screen_active("softap")) {
+        BROOKESIA_LOGI("SoftAP provisioning stopped; returning Speaker UI to WLAN");
+        speaker_ui_show("wlan");
+    }
+
     const bool enabled = speaker_ui_is_wlan_on();
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
+    const bool softap_active = speaker_ui_is_screen_active("softap");
+
+    if (softap_active != softap_screen_was_active_) {
+        softap_screen_was_active_ = softap_active;
+        if (!softap_active) {
+            // Wait for provisioning shutdown before restarting the WLAN scan.
+            wifi_scan_after_enable_pending_ = enabled && wlan_active;
+        }
+        request_softap_provision(softap_active && enabled);
+    }
+    if (softap_active) {
+        update_softap_ui();
+    }
     if (enabled != last_wlan_enabled_) {
         last_wlan_enabled_ = enabled;
         wifi_scan_after_enable_pending_ = enabled && wlan_active;
@@ -759,6 +777,7 @@ void ScreenSpeakerShell::poll_wifi()
         const bool connecting = wifi_state_.load() == static_cast<int>(WifiHelper::GeneralState::Connecting);
         const bool scan_after_enable = wifi_scan_after_enable_pending_ && !wifi_action_in_flight_.load();
         if ((!wifi_screen_was_active_ || scan_after_enable) && enabled && !connecting &&
+                !softap_action_in_flight_.load() &&
                 !wifi_connect_in_flight_.load()) {
             wifi_scan_after_enable_pending_ = false;
             request_wifi_scan();
@@ -779,6 +798,71 @@ void ScreenSpeakerShell::poll_wifi()
             request_wifi_connect(wifi_selected_ssid_, "");
             speaker_ui_show("wlan");
         }
+    }
+}
+
+void ScreenSpeakerShell::request_softap_provision(bool enabled)
+{
+    if (softap_action_in_flight_.exchange(true)) {
+        return;
+    }
+
+    const bool posted = task_scheduler_->post([this, enabled]() {
+        using WifiHelper = service::helper::Wifi;
+
+        const auto function = enabled ? WifiHelper::FunctionId::TriggerSoftApProvisionStart :
+                              WifiHelper::FunctionId::TriggerSoftApProvisionStop;
+        auto result = WifiHelper::call_function_sync(
+                          function, service::helper::Timeout(5000)
+                      );
+        if (!result) {
+            BROOKESIA_LOGE(
+                "Failed to %1% Speaker UI SoftAP provisioning: %2%",
+                enabled ? "start" : "stop", result.error()
+            );
+        } else if (enabled) {
+            auto params_result = WifiHelper::call_function_sync<boost::json::object>(
+                                     WifiHelper::FunctionId::GetSoftApParams,
+                                     service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                 );
+            WifiHelper::SoftApParams params;
+            if (!params_result || !BROOKESIA_DESCRIBE_FROM_JSON(params_result.value(), params)) {
+                BROOKESIA_LOGE("Failed to read Speaker UI SoftAP parameters");
+            } else {
+                const std::string softap_name = params.ssid;
+                {
+                    std::lock_guard lock(softap_state_mutex_);
+                    softap_ssid_ = std::move(params.ssid);
+                    softap_password_ = std::move(params.password);
+                }
+                softap_ui_dirty_ = true;
+                BROOKESIA_LOGI("Speaker UI SoftAP provisioning requested for '%1%'", softap_name);
+            }
+        }
+        softap_action_in_flight_ = false;
+    });
+
+    if (!posted) {
+        softap_action_in_flight_ = false;
+        BROOKESIA_LOGE("Failed to schedule Speaker UI SoftAP provisioning action");
+    }
+}
+
+void ScreenSpeakerShell::update_softap_ui()
+{
+    if (!softap_ui_dirty_.exchange(false)) {
+        return;
+    }
+
+    std::string ssid;
+    std::string password;
+    {
+        std::lock_guard lock(softap_state_mutex_);
+        ssid = softap_ssid_;
+        password = softap_password_;
+    }
+    if (!speaker_ui_set_softap_credentials(ssid.c_str(), password.c_str())) {
+        BROOKESIA_LOGE("Failed to update Speaker UI SoftAP credentials");
     }
 }
 
@@ -840,7 +924,8 @@ void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
         return;
     }
 
-    const bool posted = task_scheduler_->post([this, enabled]() {
+    const bool restart_softap = enabled && softap_screen_was_active_;
+    const bool posted = task_scheduler_->post([this, enabled, restart_softap]() {
         using WifiHelper = service::helper::Wifi;
 
         if (!enabled) {
@@ -869,6 +954,9 @@ void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
             );
         }
         wifi_action_in_flight_ = false;
+        if (result && restart_softap) {
+            request_softap_provision(true);
+        }
         request_wifi_state();
     });
 
@@ -974,9 +1062,22 @@ void ScreenSpeakerShell::ensure_wifi_event_subscriptions()
         wifi_scan_dirty_ = true;
     }
                                   );
-    wifi_events_subscribed_ = wifi_scan_event_connection_.connected();
+    softap_event_connection_ = WifiHelper::subscribe_event(
+                                   WifiHelper::EventId::SoftApEventHappened,
+    [this](const std::string &, const std::string & event) {
+        WifiHelper::SoftApEvent softap_event;
+        if (!BROOKESIA_DESCRIBE_STR_TO_ENUM(event, softap_event)) {
+            BROOKESIA_LOGE("Failed to parse Speaker UI SoftAP event: %1%", event);
+            return;
+        }
+        if (softap_event == WifiHelper::SoftApEvent::Stopped) {
+            softap_stopped_event_ = true;
+        }
+    }
+                               );
+    wifi_events_subscribed_ = wifi_scan_event_connection_.connected() && softap_event_connection_.connected();
     if (!wifi_events_subscribed_) {
-        BROOKESIA_LOGE("Failed to subscribe to Speaker UI WiFi scan results");
+        BROOKESIA_LOGE("Failed to subscribe to Speaker UI WiFi events");
     }
 }
 

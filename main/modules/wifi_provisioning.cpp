@@ -22,6 +22,7 @@ using WifiHelper = service::helper::Wifi;
 
 constexpr uint32_t WIFI_DO_SOFTAP_PROVISION_START_TIMEOUT_MS = 1000;
 constexpr uint32_t WIFI_DO_SOFTAP_PROVISION_STOP_TIMEOUT_MS = 1000;
+constexpr uint32_t WIFI_RECONNECT_DELAY_MS = 2000;
 
 static bool get_wifi_softap_params(WifiHelper::SoftApParams &softap_params);
 
@@ -77,23 +78,46 @@ bool WifiProvisioning::start()
 
 void WifiProvisioning::start_sta_connect_flow()
 {
-    auto post_reset_active_conn = [this]() {
-        active_conn_.reset();
-    };
-
     auto post_reset_and_softap = [this]() {
         active_conn_.reset();
         start_softap_provision_flow();
     };
 
-    auto on_sta_general_event = [this, post_reset_active_conn, post_reset_and_softap](
-    const std::string &, const std::string & event, bool) {
+    auto on_sta_general_event = [this, post_reset_and_softap](
+    const std::string &, const std::string & event, bool is_unexpected) {
         if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Connected)) {
+            has_connected_once_ = true;
+            reconnect_pending_ = false;
             BROOKESIA_LOGI("WiFi connected");
-            config_.task_scheduler->post(post_reset_active_conn);
         } else if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Disconnected)) {
-            BROOKESIA_LOGW("WiFi disconnected, switching to SoftAP provisioning");
-            config_.task_scheduler->post(post_reset_and_softap);
+            if (!is_unexpected) {
+                BROOKESIA_LOGI("WiFi disconnected by requested action");
+                reconnect_pending_ = false;
+                return;
+            }
+            if (!has_connected_once_.load()) {
+                BROOKESIA_LOGW("Initial WiFi connection failed, switching to SoftAP provisioning");
+                config_.task_scheduler->post(post_reset_and_softap);
+                return;
+            }
+            if (reconnect_pending_.exchange(true)) {
+                return;
+            }
+            BROOKESIA_LOGW("WiFi link lost unexpectedly, reconnecting in %1% ms", WIFI_RECONNECT_DELAY_MS);
+            const bool posted = config_.task_scheduler->post_delayed([this]() {
+                auto result = WifiHelper::call_function_sync(
+                                  WifiHelper::FunctionId::TriggerGeneralAction,
+                                  BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralAction::Connect)
+                              );
+                if (!result) {
+                    BROOKESIA_LOGE("Failed to trigger WiFi reconnect: %1%", result.error());
+                }
+                reconnect_pending_ = false;
+            }, WIFI_RECONNECT_DELAY_MS);
+            if (!posted) {
+                reconnect_pending_ = false;
+                BROOKESIA_LOGE("Failed to schedule WiFi reconnect");
+            }
         }
     };
 
