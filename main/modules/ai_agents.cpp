@@ -646,6 +646,112 @@ void AI_Agents::process_bt_speaker_events()
     }
 }
 
+AI_Agents::EmoteState AI_Agents::resolve_emote_state() const
+{
+    if (is_stopped()) {
+        return EmoteState::Stopped;
+    }
+    if (is_sleeping() || is_suspended()) {
+        return EmoteState::Sleeping;
+    }
+    if (has_agent_error_.load(std::memory_order_relaxed)) {
+        return EmoteState::Error;
+    }
+    if (is_speaking()) {
+        return EmoteState::Speaking;
+    }
+    if (is_listening()) {
+        return EmoteState::Listening;
+    }
+    if (is_thinking_.load(std::memory_order_relaxed)) {
+        return EmoteState::Thinking;
+    }
+    return EmoteState::Idle;
+}
+
+void AI_Agents::refresh_emote_state()
+{
+    apply_emote_state(resolve_emote_state());
+}
+
+void AI_Agents::refresh_emote_state_delayed()
+{
+    constexpr uint32_t STATUS_SETTLE_DELAY_MS = 100;
+    auto result = task_scheduler_->post_delayed([this]() {
+        refresh_emote_state();
+    }, STATUS_SETTLE_DELAY_MS);
+    if (!result) {
+        BROOKESIA_LOGW("Failed to post delayed emote state refresh");
+        refresh_emote_state();
+    }
+}
+
+void AI_Agents::apply_emote_state(EmoteState state)
+{
+    const auto previous = emote_state_.exchange(state, std::memory_order_relaxed);
+    if (previous == state) {
+        return;
+    }
+
+    const char *state_name = "unknown";
+    switch (state) {
+    case EmoteState::Idle:
+        state_name = "idle";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "idle");
+        EmoteHelper::call_function_async(
+            EmoteHelper::FunctionId::SetEventMessage,
+            BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Idle)
+        );
+        break;
+    case EmoteState::Listening:
+        state_name = "listening";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "idle");
+        EmoteHelper::call_function_async(
+            EmoteHelper::FunctionId::SetEventMessage,
+            BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Listen)
+        );
+        break;
+    case EmoteState::Thinking:
+        state_name = "thinking";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "thinking");
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEventMessage);
+        break;
+    case EmoteState::Speaking:
+        state_name = "speaking";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "idle");
+        EmoteHelper::call_function_async(
+            EmoteHelper::FunctionId::SetEventMessage,
+            BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Speak)
+        );
+        break;
+    case EmoteState::Sleeping:
+        state_name = "sleeping";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "sleepy");
+        EmoteHelper::call_function_async(
+            EmoteHelper::FunctionId::SetEventMessage,
+            BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Idle)
+        );
+        break;
+    case EmoteState::Error:
+        state_name = "error";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "sad");
+        break;
+    case EmoteState::Stopped:
+        state_name = "stopped";
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEmoji);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEventMessage);
+        break;
+    case EmoteState::Max:
+        return;
+    }
+    BROOKESIA_LOGI("Home emote state changed to %1%", state_name);
+}
+
 void AI_Agents::process_emote_when_general_action_triggered()
 {
     auto slot = [this](const std::string & event_name, const std::string & general_action) {
@@ -675,15 +781,23 @@ void AI_Agents::process_emote_when_general_action_triggered()
         case AgentHelper::GeneralAction::Start:
             is_sleeping_ = false;
             is_suspended_ = false;
+            is_listening_ = false;
+            is_speaking_ = false;
+            is_thinking_ = false;
+            has_agent_error_ = false;
             is_stopped_ = false;
+            refresh_emote_state();
             EmoteHelper::call_function_async(
                 EmoteHelper::FunctionId::SetEventMessage,
                 BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Starting..."
             );
             break;
         case AgentHelper::GeneralAction::Sleep: {
+            is_listening_ = false;
+            is_speaking_ = false;
+            is_thinking_ = false;
             is_sleeping_ = true;
-            EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "sleepy");
+            refresh_emote_state();
             EmoteHelper::call_function_async(
                 EmoteHelper::FunctionId::InsertAnimation, "sleep_transition", 4000
             );
@@ -697,14 +811,19 @@ void AI_Agents::process_emote_when_general_action_triggered()
         }
         case AgentHelper::GeneralAction::WakeUp:
             is_sleeping_ = false;
+            is_thinking_ = false;
+            refresh_emote_state();
             EmoteHelper::call_function_async(
                 EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Waking Up..."
+                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Connecting..."
             );
             break;
         case AgentHelper::GeneralAction::Stop:
+            is_listening_ = false;
+            is_speaking_ = false;
+            is_thinking_ = false;
             is_stopped_ = true;
-            EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEmoji);
+            refresh_emote_state();
             EmoteHelper::call_function_async(
                 EmoteHelper::FunctionId::SetEventMessage,
                 BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Stopping..."
@@ -752,25 +871,46 @@ void AI_Agents::process_emote_when_general_event_happened()
             break;
         }
         case AgentHelper::GeneralEvent::Started: {
-            EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "neutral");
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Started"
-            );
+            is_stopped_ = false;
+            is_sleeping_ = false;
+            has_agent_error_ = false;
+            emote_state_ = EmoteState::Max;
+            refresh_emote_state();
+            break;
+        }
+        case AgentHelper::GeneralEvent::Slept: {
+            is_sleeping_ = true;
+            refresh_emote_state();
             break;
         }
         case AgentHelper::GeneralEvent::Awake: {
-            EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "neutral");
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Awake"
-            );
+            is_sleeping_ = false;
+            is_stopped_ = false;
+            is_listening_ = true;
+            is_speaking_ = false;
+            is_thinking_ = false;
+            has_agent_error_ = false;
+            emote_state_ = EmoteState::Max;
+            refresh_emote_state();
             break;
         }
         case AgentHelper::GeneralEvent::Stopped: {
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage, BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Idle)
-            );
+            is_listening_ = false;
+            is_speaking_ = false;
+            is_thinking_ = false;
+            if (is_unexpected) {
+                is_stopped_ = false;
+                has_agent_error_ = true;
+                refresh_emote_state();
+                EmoteHelper::call_function_async(
+                    EmoteHelper::FunctionId::SetEventMessage,
+                    BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System),
+                    "[Agent] Reconnecting..."
+                );
+            } else {
+                is_stopped_ = true;
+                refresh_emote_state();
+            }
             break;
         }
         default:
@@ -794,17 +934,7 @@ void AI_Agents::process_emote_when_suspend_status_changed()
 
         BROOKESIA_LOGI("Suspend status changed to %1%", BROOKESIA_DESCRIBE_TO_STR(is_suspended));
 
-        if (is_suspended) {
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System), "[Agent] Suspended"
-            );
-        } else {
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Idle)
-            );
-        }
+        refresh_emote_state();
     };
     auto connection = AgentHelper::subscribe_event(AgentHelper::EventId::SuspendStatusChanged, slot);
     if (connection.connected()) {
@@ -826,21 +956,23 @@ void AI_Agents::process_emote_when_speaking_status_changed()
 
         BROOKESIA_LOGI("Speaking status changed to %1%", speaking_status);
 
+        is_speaking_ = is_speaking;
+        if (is_speaking) {
+            is_thinking_ = false;
+        }
+
         if (is_inactive()) {
             BROOKESIA_LOGD("Agent is inactive, skip");
             return;
         }
-
         if (is_speaking) {
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Speak)
-            );
-        } else if (!is_listening()) {
-            // Only hide event message when the agent is not listening
-            EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEventMessage);
+            refresh_emote_state();
+        } else {
+            // XiaoZhi reports speaking=false just before either listening=true or
+            // the terminal Slept event. Let that next state settle first so the
+            // Home UI does not briefly flash the idle clock during transitions.
+            refresh_emote_state_delayed();
         }
-        is_speaking_ = is_speaking;
     };
     auto connection = AgentHelper::subscribe_event(AgentHelper::EventId::SpeakingStatusChanged, slot);
     if (connection.connected()) {
@@ -862,21 +994,22 @@ void AI_Agents::process_emote_when_listening_status_changed()
 
         BROOKESIA_LOGI("Listening status changed to %1%", listening_status);
 
+        is_listening_ = is_listening;
+        if (is_listening) {
+            is_thinking_ = false;
+        }
+
         if (is_inactive()) {
             BROOKESIA_LOGD("Agent is inactive, skip");
             return;
         }
-
         if (is_listening) {
-            EmoteHelper::call_function_async(
-                EmoteHelper::FunctionId::SetEventMessage,
-                BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Listen)
-            );
-        } else if (!is_speaking()) {
-            // Only hide event message when the agent is not speaking
-            EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEventMessage);
+            // A server goodbye can emit listening=true immediately before Slept.
+            // Resolve once the final event has arrived to avoid a listening flash.
+            refresh_emote_state_delayed();
+        } else {
+            refresh_emote_state();
         }
-        is_listening_ = is_listening;
     };
     auto connection = AgentHelper::subscribe_event(AgentHelper::EventId::ListeningStatusChanged, slot);
     if (connection.connected()) {
@@ -899,6 +1032,9 @@ void AI_Agents::process_emote_when_agent_speaking_text_got()
             BROOKESIA_LOGD("Agent is inactive, skip");
             return;
         }
+
+        is_thinking_ = false;
+        refresh_emote_state();
 
         EmoteHelper::call_function_async(
             EmoteHelper::FunctionId::SetEventMessage,
@@ -926,6 +1062,9 @@ void AI_Agents::process_emote_when_user_speaking_text_got()
             BROOKESIA_LOGD("Agent is inactive, skip");
             return;
         }
+
+        is_thinking_ = true;
+        refresh_emote_state();
 
         EmoteHelper::call_function_async(
             EmoteHelper::FunctionId::SetEventMessage,
@@ -959,7 +1098,8 @@ void AI_Agents::process_emote_when_coze_event_happened()
         case CozeHelper::CozeEvent::InsufficientCreditsBalance: {
             auto task_func = [this]() {
                 BROOKESIA_LOG_TRACE_GUARD();
-                EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "sad");
+                has_agent_error_ = true;
+                refresh_emote_state();
                 EmoteHelper::call_function_async(
                     EmoteHelper::FunctionId::SetEventMessage,
                     BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::System),

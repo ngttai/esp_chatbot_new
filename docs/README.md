@@ -2,6 +2,7 @@
 
 - `development/ui-porting/`: plans and implementation evidence retained for
   maintaining the exact Speaker UI port.
+- `development/v1.1-plan.md`: feature and validation plan for the v1.1 release.
 - `ui_porting_baseline/`: versioned visual golden files used by the simulator
   release regression gate.
 - `releases/`: release notes; files ending in `-draft` are not published.
