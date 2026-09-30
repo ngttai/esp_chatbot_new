@@ -25,6 +25,10 @@ public:
     {
         return enabled_.load();
     }
+    bool is_initialized() const
+    {
+        return task_ != nullptr;
+    }
 
 private:
     TouchSensor() = default;

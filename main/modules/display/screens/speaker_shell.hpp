@@ -17,6 +17,10 @@
 #include "brookesia/service_manager/event/registry.hpp"
 #include "lvgl.h"
 
+extern "C" {
+#include "speaker_ui.h"
+}
+
 class ScreenSpeakerShell {
 public:
     bool start(
@@ -34,6 +38,7 @@ private:
     static void service_timer_callback(lv_timer_t *timer);
     static void factory_reset_clicked_callback(lv_event_t *event);
     static void developer_mode_clicked_callback(lv_event_t *event);
+    static void self_test_run_clicked_callback(lv_event_t *event);
     static void wifi_network_selected_callback(lv_event_t *event);
     static void wifi_password_ready_callback(lv_event_t *event);
     void poll_service_controls();
@@ -43,10 +48,13 @@ private:
     void poll_memory();
     void poll_battery();
     void poll_touch_sensor();
+    void poll_self_test();
     void poll_factory_reset();
     void poll_display_mode();
     void configure_about();
     void attach_developer_mode_handler();
+    void attach_self_test_handler();
+    void run_self_test();
     void perform_factory_reset();
     void ensure_control_event_subscriptions();
     void refresh_control_state();
@@ -96,6 +104,9 @@ private:
     bool touch_sensor_effective_enabled_ = true;
     bool factory_reset_handler_attached_ = false;
     bool factory_reset_in_progress_ = false;
+    std::atomic_bool self_test_running_{false};
+    std::atomic_bool self_test_results_dirty_{false};
+    std::array<std::atomic_int, SPEAKER_UI_SELF_TEST_COUNT> self_test_results_{};
     bool idle_display_mode_initialized_ = false;
     bool idle_display_mode_ = false;
     lv_obj_t *wifi_connected_group_ = nullptr;

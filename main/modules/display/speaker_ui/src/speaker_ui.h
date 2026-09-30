@@ -23,6 +23,28 @@ typedef struct {
     const char *chip_features;
 } speaker_ui_about_info_t;
 
+typedef enum {
+    SPEAKER_UI_SELF_TEST_DISPLAY,
+    SPEAKER_UI_SELF_TEST_TOUCH,
+    SPEAKER_UI_SELF_TEST_SPEAKER,
+    SPEAKER_UI_SELF_TEST_MICROPHONE,
+    SPEAKER_UI_SELF_TEST_BMI270,
+    SPEAKER_UI_SELF_TEST_BATTERY,
+    SPEAKER_UI_SELF_TEST_CHARGING,
+    SPEAKER_UI_SELF_TEST_WIFI,
+    SPEAKER_UI_SELF_TEST_NTP,
+    SPEAKER_UI_SELF_TEST_MEMORY,
+    SPEAKER_UI_SELF_TEST_FLASH,
+    SPEAKER_UI_SELF_TEST_COUNT,
+} speaker_ui_self_test_item_t;
+
+typedef enum {
+    SPEAKER_UI_SELF_TEST_NOT_TESTED,
+    SPEAKER_UI_SELF_TEST_TESTING,
+    SPEAKER_UI_SELF_TEST_PASS,
+    SPEAKER_UI_SELF_TEST_FAIL,
+} speaker_ui_self_test_status_t;
+
 void speaker_ui_create(void);
 void speaker_ui_set_input(lv_indev_t *input);
 void speaker_ui_set_wifi_managed_externally(bool managed);
@@ -48,6 +70,10 @@ bool speaker_ui_set_quick_brightness_level(int level);
 bool speaker_ui_set_battery_state(bool charging, int percentage);
 bool speaker_ui_set_about_info(const speaker_ui_about_info_t *info);
 bool speaker_ui_set_about_battery_measurements(int voltage_mv, int current_ma);
+bool speaker_ui_set_self_test_status(speaker_ui_self_test_item_t item,
+                                     speaker_ui_self_test_status_t status);
+bool speaker_ui_reset_self_test_statuses(void);
+bool speaker_ui_set_self_test_run_callback(lv_event_cb_t callback, void *user_data);
 bool speaker_ui_set_developer_mode_callback(lv_event_cb_t callback, void *user_data);
 bool speaker_ui_is_touch_sensor_on(void);
 bool speaker_ui_set_touch_sensor_on(bool enabled);

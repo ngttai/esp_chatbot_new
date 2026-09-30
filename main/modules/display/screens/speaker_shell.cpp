@@ -7,19 +7,23 @@
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
+#include "esp_heap_caps.h"
 #include "esp_mac.h"
+#include "esp_partition.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string_view>
 #include "private/utils.hpp"
 #include "brookesia/gui_lvgl.hpp"
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "modules/battery_monitor.hpp"
+#include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/developer_mode.hpp"
 #include "modules/display/display.hpp"
@@ -47,6 +51,7 @@ constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
 constexpr uint16_t MEMORY_POLL_TICKS = 50;
+constexpr std::time_t MIN_VALID_NETWORK_TIME = 1704067200; // 2024-01-01 UTC
 constexpr uint8_t WIFI_OPEN_AP_DELAY_TICKS = 10;
 constexpr std::array<int, 3> QUICK_BRIGHTNESS_PERCENT{{40, 70, 100}};
 constexpr std::array<int, 3> QUICK_VOLUME_PERCENT{{30, 60, 90}};
@@ -168,6 +173,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_set_input(input);
     configure_about();
     attach_developer_mode_handler();
+    attach_self_test_handler();
 
     display_output_id_ = display_output_id;
     task_scheduler_ = std::move(task_scheduler);
@@ -202,6 +208,22 @@ void ScreenSpeakerShell::attach_developer_mode_handler()
     );
 }
 
+void ScreenSpeakerShell::self_test_run_clicked_callback(lv_event_t *event)
+{
+    auto *shell = static_cast<ScreenSpeakerShell *>(lv_event_get_user_data(event));
+    if (shell != nullptr) {
+        shell->run_self_test();
+    }
+}
+
+void ScreenSpeakerShell::attach_self_test_handler()
+{
+    BROOKESIA_CHECK_FALSE_EXIT(
+        speaker_ui_set_self_test_run_callback(self_test_run_clicked_callback, this),
+        "Failed to attach Speaker UI self-test handler"
+    );
+}
+
 void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)
 {
     auto *shell = static_cast<ScreenSpeakerShell *>(lv_timer_get_user_data(timer));
@@ -220,7 +242,113 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_memory();
     poll_battery();
     poll_touch_sensor();
+    poll_self_test();
     poll_factory_reset();
+}
+
+void ScreenSpeakerShell::run_self_test()
+{
+    if (self_test_running_.exchange(true)) {
+        return;
+    }
+
+    for (int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+        self_test_results_[item].store(SPEAKER_UI_SELF_TEST_TESTING);
+        speaker_ui_set_self_test_status(
+            static_cast<speaker_ui_self_test_item_t>(item), SPEAKER_UI_SELF_TEST_TESTING
+        );
+    }
+
+    const bool posted = task_scheduler_->post([this]() {
+        using AudioEncoderHelper = service::helper::AudioEncoder<0>;
+        using AudioPlaybackHelper = service::helper::AudioPlayback;
+        using WifiHelper = service::helper::Wifi;
+
+        auto publish = [this](speaker_ui_self_test_item_t item, bool passed) {
+            self_test_results_[item].store(
+                passed ? SPEAKER_UI_SELF_TEST_PASS : SPEAKER_UI_SELF_TEST_FAIL
+            );
+            self_test_results_dirty_ = true;
+        };
+
+        // Reaching this callback from the rendered Self-test page confirms that
+        // the panel, LVGL input path and display service are alive.
+        publish(SPEAKER_UI_SELF_TEST_DISPLAY, true);
+        publish(SPEAKER_UI_SELF_TEST_TOUCH, TouchSensor::get_instance().is_initialized());
+
+        bool speaker_ok = AudioPlaybackHelper::is_running();
+        if (speaker_ok) {
+            auto volume_result = AudioPlaybackHelper::call_function_sync<double>(
+                                     AudioPlaybackHelper::FunctionId::GetVolume,
+                                     service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                 );
+            speaker_ok = static_cast<bool>(volume_result);
+        }
+        publish(SPEAKER_UI_SELF_TEST_SPEAKER, speaker_ok);
+
+        bool microphone_ok = AudioEncoderHelper::is_running();
+        if (microphone_ok) {
+            auto wake_words_result = AudioEncoderHelper::call_function_sync<boost::json::array>(
+                                         AudioEncoderHelper::FunctionId::GetAFEWakeWords,
+                                         service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                     );
+            microphone_ok = static_cast<bool>(wake_words_result);
+        }
+        publish(SPEAKER_UI_SELF_TEST_MICROPHONE, microphone_ok);
+
+        publish(SPEAKER_UI_SELF_TEST_BMI270, ImuGesture::get_instance().is_initialized());
+
+        const auto battery = BatteryMonitor::get_instance().get_snapshot();
+        publish(SPEAKER_UI_SELF_TEST_BATTERY, battery.valid);
+        publish(SPEAKER_UI_SELF_TEST_CHARGING, battery.valid && battery.charging);
+
+        const bool wifi_connected = WifiHelper::is_running() &&
+                                    (wifi_state_.load() ==
+                                     static_cast<int>(WifiHelper::GeneralState::Connected));
+        publish(SPEAKER_UI_SELF_TEST_WIFI, wifi_connected);
+        publish(SPEAKER_UI_SELF_TEST_NTP, std::time(nullptr) >= MIN_VALID_NETWORK_TIME);
+
+        publish(SPEAKER_UI_SELF_TEST_MEMORY, heap_caps_check_integrity_all(true));
+
+        uint8_t flash_probe[32]{};
+        const esp_partition_t *app_partition = esp_partition_find_first(
+                                                   ESP_PARTITION_TYPE_APP,
+                                                   ESP_PARTITION_SUBTYPE_ANY, nullptr
+                                               );
+        const bool flash_ok = (app_partition != nullptr) &&
+                              (esp_partition_read(
+                                   app_partition, 0, flash_probe, sizeof(flash_probe)
+                               ) == ESP_OK);
+        publish(SPEAKER_UI_SELF_TEST_FLASH, flash_ok);
+
+        self_test_running_ = false;
+        BROOKESIA_LOGI("Speaker UI hardware self-test completed");
+    });
+
+    if (!posted) {
+        for (int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+            self_test_results_[item].store(SPEAKER_UI_SELF_TEST_FAIL);
+        }
+        self_test_results_dirty_ = true;
+        self_test_running_ = false;
+        BROOKESIA_LOGE("Failed to schedule Speaker UI hardware self-test");
+    }
+}
+
+void ScreenSpeakerShell::poll_self_test()
+{
+    if (!self_test_results_dirty_.exchange(false)) {
+        return;
+    }
+    for (int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+        const int status = self_test_results_[item].load();
+        if (status == SPEAKER_UI_SELF_TEST_PASS || status == SPEAKER_UI_SELF_TEST_FAIL) {
+            speaker_ui_set_self_test_status(
+                static_cast<speaker_ui_self_test_item_t>(item),
+                static_cast<speaker_ui_self_test_status_t>(status)
+            );
+        }
+    }
 }
 
 void ScreenSpeakerShell::poll_display_mode()

@@ -88,7 +88,7 @@ extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator2;
 
 typedef struct { const char *name; const lv_image_dsc_t *image; lv_event_cb_t cb; } app_t;
 static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen;
-static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about;
+static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about, *settings_self_test;
 static lv_obj_t *settings_developer, *settings_restore;
 static lv_obj_t *settings_developer_row;
 static lv_obj_t *settings_wlan_verify, *settings_softap;
@@ -96,7 +96,7 @@ static lv_obj_t *page_box, *dots;
 static lv_obj_t *timer_clock_widget;
 static lv_obj_t *settings_scroller, *settings_wlan_scroller;
 static lv_obj_t *launcher_home_bar, *quick_home_bar, *settings_home_bar, *ai_home_bar, *timer_home_bar;
-static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar;
+static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar, *self_test_home_bar;
 static lv_obj_t *developer_home_bar, *factory_home_bar;
 static lv_obj_t *wlan_verify_home_bar, *softap_home_bar;
 static lv_obj_t *settings_wlan_value_label, *wlan_connected_name_label, *restore_status_label;
@@ -107,6 +107,8 @@ static lv_obj_t *about_flash_label, *about_ram_main_label, *about_ram_minor_labe
 static lv_obj_t *about_battery_capacity_label, *about_battery_voltage_label, *about_battery_current_label;
 static lv_obj_t *about_chip_name_label, *about_chip_version_label, *about_chip_mac_label;
 static lv_obj_t *about_chip_features_label;
+static lv_obj_t *self_test_status_labels[SPEAKER_UI_SELF_TEST_COUNT];
+static lv_obj_t *self_test_run_button;
 static lv_obj_t *settings_wlan_switch;
 static lv_obj_t *settings_touch_switch;
 static lv_obj_t *settings_wlan_connected_group, *settings_wlan_available_group, *settings_wlan_softap_group;
@@ -379,6 +381,7 @@ static lv_obj_t *active_home_bar(void)
     if(active == settings_sound) return sound_home_bar;
     if(active == settings_display) return display_home_bar;
     if(active == settings_about) return about_home_bar;
+    if(active == settings_self_test) return self_test_home_bar;
     if(active == settings_developer) return developer_home_bar;
     if(active == settings_restore) return factory_home_bar;
     if(active == settings_wlan_verify) return wlan_verify_home_bar;
@@ -1037,6 +1040,9 @@ static void create_settings(void)
     lv_obj_t *about_row = row(more, &esp_brookesia_app_icon_more_about_48_48,
                               "About", NULL, true);
     make_clickable(about_row, show_screen_ref, &settings_about);
+    lv_obj_t *self_test_row = row(more, &esp_brookesia_app_icon_more_developer_mode_48_48,
+                                  "Self-test", NULL, true);
+    make_clickable(self_test_row, show_screen_ref, &settings_self_test);
     settings_developer_row = row(more, &esp_brookesia_app_icon_more_developer_mode_48_48,
                                  "Developer Mode", NULL, false);
     make_clickable(settings_developer_row, show_screen_ref, &settings_developer);
@@ -1253,6 +1259,51 @@ static void create_settings_about(void)
     plain_row_bound(chip, "Version", "v0.2", &about_chip_version_label);
     plain_row_bound(chip, "MAC", "A4:CF:12:34", &about_chip_mac_label);
     plain_row_bound(chip, "Features", "Wi-Fi / BLE", &about_chip_features_label);
+}
+
+static void create_settings_self_test(void)
+{
+    lv_obj_t *scroller = create_settings_child(
+                             &settings_self_test, &self_test_home_bar, "Settings", &settings
+                         );
+
+    lv_obj_t *interactive = group(scroller, 72, "Interactive");
+    plain_row_bound(interactive, "Display", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_DISPLAY]);
+    plain_row_bound(interactive, "Touch", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_TOUCH]);
+    plain_row_bound(interactive, "Speaker", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_SPEAKER]);
+    plain_row_bound(interactive, "Microphone", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_MICROPHONE]);
+
+    lv_obj_t *hardware = group(scroller, 304, "Hardware");
+    plain_row_bound(hardware, "BMI270", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_BMI270]);
+    plain_row_bound(hardware, "Battery", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_BATTERY]);
+    plain_row_bound(hardware, "Charging", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_CHARGING]);
+
+    lv_obj_t *system = group(scroller, 488, "System");
+    plain_row_bound(system, "Wi-Fi", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_WIFI]);
+    plain_row_bound(system, "NTP", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_NTP]);
+    plain_row_bound(system, "Memory", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_MEMORY]);
+    plain_row_bound(system, "Flash", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_FLASH]);
+
+    self_test_run_button = lv_button_create(scroller);
+    lv_obj_set_size(self_test_run_button, 224, 52);
+    lv_obj_set_style_radius(self_test_run_button, 26, 0);
+    lv_obj_set_style_bg_color(self_test_run_button, RED, 0);
+    lv_obj_t *button_label = text(
+                                 self_test_run_button, "Run all tests",
+                                 &esp_brookesia_font_maison_neue_book_16, WHITE
+                             );
+    lv_obj_center(button_label);
 }
 
 static void create_settings_developer(void)
@@ -1622,6 +1673,7 @@ static void create_settings_subpages(void)
     create_settings_sound();
     create_settings_display();
     create_settings_about();
+    create_settings_self_test();
     create_settings_developer();
     create_settings_restore();
 }
@@ -1797,6 +1849,7 @@ bool speaker_ui_is_screen_active(const char *name)
     if(!strcmp(name, "sound")) return active == settings_sound;
     if(!strcmp(name, "display")) return active == settings_display;
     if(!strcmp(name, "about")) return active == settings_about;
+    if(!strcmp(name, "self-test")) return active == settings_self_test;
     if(!strcmp(name, "developer")) return active == settings_developer;
     if(!strcmp(name, "restore")) return active == settings_restore;
     return false;
@@ -1849,6 +1902,7 @@ bool speaker_ui_show(const char *name)
     else if(!strcmp(name, "sound")) lv_screen_load(settings_sound);
     else if(!strcmp(name, "display")) lv_screen_load(settings_display);
     else if(!strcmp(name, "about")) lv_screen_load(settings_about);
+    else if(!strcmp(name, "self-test")) lv_screen_load(settings_self_test);
     else if(!strcmp(name, "developer")) lv_screen_load(settings_developer);
     else if(!strcmp(name, "restore")) lv_screen_load(settings_restore);
     else if(!strcmp(name, "ai")) lv_screen_load(ai);
@@ -2031,6 +2085,48 @@ bool speaker_ui_set_about_battery_measurements(int voltage_mv, int current_ma)
     const int centivolts = (voltage_mv + 5) / 10;
     lv_label_set_text_fmt(about_battery_voltage_label, "%d.%02d V", centivolts / 100, centivolts % 100);
     lv_label_set_text_fmt(about_battery_current_label, "%d mA", current_ma);
+    return true;
+}
+
+bool speaker_ui_set_self_test_status(speaker_ui_self_test_item_t item,
+                                     speaker_ui_self_test_status_t status)
+{
+    if(item < 0 || item >= SPEAKER_UI_SELF_TEST_COUNT ||
+       status < SPEAKER_UI_SELF_TEST_NOT_TESTED || status > SPEAKER_UI_SELF_TEST_FAIL ||
+       self_test_status_labels[item] == NULL) return false;
+
+    static const char *const status_text[] = {
+        "Not tested",
+        "Testing",
+        "Pass",
+        "Fail",
+    };
+    static const uint32_t status_color[] = {
+        0xAAAAAA,
+        0xFFB020,
+        0x34C759,
+        0xFF3034,
+    };
+    lv_label_set_text(self_test_status_labels[item], status_text[status]);
+    lv_obj_set_style_text_color(
+        self_test_status_labels[item], lv_color_hex(status_color[status]), 0
+    );
+    return true;
+}
+
+bool speaker_ui_reset_self_test_statuses(void)
+{
+    for(int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+        if(!speaker_ui_set_self_test_status(
+                (speaker_ui_self_test_item_t)item, SPEAKER_UI_SELF_TEST_NOT_TESTED)) return false;
+    }
+    return true;
+}
+
+bool speaker_ui_set_self_test_run_callback(lv_event_cb_t callback, void *user_data)
+{
+    if(self_test_run_button == NULL || callback == NULL) return false;
+    lv_obj_add_event_cb(self_test_run_button, callback, LV_EVENT_CLICKED, user_data);
     return true;
 }
 

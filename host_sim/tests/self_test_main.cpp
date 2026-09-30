@@ -143,11 +143,12 @@ int test_settings_pages(InputInjector &input)
         int y;
         const char *expected;
     };
-    static constexpr std::array<Case, 6> cases{{
+    static constexpr std::array<Case, 7> cases{{
         {"settings", 126, "wlan"},
         {"settings", 226, "sound"},
         {"settings", 274, "display"},
-        {"settings-bottom", 160, "about"},
+        {"settings-bottom", 112, "about"},
+        {"settings-bottom", 160, "self-test"},
         {"settings-bottom", 210, "developer"},
         {"settings-bottom", 258, "restore"},
     }};
@@ -178,6 +179,69 @@ int test_settings_pages(InputInjector &input)
         }
     }
     std::puts("Settings child-page navigation passed");
+    return 0;
+}
+
+int self_test_run_callback_count;
+
+void self_test_run_callback(lv_event_t *)
+{
+    ++self_test_run_callback_count;
+}
+
+int test_hardware_test_ui()
+{
+    if (!show("self-test")) return 1;
+
+    const bool updated = with_ui_lock([]() {
+        return speaker_ui_set_self_test_status(
+                   SPEAKER_UI_SELF_TEST_DISPLAY, SPEAKER_UI_SELF_TEST_TESTING) &&
+               speaker_ui_set_self_test_status(
+                   SPEAKER_UI_SELF_TEST_TOUCH, SPEAKER_UI_SELF_TEST_PASS) &&
+               speaker_ui_set_self_test_status(
+                   SPEAKER_UI_SELF_TEST_SPEAKER, SPEAKER_UI_SELF_TEST_FAIL);
+    });
+    if (!updated) {
+        std::fprintf(stderr, "Could not update hardware self-test status labels\n");
+        return 1;
+    }
+
+    const bool labels_updated = with_ui_lock([]() {
+        auto *screen = lv_screen_active();
+        return find_label(screen, "Testing") != nullptr &&
+               find_label(screen, "Pass") != nullptr &&
+               find_label(screen, "Fail") != nullptr;
+    });
+    if (!labels_updated) {
+        std::fprintf(stderr, "Hardware self-test status labels did not update\n");
+        return 2;
+    }
+
+    self_test_run_callback_count = 0;
+    const bool callback_ran = with_ui_lock([]() {
+        if (!speaker_ui_set_self_test_run_callback(self_test_run_callback, nullptr)) return false;
+        auto *button = find_clickable_with_label(lv_screen_active(), "Run all tests");
+        if (button == nullptr) return false;
+        lv_obj_send_event(button, LV_EVENT_CLICKED, nullptr);
+        return self_test_run_callback_count == 1;
+    });
+    if (!callback_ran) {
+        std::fprintf(stderr, "Hardware self-test Run all callback did not run\n");
+        return 3;
+    }
+
+    const bool reset = with_ui_lock([]() {
+        return speaker_ui_reset_self_test_statuses() &&
+               find_label(lv_screen_active(), "Testing") == nullptr &&
+               find_label(lv_screen_active(), "Pass") == nullptr &&
+               find_label(lv_screen_active(), "Fail") == nullptr;
+    });
+    if (!reset) {
+        std::fprintf(stderr, "Hardware self-test statuses did not reset\n");
+        return 4;
+    }
+
+    std::puts("Hardware self-test UI status API and Run all callback passed");
     return 0;
 }
 
@@ -1423,7 +1487,7 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 25> options{{
+    static constexpr std::array<std::string_view, 26> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -1449,6 +1513,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-persistence-read",
         "--self-test-factory-reset",
         "--self-test-persistence-defaults",
+        "--self-test-hardware-test-ui",
     }};
     for (auto known : options) {
         if (option == known) return true;
@@ -1462,6 +1527,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
 {
     InputInjector input(output_name, input_device);
     if (option == "--self-test-settings-pages") return test_settings_pages(input);
+    if (option == "--self-test-hardware-test-ui") return test_hardware_test_ui();
     if (option == "--self-test-settings-bar") return test_settings_bar();
     if (option == "--self-test-idle") return test_idle(input);
     if (option == "--self-test-launcher") return test_launcher(input);

@@ -21,6 +21,10 @@ public:
     }
 
     bool init();
+    bool is_initialized() const
+    {
+        return task_ != nullptr;
+    }
 
 private:
     ImuGesture() = default;
