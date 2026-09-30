@@ -29,6 +29,11 @@
 #define APP_ICON_PRESSED_SIZE 88
 #define APP_ICON_DEFAULT_SCALE 224
 #define APP_ICON_PRESSED_SCALE 201
+#if defined(ESP_PLATFORM)
+    #define CLOCK_PANEL_OPA LV_OPA_COVER
+#else
+    #define CLOCK_PANEL_OPA LV_OPA_70
+#endif
 
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_launcher_settings_112_112);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_arrow_left_48_48);
@@ -1703,9 +1708,8 @@ static void create_ai(void)
  * benefit). Built from the flip-clock + weather widgets ported from the
  * HTC_Flip_Clock_with_weather reference project (src/flip_clock/) instead
  * of the vendored ui_Screen_watch_digital digital watch: a full mechanical
- * flip-clock animation, the custom digit font, and a mock-only (no
- * network) compact weather panel. See src/flip_clock/weather_source.c for
- * why the weather data is mock-only. */
+ * flip-clock animation, the custom digit font, and a compact weather panel.
+ * Its data source is selected by the firmware or simulator backend. */
 static lv_obj_t *clock_date_label;
 
 static void clock_date_update(lv_timer_t *t)
@@ -1750,7 +1754,9 @@ static void create_timer(void)
     lv_obj_remove_style_all(date_box);
     lv_obj_set_size(date_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(date_box, lv_color_hex(0x20242f), 0);
-    lv_obj_set_style_bg_opa(date_box, LV_OPA_70, 0);
+    /* Opaque on the partial-buffer QSPI target so each date refresh clears the
+     * previous glyphs; SDL keeps the original translucent appearance. */
+    lv_obj_set_style_bg_opa(date_box, CLOCK_PANEL_OPA, 0);
     lv_obj_set_style_radius(date_box, 12, 0);
     lv_obj_set_style_pad_hor(date_box, 12, 0);
     lv_obj_set_style_pad_ver(date_box, 4, 0);

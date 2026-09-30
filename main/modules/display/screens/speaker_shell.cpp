@@ -25,6 +25,7 @@
 #include "modules/battery_monitor.hpp"
 #include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
+#include "modules/weather_config.hpp"
 #include "modules/developer_mode.hpp"
 #include "modules/display/display.hpp"
 
@@ -637,6 +638,9 @@ void ScreenSpeakerShell::perform_factory_reset()
         if (!result) {
             BROOKESIA_LOGE("Failed to reset audio playback data: %1%", result.error());
         }
+    }
+    if (!WeatherConfig::get_instance().clear()) {
+        BROOKESIA_LOGE("Failed to reset weather configuration");
     }
 
     BROOKESIA_LOGI("Speaker UI factory reset complete; restarting");

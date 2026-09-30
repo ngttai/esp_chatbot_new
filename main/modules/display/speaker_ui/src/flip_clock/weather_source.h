@@ -10,11 +10,9 @@ extern "C" {
 /**
  * @file weather_source.h
  *
- * sdl_ui_simulator's stand-in for HTC_Flip_Clock_with_weather's
- * weather_client.h/.c: same weather_data_t shape and weather_client_get()
- * call weather_panel.c expects, but backed ONLY by mock_weather.c's canned
- * scenarios -- no libcurl/cJSON HTTP fetch, no background pthread, no real
- * network access. See weather_source.c.
+ * Shared weather snapshot ABI used by the unchanged Clock panel. Hardware is
+ * backed by the background OpenWeather service; the simulator selects its
+ * deterministic mock or opt-in HTTP adapter.
  */
 
 #define WEATHER_FORECAST_DAYS 4
@@ -27,6 +25,7 @@ typedef struct {
 } weather_forecast_day_t;
 
 typedef struct {
+    bool available;
     char city[48];
     char condition[32];
     weather_icon_type_t icon;
@@ -41,9 +40,8 @@ typedef struct {
 } weather_data_t;
 
 /**
- * Always returns a fully-populated struct straight from mock_weather.c's
- * current scenario -- no thread, no mutex, no network, safe to call
- * directly from the LVGL/UI thread/timer at any time.
+ * Returns the latest cached snapshot. The firmware refreshes it in a
+ * background task; the simulator provides its selected mock or HTTP backend.
  */
 void weather_client_get(weather_data_t * out);
 

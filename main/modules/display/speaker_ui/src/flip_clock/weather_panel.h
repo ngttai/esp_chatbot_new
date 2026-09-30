@@ -13,7 +13,7 @@ extern "C" {
  * row, no sun/wind row. Ported from HTC_Flip_Clock_with_weather's
  * weather_panel.c (compact variant only -- the full weather_panel_create()
  * layout for rectangular faces wasn't ported, sdl_ui_simulator is
- * round-only). Backed by weather_source.c (mock data only).
+ * round-only). Backed by the shared cached weather snapshot.
  */
 lv_obj_t * weather_panel_create_compact(lv_obj_t * parent, int32_t w);
 

@@ -161,18 +161,15 @@ bool Display::set_active_source_role(DrawSource source)
 
     BROOKESIA_CHECK_FALSE_RETURN(!source_role.empty(), false, "Display source role is not initialized");
 
-    auto result_handler = [](service::FunctionResult && result) {
-        if (!result.success) {
-            BROOKESIA_LOGE("Failed to set active display source role: %1%", result.error_message);
-        }
-    };
-    auto dispatched = DisplayHelper::call_function_async(
-                          DisplayHelper::FunctionId::SetActiveSourceRole,
-                          std::string(),
-                          source_role,
-                          result_handler
-                      );
-    BROOKESIA_CHECK_FALSE_RETURN(dispatched, false, "Failed to dispatch active display source role switch");
+    auto result = DisplayHelper::call_function_sync(
+                      DisplayHelper::FunctionId::SetActiveSourceRole,
+                      std::string(),
+                      source_role,
+                      service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                  );
+    BROOKESIA_CHECK_FALSE_RETURN(
+        result.has_value(), false, "Failed to set active display source role: %1%", result.error()
+    );
 
     return true;
 }
@@ -213,7 +210,8 @@ bool Display::start_expression_emote_assets()
             .task_priority = 6,
             .task_stack = 8 * 1024,
             .task_affinity = CONFIG_BROOKESIA_HAL_ADAPTOR_DISPLAY_LCD_PANEL_INIT_THREAD_CORE_ID,
-            .task_stack_in_ext = false,
+            // Match ESP-Speaker: the animation task does not need scarce internal RAM.
+            .task_stack_in_ext = true,
             .flag_buff_dma = true,
         };
         auto result = EmoteHelper::call_function_sync(

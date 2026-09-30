@@ -53,11 +53,15 @@
 #define CARD_TOP_COLOR  lv_color_hex(0x3a3f4d)
 #define CARD_BOT_COLOR  lv_color_hex(0x2a2e39)
 #define TEXT_COLOR      lv_color_hex(0xf3f4f6)
-/* Semi-transparent tile background: gives a "frosted glass" look (the
- * background scene shows through) without any runtime blur. Drawn as the
- * object's own background fill, so it respects `cont`'s radius style
- * automatically. */
-#define PANEL_OPA  LV_OPA_70
+/* A partial-buffer QSPI display cannot safely re-blend a translucent moving
+ * tile against pixels already present in GRAM: repeated animation frames leave
+ * bright trails. Keep the original frosted look in SDL, but make the dynamic
+ * cards self-clearing on hardware. */
+#if defined(ESP_PLATFORM)
+    #define PANEL_OPA LV_OPA_COVER
+#else
+    #define PANEL_OPA LV_OPA_70
+#endif
 
 /* Steps for the hand-rolled flip stepper (see the file header for why this
  * is used instead of lv_anim_t + a transform) -- 12 steps over

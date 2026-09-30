@@ -10,6 +10,8 @@ set(SRCS
     "modules/imu_gesture.cpp"
     "modules/profiler.cpp"
     "modules/touch_sensor.cpp"
+    "modules/weather_config.cpp"
+    "modules/weather_service.cpp"
     "modules/usb_msc.c"
     "modules/wifi_provisioning.cpp"
 )
@@ -52,6 +54,7 @@ idf_component_register(
         esp_wifi
         espressif__i2c_bus
         fatfs
+        nvs_flash
         spi_flash
     EMBED_TXTFILES ${EMBEDDED_FILES}
 )

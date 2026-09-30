@@ -42,6 +42,7 @@ weather_data_t mock_snapshot()
 {
     const mock_weather_t *mock = mock_weather_get();
     weather_data_t output{};
+    output.available = true;
     copy_text(output.city, sizeof(output.city), mock->city);
     copy_text(output.condition, sizeof(output.condition), mock->condition);
     output.icon = mock->icon;
@@ -417,6 +418,7 @@ bool WeatherAdapter::apply_forecast_payload(const std::string &payload, std::str
     }
 
     weather_data_t parsed{};
+    parsed.available = true;
     std::string city_name = string_value(member(*city, "name"));
     if (city_name.empty()) city_name = "Current location";
     copy_text(parsed.city, sizeof(parsed.city), city_name);
