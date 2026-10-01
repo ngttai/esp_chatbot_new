@@ -134,6 +134,16 @@ bool AI_Agents::init(const Config &config)
 
     service_bindings_.push_back(std::move(binding));
 
+    // Always restore the original conversation mode. This also replaces a
+    // Manual value that may have been persisted by an older test firmware.
+    auto chat_mode_result = AgentHelper::call_function_sync(
+                                AgentHelper::FunctionId::SetChatMode,
+                                BROOKESIA_DESCRIBE_TO_STR(AgentHelper::ChatMode::HalfDuplex)
+                            );
+    BROOKESIA_CHECK_FALSE_RETURN(
+        chat_mode_result, false, "Failed to set Agent chat mode: %1%", chat_mode_result.error()
+    );
+
 #ifdef IDF_CI_BUILD
     BROOKESIA_LOGI("CI build detected, resetting Agent manager data");
     auto reset_data_result = AgentHelper::call_function_sync(AgentHelper::FunctionId::ResetData);
@@ -443,6 +453,10 @@ void AI_Agents::process_agent_general_suspend_status_changed()
 
 bool AI_Agents::start_agent()
 {
+    // The transport may connect at boot, but audio must remain closed until a
+    // touch or wake-word event explicitly wakes the agent.
+    is_boot_idle_ = true;
+
     // Ensure target agent is activated after switching
     auto activate_handler = [this](service::FunctionResult && result) {
         if (!result.success) {
@@ -483,6 +497,7 @@ void AI_Agents::handle_touch_sensor_click()
     // word instead of being discarded by the generic running-state guard.
     if (is_sleeping()) {
         BROOKESIA_LOGI("Touch single click: wake sleeping Xiaozhi");
+        is_boot_idle_ = false;
         AgentHelper::call_function_async(
             AgentHelper::FunctionId::TriggerGeneralAction,
             BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::WakeUp)
@@ -501,8 +516,8 @@ void AI_Agents::handle_touch_sensor_click()
         BROOKESIA_LOGI("Touch single click: interrupt speaking");
         AgentHelper::call_function_async(AgentHelper::FunctionId::InterruptSpeaking);
     } else {
-        // Match esp_speaker: a single click only wakes a sleeping chat or
-        // interrupts speech. It does nothing while already listening/idle.
+        // Match the original Half-Duplex interaction: a click only wakes a
+        // sleeping chat or interrupts speech.
         BROOKESIA_LOGD("Xiaozhi is awake and not speaking, ignore touch click");
     }
 }
@@ -651,6 +666,9 @@ AI_Agents::EmoteState AI_Agents::resolve_emote_state() const
     if (is_stopped()) {
         return EmoteState::Stopped;
     }
+    if (is_boot_idle_.load(std::memory_order_relaxed)) {
+        return EmoteState::Idle;
+    }
     if (is_sleeping() || is_suspended()) {
         return EmoteState::Sleeping;
     }
@@ -743,8 +761,13 @@ void AI_Agents::apply_emote_state(EmoteState state)
     case EmoteState::Stopped:
         state_name = "stopped";
         EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
-        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEmoji);
-        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEventMessage);
+        // Keep Home visually alive while the network/agent recovers. Hiding
+        // the emoji here leaves a black screen if a reconnect is delayed.
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "idle");
+        EmoteHelper::call_function_async(
+            EmoteHelper::FunctionId::SetEventMessage,
+            BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Idle)
+        );
         break;
     case EmoteState::Max:
         return;
@@ -810,6 +833,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             break;
         }
         case AgentHelper::GeneralAction::WakeUp:
+            is_boot_idle_ = false;
             is_sleeping_ = false;
             is_thinking_ = false;
             refresh_emote_state();
@@ -819,6 +843,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             );
             break;
         case AgentHelper::GeneralAction::Stop:
+            is_boot_idle_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -873,9 +898,20 @@ void AI_Agents::process_emote_when_general_event_happened()
         case AgentHelper::GeneralEvent::Started: {
             is_stopped_ = false;
             is_sleeping_ = false;
+            is_listening_ = false;
             has_agent_error_ = false;
             emote_state_ = EmoteState::Max;
             refresh_emote_state();
+
+            // XiaoZhi normally opens its audio channel five seconds after
+            // connecting. Enter an internal sleep immediately so boot stays
+            // visually idle and the microphone remains local until wake-up.
+            if (is_boot_idle_.load(std::memory_order_relaxed)) {
+                AgentHelper::call_function_async(
+                    AgentHelper::FunctionId::TriggerGeneralAction,
+                    BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Sleep)
+                );
+            }
             break;
         }
         case AgentHelper::GeneralEvent::Slept: {
@@ -884,8 +920,11 @@ void AI_Agents::process_emote_when_general_event_happened()
             break;
         }
         case AgentHelper::GeneralEvent::Awake: {
+            is_boot_idle_ = false;
             is_sleeping_ = false;
             is_stopped_ = false;
+            // Half-Duplex starts listening as soon as the audio channel is
+            // awake. Keep the original immediate Listening UI transition.
             is_listening_ = true;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -895,6 +934,7 @@ void AI_Agents::process_emote_when_general_event_happened()
             break;
         }
         case AgentHelper::GeneralEvent::Stopped: {
+            is_boot_idle_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -993,6 +1033,12 @@ void AI_Agents::process_emote_when_listening_status_changed()
         );
 
         BROOKESIA_LOGI("Listening status changed to %1%", listening_status);
+
+        if (is_boot_idle_.load(std::memory_order_relaxed)) {
+            is_listening_ = false;
+            BROOKESIA_LOGD("Boot-idle is armed, ignore listening status");
+            return;
+        }
 
         is_listening_ = is_listening;
         if (is_listening) {
@@ -1312,6 +1358,32 @@ void AI_Agents::process_wifi_events()
             is_wifi_connected_ = false;
             task_func = [this]() {
                 BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+
+                // Do not queue Stop while Activate/Start is still in flight.
+                // Such a request can survive a quick Wi-Fi reconnect and stop
+                // the newly started session several seconds later.
+                auto state_result = AgentHelper::call_function_sync<std::string>(
+                                        AgentHelper::FunctionId::GetGeneralState
+                                    );
+                if (!state_result) {
+                    BROOKESIA_LOGW("Failed to get Agent state before Wi-Fi stop: %1%", state_result.error());
+                    return;
+                }
+
+                AgentHelper::GeneralState state;
+                if (!BROOKESIA_DESCRIBE_STR_TO_ENUM(state_result.value(), state)) {
+                    BROOKESIA_LOGW("Failed to parse Agent state before Wi-Fi stop: %1%", state_result.value());
+                    return;
+                }
+
+                if ((state != AgentHelper::GeneralState::Started) &&
+                        (state != AgentHelper::GeneralState::Slept)) {
+                    BROOKESIA_LOGI(
+                        "Agent is in transitional state %1%, skip queued Wi-Fi Stop",
+                        BROOKESIA_DESCRIBE_TO_STR(state)
+                    );
+                    return;
+                }
                 stop_agent();
             };
             break;

@@ -135,6 +135,7 @@ private:
     std::atomic_bool has_agent_error_{false};
     std::atomic_bool is_stopped_{false};
     std::atomic_bool is_wifi_connected_{false};
+    std::atomic_bool is_boot_idle_{false};
     std::atomic<EmoteState> emote_state_{EmoteState::Max};
     std::atomic_bool should_resume_bt_speaker_{false};
     std::atomic_int paused_bt_connection_id_{-1};

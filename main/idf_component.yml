@@ -43,6 +43,7 @@ dependencies:
     version: "0.8.*"
   espressif/brookesia_service_video:
     version: "0.8.*"
+
   # Agents
   espressif/brookesia_agent_coze:
     version: "0.8.*"
@@ -50,6 +51,9 @@ dependencies:
     version: "0.8.*"
   espressif/brookesia_agent_xiaozhi:
     version: "0.8.*"
+    # Cancel XiaoZhi's delayed audio-channel open while the boot-idle state is
+    # armed, without changing the original Half-Duplex conversation flow.
+    override_path: "../components/brookesia_agent_xiaozhi"
 
   # Expressions
   espressif/brookesia_expression_emote:
