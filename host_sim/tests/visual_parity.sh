@@ -8,6 +8,7 @@ fi
 
 host_executable=$(realpath "$1")
 golden_directory=$(realpath "$2")
+override_directory="$golden_directory/approved-overrides"
 output_directory=${3:-"$(pwd)/visual-parity-output"}
 mkdir -p "$output_directory/screenshots" "$output_directory/diffs" "$output_directory/masked"
 capture_log="$output_directory/capture.log"
@@ -37,6 +38,7 @@ content_masks=(
     "quick|rectangle 85,24 175,56 rectangle 205,24 275,56 rectangle 65,250 295,306"
     "restore|rectangle 45,125 320,160 rectangle 35,252 325,285"
 )
+failures=0
 for entry in "${content_masks[@]}"; do
     screen=${entry%%|*}
     mask=${entry#*|}
@@ -56,10 +58,12 @@ for entry in "${content_masks[@]}"; do
     fi
 done
 
-failures=0
 printf '%-20s %12s %12s %14s\n' "screen" "raw AE" "AE @ fuzz5" "RMSE"
 for screen in "${static_screens[@]}"; do
     golden="$golden_directory/$screen.bmp"
+    if [[ -f "$override_directory/$screen.bmp" ]]; then
+        golden="$override_directory/$screen.bmp"
+    fi
     actual="$output_directory/screenshots/$screen.bmp"
     diff="$output_directory/diffs/$screen.png"
     raw_ae=$(compare -metric AE "$golden" "$actual" "$diff" 2>&1 || true)

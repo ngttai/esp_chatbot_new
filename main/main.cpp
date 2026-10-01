@@ -150,7 +150,9 @@ extern "C" void app_main(void)
             .mem_external_largest_free_threshold = 500 * 1024,
             .mem_external_free_percent_threshold = 20,
         });
-        Profiler::get_instance().start_thread_profiler(false);
+        /* Keep production profiling lightweight. Thread profiling is useful
+         * during focused diagnostics, but its periodic full task snapshots
+         * add CPU, stack and serial-log pressure to the normal UI workload. */
         Profiler::get_instance().start_memory_profiler(false);
     };
     auto post_result = backend_scheduler->post(std::move(setup_task));

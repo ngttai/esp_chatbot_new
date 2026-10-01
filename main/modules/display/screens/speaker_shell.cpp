@@ -359,20 +359,41 @@ void ScreenSpeakerShell::poll_display_mode()
         return;
     }
 
+    if (display_mode_result_ready_.exchange(false, std::memory_order_acquire)) {
+        const bool requested_idle = display_mode_requested_idle_.load(std::memory_order_relaxed);
+        if (display_mode_switch_succeeded_.load(std::memory_order_relaxed)) {
+            idle_display_mode_ = requested_idle;
+            idle_display_mode_initialized_ = true;
+            BROOKESIA_LOGI(
+                "Speaker UI display source: %1%", requested_idle ? "Native Emote" : "LVGL"
+            );
+        } else {
+            BROOKESIA_LOGE("Failed to switch display source for Speaker UI idle state");
+        }
+    }
+
     const bool idle_active = speaker_ui_is_idle_active();
     if (idle_display_mode_initialized_ && (idle_active == idle_display_mode_)) {
         return;
     }
 
-    const bool switched = idle_active ? display.show_emote() : display.show_ui();
-    if (!switched) {
-        BROOKESIA_LOGE("Failed to switch display source for Speaker UI idle state");
+    bool expected = false;
+    if (!display_mode_switch_in_flight_.compare_exchange_strong(expected, true)) {
         return;
     }
 
-    idle_display_mode_ = idle_active;
-    idle_display_mode_initialized_ = true;
-    BROOKESIA_LOGI("Speaker UI display source: %1%", idle_active ? "Native Emote" : "LVGL");
+    const bool posted = task_scheduler_->post([this, idle_active]() {
+        auto &worker_display = Display::get_instance();
+        const bool switched = idle_active ? worker_display.show_emote() : worker_display.show_ui();
+        display_mode_requested_idle_.store(idle_active, std::memory_order_relaxed);
+        display_mode_switch_succeeded_.store(switched, std::memory_order_relaxed);
+        display_mode_result_ready_.store(true, std::memory_order_release);
+        display_mode_switch_in_flight_.store(false, std::memory_order_release);
+    });
+    if (!posted) {
+        display_mode_switch_in_flight_.store(false, std::memory_order_release);
+        BROOKESIA_LOGE("Failed to schedule display source switch");
+    }
 }
 
 void ScreenSpeakerShell::poll_battery()

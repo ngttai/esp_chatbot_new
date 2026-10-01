@@ -109,6 +109,10 @@ private:
     std::array<std::atomic_int, SPEAKER_UI_SELF_TEST_COUNT> self_test_results_{};
     bool idle_display_mode_initialized_ = false;
     bool idle_display_mode_ = false;
+    std::atomic_bool display_mode_switch_in_flight_{false};
+    std::atomic_bool display_mode_result_ready_{false};
+    std::atomic_bool display_mode_switch_succeeded_{false};
+    std::atomic_bool display_mode_requested_idle_{false};
     lv_obj_t *wifi_connected_group_ = nullptr;
     lv_obj_t *wifi_connected_name_label_ = nullptr;
     lv_obj_t *wifi_connected_status_label_ = nullptr;
