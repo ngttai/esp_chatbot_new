@@ -5,6 +5,8 @@
 - `development/v1.1-plan.md`: feature and validation plan for the v1.1 release.
 - `development/display-backlight-lifecycle.md`: notes on persisted brightness,
   auto-load, and the safe display startup sequence.
+- `development/component-overrides.md`: local Brookesia overrides, their
+  purpose, and the procedure for comparing them with Registry packages.
 - `config/`: SD-card configuration templates and import instructions.
 - `ui_porting_baseline/`: versioned visual golden files used by the simulator
   release regression gate.
