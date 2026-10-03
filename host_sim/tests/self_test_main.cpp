@@ -282,11 +282,21 @@ int test_launcher(InputInjector &input)
     if (!input_ok(input.release(), input)) return 1;
     input.pump(10);
 
-    if (with_ui_lock([]() { return speaker_ui_launcher_page(); }) != 1) {
-        std::fprintf(stderr, "Launcher icon swipe failed\n");
+    if (with_ui_lock([]() { return speaker_ui_launcher_page(); }) != 0) {
+        std::fprintf(stderr, "Single-page launcher escaped its page bounds\n");
         return 4;
     }
-    std::puts("Launcher icon swipe passed");
+
+    if (!input_ok(input.press(260, 165), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(20);
+    if (!active("settings")) {
+        std::fprintf(stderr, "Launcher Settings icon did not open Settings\n");
+        return 5;
+    }
+
+    std::puts("Single-page launcher bounds and Settings icon passed");
     return 0;
 }
 

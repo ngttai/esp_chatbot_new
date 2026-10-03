@@ -170,7 +170,6 @@ static void quick_time_update(lv_timer_t *timer)
 }
 
 static void show_settings(lv_event_t *e);
-static void show_ai(lv_event_t *e);
 static void show_timer(lv_event_t *e);
 static void show_launcher_long(lv_event_t *e);
 static void render_page(void);
@@ -273,7 +272,6 @@ static void load(lv_obj_t *o)
     lv_screen_load_anim(o, LV_SCR_LOAD_ANIM_FADE_IN, 120, 0, false);
 }
 static void show_settings(lv_event_t *e) { LV_UNUSED(e); load(settings); }
-static void show_ai(lv_event_t *e) { LV_UNUSED(e); load(ai); }
 static void show_timer(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -292,12 +290,21 @@ static void show_screen_ref(lv_event_t *e)
 }
 
 static const app_t apps[] = {
+    // Keep the two system apps fixed on page one. Future apps are appended so
+    // Clock and Settings do not move when the launcher grows.
+    {"Clock", &img_app_timer, show_timer},
     {"Settings", &esp_brookesia_app_icon_launcher_settings_112_112, show_settings},
-    {"AI_Profile", &esp_brookesia_app_icon_launcher_ai_profile_112_112, show_ai},
-    {"2048", &img_app_2048, NULL}, {"Calculator", &img_app_calculator, NULL},
-    {"Clock", &img_app_timer, show_timer}, {"Pos", &img_app_pos, NULL},
-    {"UsbdNcm", &img_app_usbd_ncm, NULL},
 };
+
+static int launcher_app_count(void)
+{
+    return (int)(sizeof(apps) / sizeof(apps[0]));
+}
+
+static int launcher_page_count(void)
+{
+    return (launcher_app_count() + 1) / 2;
+}
 
 static void set_app_icon_state(lv_obj_t *image, int32_t size, int32_t scale)
 {
@@ -351,9 +358,10 @@ static void dot_click(lv_event_t *e)
 static void render_dots(void)
 {
     lv_obj_clean(dots);
-    int total = 40 + (3 * 12) + (3 * 10);
+    int page_count = launcher_page_count();
+    int total = 40 + ((page_count - 1) * 12) + ((page_count - 1) * 10);
     int x = (SIZE - total) / 2;
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < page_count; i++) {
         int w = i == page_index ? 40 : 12;
         lv_obj_t *dot = lv_obj_create(dots);
         bare(dot); lv_obj_set_size(dot, w, 12); lv_obj_set_pos(dot, x, 12);
@@ -369,9 +377,12 @@ static void render_dots(void)
 static void render_page(void)
 {
     lv_obj_clean(page_box);
+    int app_count = launcher_app_count();
+    int page_count = launcher_page_count();
+    if(page_index >= page_count) page_index = page_count - 1;
     int first = page_index * 2;
-    if(first < 7) app_icon(page_box, &apps[first], 26);
-    if(first + 1 < 7) app_icon(page_box, &apps[first + 1], 192);
+    if(first < app_count) app_icon(page_box, &apps[first], 26);
+    if(first + 1 < app_count) app_icon(page_box, &apps[first + 1], 192);
     render_dots();
 }
 
@@ -514,7 +525,7 @@ static void input_gesture_event(lv_event_t *e)
         int distance_y_abs = distance_y < 0 ? -distance_y : distance_y;
         launcher_gesture_tracking = false;
         if(distance_x_abs > 20 && distance_x_abs * 173 > distance_y_abs * 100) {
-            if(distance_x < 0 && page_index < 3) page_index++;
+            if(distance_x < 0 && page_index + 1 < launcher_page_count()) page_index++;
             else if(distance_x > 0 && page_index > 0) page_index--;
             render_page();
         }

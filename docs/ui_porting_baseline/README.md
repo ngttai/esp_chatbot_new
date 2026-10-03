@@ -69,9 +69,9 @@ Their hashes are stored in `screenshots.sha256`. `contact-sheet.png` is a review
 
 The original Phase 0 screenshots remain immutable. Approved, release-specific UI
 differences are stored under `screenshots/approved-overrides/` and are selected by
-the visual parity test when present. The v1.1 `settings-bottom` override records
-the intentional Self-test entry added to Settings without replacing the imported
-Phase 0 reference.
+the visual parity test when present. The v1.1 overrides record the intentional
+single-page launcher (`Clock`, `Settings`), its pressed state, and the Self-test
+entry added to Settings without replacing the imported Phase 0 references.
 
 The screenshots use the reference runner's standard capture delay (30 UI pumps at 10 ms). The Clock image was captured at 2026-09-18 22:28:39 +07:00 and contains live system time, so Phase 4 must compare its layout and non-time pixels rather than expecting a future whole-file hash match. WLAN screenshots likewise preserve the exact early state produced by the standard 300 ms capture delay, before the mocked multi-second reveal sequence settles.
 
