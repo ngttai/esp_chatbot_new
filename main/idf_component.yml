@@ -44,6 +44,9 @@ dependencies:
     override_path: "../components/brookesia_service_wifi"
   espressif/brookesia_service_display:
     version: "0.8.*"
+    # Honor the disabled auto-load Kconfig value. Upstream 0.8.x otherwise
+    # falls back to enabled when a false bool is absent from sdkconfig.h.
+    override_path: "../components/brookesia_service_display"
   espressif/brookesia_service_video:
     version: "0.8.*"
 

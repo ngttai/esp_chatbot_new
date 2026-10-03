@@ -65,6 +65,10 @@ CONFIG_VIDEO_PROCESSOR_ENABLE=n
 # Brookesia:Hal
 CONFIG_BROOKESIA_HAL_ADAPTOR_DISPLAY_LCD_PANEL_INIT_THREAD_CORE_ID=1
 
+# Keep the LCD dark until LVGL and the Emote renderer are ready. The app
+# restores the persisted brightness/on state after the display pipeline starts.
+CONFIG_BROOKESIA_SERVICE_DISPLAY_BACKLIGHT_ENABLE_AUTO_LOAD_DATA=n
+
 # Brookesia:Utils
 CONFIG_BROOKESIA_UTILS_THREAD_PROFILER_ENABLE_FREERTOS_CONFIG=y
 # Save SRAM

@@ -54,6 +54,15 @@ bool Display::start(const Config &config)
     }
 
     auto delayed_task = []() {
+        auto load_result = DisplayHelper::call_function_sync(
+                               DisplayHelper::FunctionId::LoadData,
+                               Display::get_instance().display_output_id_,
+                               service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                           );
+        BROOKESIA_CHECK_FALSE_EXIT(
+            load_result.has_value(), "Failed to restore Display backlight data: %1%", load_result.error()
+        );
+
         auto result = DisplayHelper::call_function_async(
                           DisplayHelper::FunctionId::SetBacklightOnOff,
                           Display::get_instance().display_output_id_,
