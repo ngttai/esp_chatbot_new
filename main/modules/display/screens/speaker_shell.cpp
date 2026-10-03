@@ -30,6 +30,7 @@
 #include "modules/display/display.hpp"
 
 extern "C" {
+#include "boot_splash.h"
 #include "speaker_ui.h"
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level1_36_36);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level2_36_36);
@@ -52,6 +53,7 @@ constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
 constexpr uint32_t WIFI_AGENT_AUDIO_DRAIN_MS = 100;
+constexpr uint32_t BOOT_SPLASH_START_DELAY_MS = 1050;
 constexpr uint16_t MEMORY_POLL_TICKS = 50;
 constexpr std::time_t MIN_VALID_NETWORK_TIME = 1704067200; // 2024-01-01 UTC
 constexpr uint8_t WIFI_OPEN_AP_DELAY_TICKS = 10;
@@ -171,6 +173,7 @@ bool ScreenSpeakerShell::start(
     });
 
     speaker_ui_create();
+    boot_splash_create(BOOT_SPLASH_START_DELAY_MS);
     speaker_ui_set_wifi_managed_externally(true);
     speaker_ui_set_input(input);
     configure_about();
@@ -355,6 +358,13 @@ void ScreenSpeakerShell::poll_self_test()
 
 void ScreenSpeakerShell::poll_display_mode()
 {
+    // Keep LVGL visible until the startup overlay has finished. The normal
+    // idle-screen policy switches to the native Emote source immediately
+    // afterwards.
+    if (boot_splash_is_active()) {
+        return;
+    }
+
     auto &display = Display::get_instance();
     if (!display.emote_ready()) {
         return;
