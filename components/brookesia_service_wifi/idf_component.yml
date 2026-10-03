@@ -1,0 +1,13 @@
+dependencies:
+  espressif/brookesia_service_storage:
+    require: public
+    version: 0.8.*
+description: ESP-Brookesia WiFi service which provides state machine management, AP
+  scanning, connection management, and SoftAP functionality.
+issues: https://github.com/espressif/esp-brookesia/issues
+repository: git://github.com/espressif/esp-brookesia.git
+repository_info:
+  commit_sha: e9f22576bb4d19ca190a8105134010d514574a6b
+  path: service/network/brookesia_service_wifi
+url: https://github.com/espressif/esp-brookesia/tree/master/service/network/brookesia_service_wifi
+version: 0.8.2

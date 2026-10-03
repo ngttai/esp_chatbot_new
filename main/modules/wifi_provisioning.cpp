@@ -22,7 +22,11 @@ using WifiHelper = service::helper::Wifi;
 
 constexpr uint32_t WIFI_DO_SOFTAP_PROVISION_START_TIMEOUT_MS = 1000;
 constexpr uint32_t WIFI_DO_SOFTAP_PROVISION_STOP_TIMEOUT_MS = 1000;
-constexpr uint32_t WIFI_RECONNECT_DELAY_MS = 2000;
+// Keep recovery scans infrequent enough that network discovery and UI list
+// refreshes do not continuously compete with LVGL, emote rendering and audio.
+constexpr uint32_t WIFI_RECOVERY_SCAN_INTERVAL_MS = 15000;
+constexpr uint32_t WIFI_RECOVERY_SCAN_TIMEOUT_MS = 90000;
+constexpr uint8_t WIFI_RECOVERY_SCAN_AP_COUNT = 20;
 
 static bool get_wifi_softap_params(WifiHelper::SoftApParams &softap_params);
 
@@ -78,46 +82,29 @@ bool WifiProvisioning::start()
 
 void WifiProvisioning::start_sta_connect_flow()
 {
-    auto post_reset_and_softap = [this]() {
-        active_conn_.reset();
-        start_softap_provision_flow();
-    };
-
-    auto on_sta_general_event = [this, post_reset_and_softap](
+    auto on_sta_general_event = [this](
     const std::string &, const std::string & event, bool is_unexpected) {
         if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Connected)) {
             has_connected_once_ = true;
-            reconnect_pending_ = false;
             BROOKESIA_LOGI("WiFi connected");
         } else if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Disconnected)) {
             if (!is_unexpected) {
                 BROOKESIA_LOGI("WiFi disconnected by requested action");
-                reconnect_pending_ = false;
                 return;
             }
             if (!has_connected_once_.load()) {
-                BROOKESIA_LOGW("Initial WiFi connection failed, switching to SoftAP provisioning");
-                config_.task_scheduler->post(post_reset_and_softap);
+                BROOKESIA_LOGW(
+                    "Initial WiFi connection failed; ServiceWifi will retry saved APs, "
+                    "SoftAP remains user-controlled"
+                );
                 return;
             }
-            if (reconnect_pending_.exchange(true)) {
-                return;
-            }
-            BROOKESIA_LOGW("WiFi link lost unexpectedly, reconnecting in %1% ms", WIFI_RECONNECT_DELAY_MS);
-            const bool posted = config_.task_scheduler->post_delayed([this]() {
-                auto result = WifiHelper::call_function_sync(
-                                  WifiHelper::FunctionId::TriggerGeneralAction,
-                                  BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralAction::Connect)
-                              );
-                if (!result) {
-                    BROOKESIA_LOGE("Failed to trigger WiFi reconnect: %1%", result.error());
-                }
-                reconnect_pending_ = false;
-            }, WIFI_RECONNECT_DELAY_MS);
-            if (!posted) {
-                reconnect_pending_ = false;
-                BROOKESIA_LOGE("Failed to schedule WiFi reconnect");
-            }
+
+            // Do not issue another Connect here. ServiceWifi retries the
+            // current AP, marks it unavailable after the configured limit,
+            // then selects another saved AP. A second application-level loop
+            // resets that bounded policy and can retry a dead hotspot forever.
+            BROOKESIA_LOGW("WiFi link lost unexpectedly; ServiceWifi will handle recovery");
         }
     };
 
@@ -135,12 +122,27 @@ void WifiProvisioning::start_sta_connect_flow()
     }
 #endif
 
-    auto start_result = WifiHelper::call_function_sync(
-                            WifiHelper::FunctionId::TriggerGeneralAction,
-                            BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralAction::Start)
-                        );
+    WifiHelper::ScanParams scan_params{
+        .ap_count = WIFI_RECOVERY_SCAN_AP_COUNT,
+        .interval_ms = WIFI_RECOVERY_SCAN_INTERVAL_MS,
+        .timeout_ms = WIFI_RECOVERY_SCAN_TIMEOUT_MS,
+    };
+    auto set_scan_params_result = WifiHelper::call_function_sync(
+                                      WifiHelper::FunctionId::SetScanParams,
+                                      BROOKESIA_DESCRIBE_TO_JSON(scan_params).as_object()
+                                  );
+    if (!set_scan_params_result) {
+        BROOKESIA_LOGE("Failed to configure WiFi recovery scan: %1%", set_scan_params_result.error());
+        active_conn_.reset();
+        return;
+    }
+
+    // TriggerScanStart also starts the station service. The local WiFi service
+    // override cancels its history-only auto-connect delay, so the first
+    // candidate is selected from visible saved SSIDs.
+    auto start_result = WifiHelper::call_function_sync(WifiHelper::FunctionId::TriggerScanStart);
     if (!start_result) {
-        BROOKESIA_LOGE("Failed to trigger WiFi start: %1%", start_result.error());
+        BROOKESIA_LOGE("Failed to start WiFi scan-first connection: %1%", start_result.error());
         active_conn_.reset();
     }
 }

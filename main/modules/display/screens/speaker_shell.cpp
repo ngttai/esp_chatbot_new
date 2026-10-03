@@ -51,6 +51,7 @@ constexpr uint32_t SERVICE_POLL_PERIOD_MS = 20;
 constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
+constexpr uint32_t WIFI_AGENT_AUDIO_DRAIN_MS = 100;
 constexpr uint16_t MEMORY_POLL_TICKS = 50;
 constexpr std::time_t MIN_VALID_NETWORK_TIME = 1704067200; // 2024-01-01 UTC
 constexpr uint8_t WIFI_OPEN_AP_DELAY_TICKS = 10;
@@ -896,6 +897,10 @@ void ScreenSpeakerShell::poll_wifi()
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
     const bool softap_active = speaker_ui_is_screen_active("softap");
 
+    if (wifi_scan_result_received_.exchange(false)) {
+        wifi_scan_after_enable_pending_ = false;
+    }
+
     if (softap_active != softap_screen_was_active_) {
         softap_screen_was_active_ = softap_active;
         if (!softap_active) {
@@ -912,6 +917,8 @@ void ScreenSpeakerShell::poll_wifi()
         wifi_scan_after_enable_pending_ = enabled && wlan_active;
         if (!enabled) {
             wifi_state_ = static_cast<int>(WifiHelper::GeneralState::Max);
+            wifi_scan_waiting_for_result_ = false;
+            wifi_scan_result_received_ = false;
         }
         {
             std::lock_guard lock(wifi_scan_mutex_);
@@ -927,18 +934,27 @@ void ScreenSpeakerShell::poll_wifi()
     }
     if (wlan_active) {
         attach_wifi_ui_handlers();
-        const bool connecting = wifi_state_.load() == static_cast<int>(WifiHelper::GeneralState::Connecting);
-        const bool scan_after_enable = wifi_scan_after_enable_pending_ && !wifi_action_in_flight_.load();
-        if ((!wifi_screen_was_active_ || scan_after_enable) && enabled && !connecting &&
+        if (!wifi_screen_was_active_ && enabled) {
+            wifi_scan_after_enable_pending_ = true;
+        }
+        const int wifi_state = wifi_state_.load();
+        const bool scan_ready =
+            (wifi_state == static_cast<int>(WifiHelper::GeneralState::Started)) ||
+            (wifi_state == static_cast<int>(WifiHelper::GeneralState::Connected));
+        const bool scan_pending = wifi_scan_after_enable_pending_ && !wifi_action_in_flight_.load();
+        if (scan_pending && enabled && scan_ready &&
                 !softap_action_in_flight_.load() &&
-                !wifi_connect_in_flight_.load()) {
-            wifi_scan_after_enable_pending_ = false;
+                !wifi_connect_in_flight_.load() &&
+                !wifi_scan_request_in_flight_.load() &&
+                !wifi_scan_waiting_for_result_.load()) {
             request_wifi_scan();
         }
         update_wifi_scan_ui();
         update_wifi_status_ui();
     } else if (wifi_screen_was_active_) {
         wifi_scan_after_enable_pending_ = false;
+        wifi_scan_waiting_for_result_ = false;
+        wifi_scan_result_received_ = false;
         request_wifi_scan_stop();
     }
     wifi_screen_was_active_ = wlan_active;
@@ -1079,9 +1095,46 @@ void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
 
     const bool restart_softap = enabled && softap_screen_was_active_;
     const bool posted = task_scheduler_->post([this, enabled, restart_softap]() {
+        using AgentHelper = service::helper::AgentManager;
+        using AudioEncoderHelper = service::helper::AudioEncoder<0>;
         using WifiHelper = service::helper::Wifi;
 
         if (!enabled) {
+            // Stop XiaoZhi while the network is still available. If Wi-Fi is
+            // stopped first, the transport can force Agent Stop while the
+            // encoder fetch task is blocked in its FIFO, racing recorder
+            // teardown and tripping the interrupt watchdog.
+            auto agent_state_result = AgentHelper::call_function_sync<std::string>(
+                                          AgentHelper::FunctionId::GetGeneralState,
+                                          service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                      );
+            AgentHelper::GeneralState agent_state = AgentHelper::GeneralState::Max;
+            if (agent_state_result) {
+                (void)BROOKESIA_DESCRIBE_STR_TO_ENUM(agent_state_result.value(), agent_state);
+            }
+            if ((agent_state == AgentHelper::GeneralState::Started) ||
+                    (agent_state == AgentHelper::GeneralState::Slept)) {
+                if (AudioEncoderHelper::is_running()) {
+                    auto pause_result = AudioEncoderHelper::call_function_sync(
+                                            AudioEncoderHelper::FunctionId::Pause,
+                                            service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                        );
+                    if (!pause_result) {
+                        BROOKESIA_LOGW("Failed to pause audio encoder before WiFi stop: %1%", pause_result.error());
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(WIFI_AGENT_AUDIO_DRAIN_MS));
+                }
+
+                auto stop_agent_result = AgentHelper::call_function_sync(
+                                             AgentHelper::FunctionId::TriggerGeneralAction,
+                                             BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Stop),
+                                             service::helper::Timeout(5000)
+                                         );
+                if (!stop_agent_result) {
+                    BROOKESIA_LOGW("Failed to stop Agent before WiFi stop: %1%", stop_agent_result.error());
+                }
+            }
+
             (void)WifiHelper::call_function_sync(
                 WifiHelper::FunctionId::TriggerScanStop,
                 service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
@@ -1144,7 +1197,8 @@ void ScreenSpeakerShell::request_wifi_state()
             }
             wifi_state_ = parsed_state;
 
-            if (parsed_state == static_cast<int>(WifiHelper::GeneralState::Connected)) {
+            if ((parsed_state == static_cast<int>(WifiHelper::GeneralState::Connected)) ||
+                    (parsed_state == static_cast<int>(WifiHelper::GeneralState::Connecting))) {
                 auto ap_result = WifiHelper::call_function_sync<boost::json::object>(
                                      WifiHelper::FunctionId::GetConnectAp,
                                      service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
@@ -1156,6 +1210,9 @@ void ScreenSpeakerShell::request_wifi_state()
                         wifi_ssid_ = ap_info.ssid;
                     }
                 }
+            } else {
+                std::lock_guard lock(wifi_state_mutex_);
+                wifi_ssid_.clear();
             }
             wifi_scan_dirty_ = true;
         } else {
@@ -1212,6 +1269,8 @@ void ScreenSpeakerShell::ensure_wifi_event_subscriptions()
             std::lock_guard lock(wifi_scan_mutex_);
             wifi_scan_entries_ = std::move(entries);
         }
+        wifi_scan_waiting_for_result_ = false;
+        wifi_scan_result_received_ = true;
         wifi_scan_dirty_ = true;
     }
                                   );
@@ -1244,19 +1303,21 @@ void ScreenSpeakerShell::request_wifi_scan()
 
         WifiHelper::ScanParams params{
             .ap_count = 20,
-            .interval_ms = 5000,
-            .timeout_ms = 60000,
+            .interval_ms = 15000,
+            .timeout_ms = 15000,
         };
         auto json = BROOKESIA_DESCRIBE_TO_JSON(params);
         auto params_result = WifiHelper::call_function_sync(
                                  WifiHelper::FunctionId::SetScanParams, json.as_object(),
                                  service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
                              );
+        wifi_scan_waiting_for_result_ = true;
         auto scan_result = params_result ? WifiHelper::call_function_sync(
                                WifiHelper::FunctionId::TriggerScanStart,
                                service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
                            ) : std::expected<void, std::string>(std::unexpected(params_result.error()));
         if (!scan_result) {
+            wifi_scan_waiting_for_result_ = false;
             BROOKESIA_LOGE("Failed to start Speaker UI WiFi scan: %1%", scan_result.error());
         }
         wifi_scan_request_in_flight_ = false;
@@ -1459,6 +1520,9 @@ void ScreenSpeakerShell::update_wifi_status_ui()
         wifi_connected_name_label_ = find_label(lv_screen_active(), "Studio-WiFi");
         wifi_connected_status_label_ = find_label(lv_screen_active(), "Connected");
         if (wifi_connected_name_label_ != nullptr) {
+            // The imported layout uses a demo SSID. Erase it before the
+            // connecting group can become visible.
+            lv_label_set_text(wifi_connected_name_label_, "");
             auto *row = lv_obj_get_parent(wifi_connected_name_label_);
             auto *panel = row == nullptr ? nullptr : lv_obj_get_parent(row);
             wifi_connected_group_ = panel == nullptr ? nullptr : lv_obj_get_parent(panel);
@@ -1471,8 +1535,14 @@ void ScreenSpeakerShell::update_wifi_status_ui()
                            (state == static_cast<int>(WifiHelper::GeneralState::Connected));
     const bool connecting = wlan_enabled &&
                             (state == static_cast<int>(WifiHelper::GeneralState::Connecting));
+    std::string ssid;
+    {
+        std::lock_guard lock(wifi_state_mutex_);
+        ssid = wifi_ssid_;
+    }
+    const bool show_connection = (connected || connecting) && !ssid.empty();
     if (wifi_connected_group_ != nullptr) {
-        if (connected || connecting) {
+        if (show_connection) {
             lv_obj_remove_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
@@ -1481,10 +1551,7 @@ void ScreenSpeakerShell::update_wifi_status_ui()
     if (wifi_connected_status_label_ != nullptr) {
         lv_label_set_text(wifi_connected_status_label_, connected ? "Connected" : "Connecting...");
     }
-    if ((connected || connecting) && (wifi_connected_name_label_ != nullptr)) {
-        std::lock_guard lock(wifi_state_mutex_);
-        if (!wifi_ssid_.empty()) {
-            lv_label_set_text(wifi_connected_name_label_, wifi_ssid_.c_str());
-        }
+    if (show_connection && (wifi_connected_name_label_ != nullptr)) {
+        lv_label_set_text(wifi_connected_name_label_, ssid.c_str());
     }
 }

@@ -44,7 +44,6 @@ private:
 
     std::atomic<bool> is_initialized_{false};
     std::atomic<bool> has_connected_once_{false};
-    std::atomic<bool> reconnect_pending_{false};
     Config config_{};
     // Holds the active event subscription; reset() to unsubscribe
     std::shared_ptr<esp_brookesia::service::EventRegistry::SignalConnection> active_conn_;

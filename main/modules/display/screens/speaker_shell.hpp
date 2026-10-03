@@ -122,6 +122,8 @@ private:
     std::atomic_bool wifi_state_request_in_flight_{false};
     std::atomic_bool wifi_scan_request_in_flight_{false};
     std::atomic_bool wifi_scan_stop_in_flight_{false};
+    std::atomic_bool wifi_scan_waiting_for_result_{false};
+    std::atomic_bool wifi_scan_result_received_{false};
     std::atomic_bool wifi_connect_in_flight_{false};
     std::atomic_int wifi_state_{-1};
     std::mutex wifi_state_mutex_;

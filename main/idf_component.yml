@@ -39,6 +39,9 @@ dependencies:
     version: "0.8.*"
   espressif/brookesia_service_wifi:
     version: "0.8.*"
+    # Scan visible APs before selecting a saved network, and fall back to a
+    # scan after the current AP exhausts its bounded reconnect attempts.
+    override_path: "../components/brookesia_service_wifi"
   espressif/brookesia_service_display:
     version: "0.8.*"
   espressif/brookesia_service_video:

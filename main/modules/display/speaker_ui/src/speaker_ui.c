@@ -1194,6 +1194,7 @@ static void create_settings_wlan(void)
     settings_wlan_connected_group = lv_obj_get_parent(connected);
     lv_obj_t *connected_row = network_row(connected, "Studio-WiFi", "Connected",
                                           &esp_brookesia_app_icon_wlan_level3_36_36, false);
+    lv_obj_add_flag(settings_wlan_connected_group, LV_OBJ_FLAG_HIDDEN);
     wlan_connected_name_label = lv_obj_get_child(connected_row, 0);
     wlan_connected_status_label = lv_obj_get_child(connected_row, 1);
 
@@ -1202,14 +1203,17 @@ static void create_settings_wlan(void)
     lv_obj_t *network = network_row(available, "ESP-Lab", NULL,
                                     &esp_brookesia_app_icon_wlan_level3_36_36, true);
     make_clickable(network, wlan_network_selected, "ESP-Lab");
+    lv_obj_add_flag(network, LV_OBJ_FLAG_HIDDEN);
     wlan_network_rows[0] = network;
     network = network_row(available, "NTT_Office", NULL,
                           &esp_brookesia_app_icon_wlan_level2_36_36, true);
     make_clickable(network, wlan_network_selected, "NTT_Office");
+    lv_obj_add_flag(network, LV_OBJ_FLAG_HIDDEN);
     wlan_network_rows[1] = network;
     network = network_row(available, "Guest", NULL,
                           &esp_brookesia_app_icon_wlan_level1_36_36, false);
     make_clickable(network, wlan_network_selected, "Guest");
+    lv_obj_add_flag(network, LV_OBJ_FLAG_HIDDEN);
     wlan_network_rows[2] = network;
 
     lv_obj_t *provisioning = group(scroller, 500, "Provisioning");

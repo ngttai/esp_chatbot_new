@@ -209,7 +209,9 @@ bool Display::start_expression_emote_assets()
         EmoteHelper::Config config{
             .task_priority = 6,
             .task_stack = 8 * 1024,
-            .task_affinity = CONFIG_BROOKESIA_HAL_ADAPTOR_DISPLAY_LCD_PANEL_INIT_THREAD_CORE_ID,
+            // ESP-Speaker renders animations on CPU0 while LVGL runs on CPU1.
+            // Keeping both renderers on CPU1 starves IDLE1 when AFE is active.
+            .task_affinity = 0,
             // Match ESP-Speaker: the animation task does not need scarce internal RAM.
             .task_stack_in_ext = true,
             .flag_buff_dma = true,
