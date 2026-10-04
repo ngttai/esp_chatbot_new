@@ -1,8 +1,5 @@
 # Project documentation
 
-- `development/ui-porting/`: plans and implementation evidence retained for
-  maintaining the exact Speaker UI port.
-- `development/v1.1-plan.md`: feature and validation plan for the v1.1 release.
 - `development/display-backlight-lifecycle.md`: notes on persisted brightness,
   auto-load, and the safe display startup sequence.
 - `development/component-overrides.md`: local Brookesia overrides, their
