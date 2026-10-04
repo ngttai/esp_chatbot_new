@@ -21,7 +21,7 @@ if(CMAKE_HOST_WIN32)
     set(CONFIGDEP_ENABLE 0 CACHE BOOL "Disable esp-idf-configdep for Windows AUX path compatibility" FORCE)
 endif()
 
-project(example_agent_chatbot)
+project(esp_chatbot)
 
 # Temporary workaround for `espressif__mcp-c-sdk` stringop-truncation warning
 idf_build_set_property(COMPILE_OPTIONS -Wno-error=stringop-truncation APPEND)

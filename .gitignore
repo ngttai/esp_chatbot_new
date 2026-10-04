@@ -67,9 +67,6 @@ size_info.txt
 sdkconfig
 sdkconfig.old
 
-# lock files for examples and components
-dependencies.lock
-
 # managed_components for examples
 managed_components
 
