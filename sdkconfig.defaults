@@ -5,8 +5,9 @@ CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
 CONFIG_ESP_TLS_USE_DS_PERIPHERAL=n
-CONFIG_ESP_TLS_INSECURE=y
-CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y
+# Fail closed when a TLS client does not provide a CA certificate, certificate
+# bundle, or another explicit verification source.
+# CONFIG_ESP_TLS_INSECURE is not set
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 # Avoid `esp-x509-crt-bundle` error
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
