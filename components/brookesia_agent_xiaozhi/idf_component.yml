@@ -1,0 +1,18 @@
+dependencies:
+  espressif/brookesia_agent_manager:
+    require: public
+    version: 0.8.*
+  espressif/brookesia_mcp_utils:
+    require: public
+    version: 0.8.*
+  espressif/esp_xiaozhi:
+    require: private
+    version: 0.1.*
+description: ESP-Brookesia Xiaozhi Agent which provides Xiaozhi API integration
+issues: https://github.com/espressif/esp-brookesia/issues
+repository: git://github.com/espressif/esp-brookesia.git
+repository_info:
+  commit_sha: e9f22576bb4d19ca190a8105134010d514574a6b
+  path: service/agent/brookesia_agent_xiaozhi
+url: https://github.com/espressif/esp-brookesia/tree/master/service/agent/brookesia_agent_xiaozhi
+version: 0.8.2

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "provider": "openweathermap",
+  "api_key": "YOUR_OPENWEATHER_API_KEY",
+  "location": {
+    "mode": "coordinates",
+    "latitude": 10.8231,
+    "longitude": 106.6297,
+    "display_name": "Ho Chi Minh City"
+  },
+  "language": "en",
+  "refresh_minutes": 10
+}

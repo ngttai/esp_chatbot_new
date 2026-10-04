@@ -22,6 +22,8 @@ def _bmgr_config_callback(target_name: str, ctx, args, **kwargs) -> None:
     raise Exception("should not be called")
 
 _FAKE_ACTIONS = {
+    "version": "1",
+    "global_action_callbacks": [],
     "actions": {
         "gen-bmgr-config": {
             "callback": _bmgr_config_callback,

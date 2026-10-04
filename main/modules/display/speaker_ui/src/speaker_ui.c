@@ -29,6 +29,11 @@
 #define APP_ICON_PRESSED_SIZE 88
 #define APP_ICON_DEFAULT_SCALE 224
 #define APP_ICON_PRESSED_SCALE 201
+#if defined(ESP_PLATFORM)
+    #define CLOCK_PANEL_OPA LV_OPA_COVER
+#else
+    #define CLOCK_PANEL_OPA LV_OPA_70
+#endif
 
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_launcher_settings_112_112);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_arrow_left_48_48);
@@ -88,7 +93,7 @@ extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator2;
 
 typedef struct { const char *name; const lv_image_dsc_t *image; lv_event_cb_t cb; } app_t;
 static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen;
-static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about;
+static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about, *settings_self_test;
 static lv_obj_t *settings_developer, *settings_restore;
 static lv_obj_t *settings_developer_row;
 static lv_obj_t *settings_wlan_verify, *settings_softap;
@@ -96,7 +101,7 @@ static lv_obj_t *page_box, *dots;
 static lv_obj_t *timer_clock_widget;
 static lv_obj_t *settings_scroller, *settings_wlan_scroller;
 static lv_obj_t *launcher_home_bar, *quick_home_bar, *settings_home_bar, *ai_home_bar, *timer_home_bar;
-static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar;
+static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar, *self_test_home_bar;
 static lv_obj_t *developer_home_bar, *factory_home_bar;
 static lv_obj_t *wlan_verify_home_bar, *softap_home_bar;
 static lv_obj_t *settings_wlan_value_label, *wlan_connected_name_label, *restore_status_label;
@@ -107,6 +112,8 @@ static lv_obj_t *about_flash_label, *about_ram_main_label, *about_ram_minor_labe
 static lv_obj_t *about_battery_capacity_label, *about_battery_voltage_label, *about_battery_current_label;
 static lv_obj_t *about_chip_name_label, *about_chip_version_label, *about_chip_mac_label;
 static lv_obj_t *about_chip_features_label;
+static lv_obj_t *self_test_status_labels[SPEAKER_UI_SELF_TEST_COUNT];
+static lv_obj_t *self_test_run_button;
 static lv_obj_t *settings_wlan_switch;
 static lv_obj_t *settings_touch_switch;
 static lv_obj_t *settings_wlan_connected_group, *settings_wlan_available_group, *settings_wlan_softap_group;
@@ -129,6 +136,7 @@ static int quick_volume_level = -1;
 static int quick_brightness_level = 0;
 static lv_obj_t *settings_wlan_password;
 static lv_obj_t *wlan_keyboard_container, *wlan_keyboard;
+static lv_obj_t *softap_qr, *softap_info_label;
 /* Single source of truth for the WLAN on/off state, mirrored (like firmware's shared
  * NVS-backed flag) onto the Settings > WLAN switch, the Quick Settings Wi-Fi button and
  * status icon, and the visibility of the WLAN screen's connected/available/SoftAP groups. */
@@ -162,7 +170,6 @@ static void quick_time_update(lv_timer_t *timer)
 }
 
 static void show_settings(lv_event_t *e);
-static void show_ai(lv_event_t *e);
 static void show_timer(lv_event_t *e);
 static void show_launcher_long(lv_event_t *e);
 static void render_page(void);
@@ -265,7 +272,6 @@ static void load(lv_obj_t *o)
     lv_screen_load_anim(o, LV_SCR_LOAD_ANIM_FADE_IN, 120, 0, false);
 }
 static void show_settings(lv_event_t *e) { LV_UNUSED(e); load(settings); }
-static void show_ai(lv_event_t *e) { LV_UNUSED(e); load(ai); }
 static void show_timer(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -284,12 +290,21 @@ static void show_screen_ref(lv_event_t *e)
 }
 
 static const app_t apps[] = {
+    // Keep the two system apps fixed on page one. Future apps are appended so
+    // Clock and Settings do not move when the launcher grows.
+    {"Clock", &img_app_timer, show_timer},
     {"Settings", &esp_brookesia_app_icon_launcher_settings_112_112, show_settings},
-    {"AI_Profile", &esp_brookesia_app_icon_launcher_ai_profile_112_112, show_ai},
-    {"2048", &img_app_2048, NULL}, {"Calculator", &img_app_calculator, NULL},
-    {"Clock", &img_app_timer, show_timer}, {"Pos", &img_app_pos, NULL},
-    {"UsbdNcm", &img_app_usbd_ncm, NULL},
 };
+
+static int launcher_app_count(void)
+{
+    return (int)(sizeof(apps) / sizeof(apps[0]));
+}
+
+static int launcher_page_count(void)
+{
+    return (launcher_app_count() + 1) / 2;
+}
 
 static void set_app_icon_state(lv_obj_t *image, int32_t size, int32_t scale)
 {
@@ -343,9 +358,10 @@ static void dot_click(lv_event_t *e)
 static void render_dots(void)
 {
     lv_obj_clean(dots);
-    int total = 40 + (3 * 12) + (3 * 10);
+    int page_count = launcher_page_count();
+    int total = 40 + ((page_count - 1) * 12) + ((page_count - 1) * 10);
     int x = (SIZE - total) / 2;
-    for(int i = 0; i < 4; i++) {
+    for(int i = 0; i < page_count; i++) {
         int w = i == page_index ? 40 : 12;
         lv_obj_t *dot = lv_obj_create(dots);
         bare(dot); lv_obj_set_size(dot, w, 12); lv_obj_set_pos(dot, x, 12);
@@ -361,9 +377,12 @@ static void render_dots(void)
 static void render_page(void)
 {
     lv_obj_clean(page_box);
+    int app_count = launcher_app_count();
+    int page_count = launcher_page_count();
+    if(page_index >= page_count) page_index = page_count - 1;
     int first = page_index * 2;
-    if(first < 7) app_icon(page_box, &apps[first], 26);
-    if(first + 1 < 7) app_icon(page_box, &apps[first + 1], 192);
+    if(first < app_count) app_icon(page_box, &apps[first], 26);
+    if(first + 1 < app_count) app_icon(page_box, &apps[first + 1], 192);
     render_dots();
 }
 
@@ -378,6 +397,7 @@ static lv_obj_t *active_home_bar(void)
     if(active == settings_sound) return sound_home_bar;
     if(active == settings_display) return display_home_bar;
     if(active == settings_about) return about_home_bar;
+    if(active == settings_self_test) return self_test_home_bar;
     if(active == settings_developer) return developer_home_bar;
     if(active == settings_restore) return factory_home_bar;
     if(active == settings_wlan_verify) return wlan_verify_home_bar;
@@ -505,7 +525,7 @@ static void input_gesture_event(lv_event_t *e)
         int distance_y_abs = distance_y < 0 ? -distance_y : distance_y;
         launcher_gesture_tracking = false;
         if(distance_x_abs > 20 && distance_x_abs * 173 > distance_y_abs * 100) {
-            if(distance_x < 0 && page_index < 3) page_index++;
+            if(distance_x < 0 && page_index + 1 < launcher_page_count()) page_index++;
             else if(distance_x > 0 && page_index > 0) page_index--;
             render_page();
         }
@@ -1036,6 +1056,9 @@ static void create_settings(void)
     lv_obj_t *about_row = row(more, &esp_brookesia_app_icon_more_about_48_48,
                               "About", NULL, true);
     make_clickable(about_row, show_screen_ref, &settings_about);
+    lv_obj_t *self_test_row = row(more, &esp_brookesia_app_icon_more_developer_mode_48_48,
+                                  "Self-test", NULL, true);
+    make_clickable(self_test_row, show_screen_ref, &settings_self_test);
     settings_developer_row = row(more, &esp_brookesia_app_icon_more_developer_mode_48_48,
                                  "Developer Mode", NULL, false);
     make_clickable(settings_developer_row, show_screen_ref, &settings_developer);
@@ -1182,6 +1205,7 @@ static void create_settings_wlan(void)
     settings_wlan_connected_group = lv_obj_get_parent(connected);
     lv_obj_t *connected_row = network_row(connected, "Studio-WiFi", "Connected",
                                           &esp_brookesia_app_icon_wlan_level3_36_36, false);
+    lv_obj_add_flag(settings_wlan_connected_group, LV_OBJ_FLAG_HIDDEN);
     wlan_connected_name_label = lv_obj_get_child(connected_row, 0);
     wlan_connected_status_label = lv_obj_get_child(connected_row, 1);
 
@@ -1190,14 +1214,17 @@ static void create_settings_wlan(void)
     lv_obj_t *network = network_row(available, "ESP-Lab", NULL,
                                     &esp_brookesia_app_icon_wlan_level3_36_36, true);
     make_clickable(network, wlan_network_selected, "ESP-Lab");
+    lv_obj_add_flag(network, LV_OBJ_FLAG_HIDDEN);
     wlan_network_rows[0] = network;
     network = network_row(available, "NTT_Office", NULL,
                           &esp_brookesia_app_icon_wlan_level2_36_36, true);
     make_clickable(network, wlan_network_selected, "NTT_Office");
+    lv_obj_add_flag(network, LV_OBJ_FLAG_HIDDEN);
     wlan_network_rows[1] = network;
     network = network_row(available, "Guest", NULL,
                           &esp_brookesia_app_icon_wlan_level1_36_36, false);
     make_clickable(network, wlan_network_selected, "Guest");
+    lv_obj_add_flag(network, LV_OBJ_FLAG_HIDDEN);
     wlan_network_rows[2] = network;
 
     lv_obj_t *provisioning = group(scroller, 500, "Provisioning");
@@ -1252,6 +1279,51 @@ static void create_settings_about(void)
     plain_row_bound(chip, "Version", "v0.2", &about_chip_version_label);
     plain_row_bound(chip, "MAC", "A4:CF:12:34", &about_chip_mac_label);
     plain_row_bound(chip, "Features", "Wi-Fi / BLE", &about_chip_features_label);
+}
+
+static void create_settings_self_test(void)
+{
+    lv_obj_t *scroller = create_settings_child(
+                             &settings_self_test, &self_test_home_bar, "Settings", &settings
+                         );
+
+    lv_obj_t *interactive = group(scroller, 72, "Interactive");
+    plain_row_bound(interactive, "Display", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_DISPLAY]);
+    plain_row_bound(interactive, "Touch", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_TOUCH]);
+    plain_row_bound(interactive, "Speaker", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_SPEAKER]);
+    plain_row_bound(interactive, "Microphone", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_MICROPHONE]);
+
+    lv_obj_t *hardware = group(scroller, 304, "Hardware");
+    plain_row_bound(hardware, "BMI270", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_BMI270]);
+    plain_row_bound(hardware, "Battery", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_BATTERY]);
+    plain_row_bound(hardware, "Charging", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_CHARGING]);
+
+    lv_obj_t *system = group(scroller, 488, "System");
+    plain_row_bound(system, "Wi-Fi", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_WIFI]);
+    plain_row_bound(system, "NTP", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_NTP]);
+    plain_row_bound(system, "Memory", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_MEMORY]);
+    plain_row_bound(system, "Flash", "Not tested",
+                    &self_test_status_labels[SPEAKER_UI_SELF_TEST_FLASH]);
+
+    self_test_run_button = lv_button_create(scroller);
+    lv_obj_set_size(self_test_run_button, 224, 52);
+    lv_obj_set_style_radius(self_test_run_button, 26, 0);
+    lv_obj_set_style_bg_color(self_test_run_button, RED, 0);
+    lv_obj_t *button_label = text(
+                                 self_test_run_button, "Run all tests",
+                                 &esp_brookesia_font_maison_neue_book_16, WHITE
+                             );
+    lv_obj_center(button_label);
 }
 
 static void create_settings_developer(void)
@@ -1596,21 +1668,21 @@ static void create_settings_softap(void)
     lv_obj_set_style_pad_all(qr_cell, 10, 0);
     lv_obj_set_style_pad_row(qr_cell, 10, 0);
 
-    lv_obj_t *qr = lv_qrcode_create(qr_cell);
-    lv_qrcode_set_size(qr, 100);
-    lv_qrcode_set_dark_color(qr, lv_color_hex(0x000000));
-    lv_qrcode_set_light_color(qr, WHITE);
-    lv_obj_set_style_border_color(qr, WHITE, 0);
-    lv_obj_set_style_border_width(qr, 10, 0);
+    softap_qr = lv_qrcode_create(qr_cell);
+    lv_qrcode_set_size(softap_qr, 100);
+    lv_qrcode_set_dark_color(softap_qr, lv_color_hex(0x000000));
+    lv_qrcode_set_light_color(softap_qr, WHITE);
+    lv_obj_set_style_border_color(softap_qr, WHITE, 0);
+    lv_obj_set_style_border_width(softap_qr, 10, 0);
     const char *qr_data = "WIFI:T:WPA;S:ESP-Speaker-Setup;P:esp123456;;";
-    lv_qrcode_update(qr, qr_data, strlen(qr_data));
+    lv_qrcode_update(softap_qr, qr_data, strlen(qr_data));
 
-    lv_obj_t *info = text(qr_cell,
-                          "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
-                          "Option 2: Join Wi-Fi 'ESP-Speaker-Setup' -> visit '192.168.4.1' in browser",
-                          &esp_brookesia_font_maison_neue_book_16, WHITE);
-    lv_obj_set_width(info, 280);
-    lv_label_set_long_mode(info, LV_LABEL_LONG_WRAP);
+    softap_info_label = text(qr_cell,
+                              "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
+                              "Option 2: Join Wi-Fi 'ESP-Speaker-Setup' -> visit '192.168.4.1' in browser",
+                              &esp_brookesia_font_maison_neue_book_16, WHITE);
+    lv_obj_set_width(softap_info_label, 280);
+    lv_label_set_long_mode(softap_info_label, LV_LABEL_LONG_WRAP);
 }
 
 static void create_settings_subpages(void)
@@ -1621,6 +1693,7 @@ static void create_settings_subpages(void)
     create_settings_sound();
     create_settings_display();
     create_settings_about();
+    create_settings_self_test();
     create_settings_developer();
     create_settings_restore();
 }
@@ -1650,9 +1723,8 @@ static void create_ai(void)
  * benefit). Built from the flip-clock + weather widgets ported from the
  * HTC_Flip_Clock_with_weather reference project (src/flip_clock/) instead
  * of the vendored ui_Screen_watch_digital digital watch: a full mechanical
- * flip-clock animation, the custom digit font, and a mock-only (no
- * network) compact weather panel. See src/flip_clock/weather_source.c for
- * why the weather data is mock-only. */
+ * flip-clock animation, the custom digit font, and a compact weather panel.
+ * Its data source is selected by the firmware or simulator backend. */
 static lv_obj_t *clock_date_label;
 
 static void clock_date_update(lv_timer_t *t)
@@ -1697,7 +1769,9 @@ static void create_timer(void)
     lv_obj_remove_style_all(date_box);
     lv_obj_set_size(date_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(date_box, lv_color_hex(0x20242f), 0);
-    lv_obj_set_style_bg_opa(date_box, LV_OPA_70, 0);
+    /* Opaque on the partial-buffer QSPI target so each date refresh clears the
+     * previous glyphs; SDL keeps the original translucent appearance. */
+    lv_obj_set_style_bg_opa(date_box, CLOCK_PANEL_OPA, 0);
     lv_obj_set_style_radius(date_box, 12, 0);
     lv_obj_set_style_pad_hor(date_box, 12, 0);
     lv_obj_set_style_pad_ver(date_box, 4, 0);
@@ -1796,6 +1870,7 @@ bool speaker_ui_is_screen_active(const char *name)
     if(!strcmp(name, "sound")) return active == settings_sound;
     if(!strcmp(name, "display")) return active == settings_display;
     if(!strcmp(name, "about")) return active == settings_about;
+    if(!strcmp(name, "self-test")) return active == settings_self_test;
     if(!strcmp(name, "developer")) return active == settings_developer;
     if(!strcmp(name, "restore")) return active == settings_restore;
     return false;
@@ -1848,6 +1923,7 @@ bool speaker_ui_show(const char *name)
     else if(!strcmp(name, "sound")) lv_screen_load(settings_sound);
     else if(!strcmp(name, "display")) lv_screen_load(settings_display);
     else if(!strcmp(name, "about")) lv_screen_load(settings_about);
+    else if(!strcmp(name, "self-test")) lv_screen_load(settings_self_test);
     else if(!strcmp(name, "developer")) lv_screen_load(settings_developer);
     else if(!strcmp(name, "restore")) lv_screen_load(settings_restore);
     else if(!strcmp(name, "ai")) lv_screen_load(ai);
@@ -2033,6 +2109,48 @@ bool speaker_ui_set_about_battery_measurements(int voltage_mv, int current_ma)
     return true;
 }
 
+bool speaker_ui_set_self_test_status(speaker_ui_self_test_item_t item,
+                                     speaker_ui_self_test_status_t status)
+{
+    if(item < 0 || item >= SPEAKER_UI_SELF_TEST_COUNT ||
+       status < SPEAKER_UI_SELF_TEST_NOT_TESTED || status > SPEAKER_UI_SELF_TEST_FAIL ||
+       self_test_status_labels[item] == NULL) return false;
+
+    static const char *const status_text[] = {
+        "Not tested",
+        "Testing",
+        "Pass",
+        "Fail",
+    };
+    static const uint32_t status_color[] = {
+        0xAAAAAA,
+        0xFFB020,
+        0x34C759,
+        0xFF3034,
+    };
+    lv_label_set_text(self_test_status_labels[item], status_text[status]);
+    lv_obj_set_style_text_color(
+        self_test_status_labels[item], lv_color_hex(status_color[status]), 0
+    );
+    return true;
+}
+
+bool speaker_ui_reset_self_test_statuses(void)
+{
+    for(int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+        if(!speaker_ui_set_self_test_status(
+                (speaker_ui_self_test_item_t)item, SPEAKER_UI_SELF_TEST_NOT_TESTED)) return false;
+    }
+    return true;
+}
+
+bool speaker_ui_set_self_test_run_callback(lv_event_cb_t callback, void *user_data)
+{
+    if(self_test_run_button == NULL || callback == NULL) return false;
+    lv_obj_add_event_cb(self_test_run_button, callback, LV_EVENT_CLICKED, user_data);
+    return true;
+}
+
 bool speaker_ui_set_developer_mode_callback(lv_event_cb_t callback, void *user_data)
 {
     if(settings_developer_row == NULL || callback == NULL) return false;
@@ -2075,5 +2193,55 @@ bool speaker_ui_set_wlan_password(const char *text)
 bool speaker_ui_confirm_wlan_password(void)
 {
     wlan_password_ready(NULL);
+    return true;
+}
+
+static bool wifi_qr_escape(const char *input, char *output, size_t output_size)
+{
+    if(input == NULL || output == NULL || output_size == 0) return false;
+    size_t used = 0;
+    for(const char *cursor = input; *cursor != '\0'; ++cursor) {
+        const bool escaped = *cursor == '\\' || *cursor == ';' || *cursor == ',' ||
+                             *cursor == ':' || *cursor == '"';
+        if(used + (escaped ? 2U : 1U) >= output_size) return false;
+        if(escaped) output[used++] = '\\';
+        output[used++] = *cursor;
+    }
+    output[used] = '\0';
+    return true;
+}
+
+bool speaker_ui_set_softap_credentials(const char *ssid, const char *password)
+{
+    if(softap_qr == NULL || softap_info_label == NULL || ssid == NULL || ssid[0] == '\0') return false;
+    if(password == NULL) password = "";
+
+    char escaped_ssid[65];
+    char escaped_password[129];
+    char qr_data[256];
+    if(!wifi_qr_escape(ssid, escaped_ssid, sizeof(escaped_ssid)) ||
+       !wifi_qr_escape(password, escaped_password, sizeof(escaped_password))) return false;
+
+    const char *security = password[0] == '\0' ? "nopass" : "WPA";
+    int length = snprintf(qr_data, sizeof(qr_data), "WIFI:T:%s;S:%s;P:%s;;",
+                          security, escaped_ssid, escaped_password);
+    if(length < 0 || (size_t)length >= sizeof(qr_data)) return false;
+    lv_qrcode_update(softap_qr, qr_data, (uint32_t)length);
+
+    if(password[0] == '\0') {
+        lv_label_set_text_fmt(
+            softap_info_label,
+            "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
+            "Option 2: Join Wi-Fi '%s' -> visit '192.168.4.1' in browser",
+            ssid
+        );
+    } else {
+        lv_label_set_text_fmt(
+            softap_info_label,
+            "Option 1: Scan QRCode -> connect Wi-Fi in pop-up browser\n"
+            "Option 2: Join Wi-Fi '%s' (password: %s) -> visit '192.168.4.1' in browser",
+            ssid, password
+        );
+    }
     return true;
 }

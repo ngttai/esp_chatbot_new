@@ -17,6 +17,8 @@
 #include "modules/head_led.hpp"
 #include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
+#include "modules/weather_config.hpp"
+#include "modules/weather_service.hpp"
 #include "modules/profiler.hpp"
 #include "modules/developer_mode.hpp"
 #include "modules/display/display.hpp"
@@ -79,6 +81,11 @@ extern "C" void app_main(void)
 
         GeneralServices::get_instance().start_device();
 
+        /* Import an optional one-time weather configuration from the SD card,
+         * then use the persisted NVS copy on later boots. */
+        WeatherConfig::get_instance().init();
+        WeatherService::get_instance().init();
+
         if (DeveloperMode::is_requested()) {
             if (!HeadLed::get_instance().init()) {
                 BROOKESIA_LOGW("VoCat head LED is unavailable in Developer Mode");
@@ -129,6 +136,10 @@ extern "C" void app_main(void)
         });
         WifiProvisioning::get_instance().start();
 
+        if (!WeatherService::get_instance().start()) {
+            BROOKESIA_LOGW("Weather service is unavailable; continue without live weather");
+        }
+
         /* Start profiler */
         Profiler::get_instance().init({
             .task_scheduler = backend_scheduler,
@@ -139,7 +150,9 @@ extern "C" void app_main(void)
             .mem_external_largest_free_threshold = 500 * 1024,
             .mem_external_free_percent_threshold = 20,
         });
-        Profiler::get_instance().start_thread_profiler(false);
+        /* Keep production profiling lightweight. Thread profiling is useful
+         * during focused diagnostics, but its periodic full task snapshots
+         * add CPU, stack and serial-log pressure to the normal UI workload. */
         Profiler::get_instance().start_memory_profiler(false);
     };
     auto post_result = backend_scheduler->post(std::move(setup_task));

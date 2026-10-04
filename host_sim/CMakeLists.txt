@@ -224,6 +224,7 @@ if(BUILD_TESTING)
         --self-test-settings-bar
         --self-test-settings-no-scroll
         --self-test-settings-pages
+        --self-test-hardware-test-ui
         --self-test-quick-gesture
         --self-test-quick-close-gesture
         --self-test-wlan-toggle

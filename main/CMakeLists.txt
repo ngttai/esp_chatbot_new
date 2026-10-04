@@ -10,6 +10,8 @@ set(SRCS
     "modules/imu_gesture.cpp"
     "modules/profiler.cpp"
     "modules/touch_sensor.cpp"
+    "modules/weather_config.cpp"
+    "modules/weather_service.cpp"
     "modules/usb_msc.c"
     "modules/wifi_provisioning.cpp"
 )
@@ -52,6 +54,7 @@ idf_component_register(
         esp_wifi
         espressif__i2c_bus
         fatfs
+        nvs_flash
         spi_flash
     EMBED_TXTFILES ${EMBEDDED_FILES}
 )
@@ -147,7 +150,14 @@ if (NOT RESOLUTION IN_LIST SUPPORTED_RESOLUTIONS)
 endif()
 message(STATUS "Asset Resolution: ${RESOLUTION}")
 set(ASSETS_FILE "${CMAKE_BINARY_DIR}/${ASSETS_BIN_NAME}.bin")
-build_speaker_assets_bin(${ASSETS_BIN_NAME} ${RESOLUTION} ${ASSETS_FILE} ${CONFIG_MMAP_FILE_NAME_LENGTH})
+set(EMOTE_ASSETS_EXTERNAL_PATH "${CMAKE_CURRENT_LIST_DIR}/../assets/emote")
+build_speaker_assets_bin(
+    ${ASSETS_BIN_NAME}
+    ${RESOLUTION}
+    ${ASSETS_FILE}
+    ${CONFIG_MMAP_FILE_NAME_LENGTH}
+    ${EMOTE_ASSETS_EXTERNAL_PATH}
+)
 message(STATUS "Generated emote assets: ${ASSETS_FILE} -> ${ASSETS_PARTITION_NAME} partition")
 esptool_py_flash_to_partition(flash ${ASSETS_PARTITION_NAME} "${ASSETS_FILE}")
 

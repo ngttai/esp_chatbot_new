@@ -17,6 +17,10 @@
 #include "brookesia/service_manager/event/registry.hpp"
 #include "lvgl.h"
 
+extern "C" {
+#include "speaker_ui.h"
+}
+
 class ScreenSpeakerShell {
 public:
     bool start(
@@ -34,6 +38,7 @@ private:
     static void service_timer_callback(lv_timer_t *timer);
     static void factory_reset_clicked_callback(lv_event_t *event);
     static void developer_mode_clicked_callback(lv_event_t *event);
+    static void self_test_run_clicked_callback(lv_event_t *event);
     static void wifi_network_selected_callback(lv_event_t *event);
     static void wifi_password_ready_callback(lv_event_t *event);
     void poll_service_controls();
@@ -43,10 +48,13 @@ private:
     void poll_memory();
     void poll_battery();
     void poll_touch_sensor();
+    void poll_self_test();
     void poll_factory_reset();
     void poll_display_mode();
     void configure_about();
     void attach_developer_mode_handler();
+    void attach_self_test_handler();
+    void run_self_test();
     void perform_factory_reset();
     void ensure_control_event_subscriptions();
     void refresh_control_state();
@@ -59,6 +67,8 @@ private:
     void request_wifi_scan();
     void request_wifi_scan_stop();
     void request_wifi_connect(std::string ssid, std::string password);
+    void request_softap_provision(bool enabled);
+    void update_softap_ui();
     void ensure_wifi_event_subscriptions();
     void attach_wifi_ui_handlers();
     void update_wifi_scan_ui();
@@ -94,8 +104,15 @@ private:
     bool touch_sensor_effective_enabled_ = true;
     bool factory_reset_handler_attached_ = false;
     bool factory_reset_in_progress_ = false;
+    std::atomic_bool self_test_running_{false};
+    std::atomic_bool self_test_results_dirty_{false};
+    std::array<std::atomic_int, SPEAKER_UI_SELF_TEST_COUNT> self_test_results_{};
     bool idle_display_mode_initialized_ = false;
     bool idle_display_mode_ = false;
+    std::atomic_bool display_mode_switch_in_flight_{false};
+    std::atomic_bool display_mode_result_ready_{false};
+    std::atomic_bool display_mode_switch_succeeded_{false};
+    std::atomic_bool display_mode_requested_idle_{false};
     lv_obj_t *wifi_connected_group_ = nullptr;
     lv_obj_t *wifi_connected_name_label_ = nullptr;
     lv_obj_t *wifi_connected_status_label_ = nullptr;
@@ -105,6 +122,8 @@ private:
     std::atomic_bool wifi_state_request_in_flight_{false};
     std::atomic_bool wifi_scan_request_in_flight_{false};
     std::atomic_bool wifi_scan_stop_in_flight_{false};
+    std::atomic_bool wifi_scan_waiting_for_result_{false};
+    std::atomic_bool wifi_scan_result_received_{false};
     std::atomic_bool wifi_connect_in_flight_{false};
     std::atomic_int wifi_state_{-1};
     std::mutex wifi_state_mutex_;
@@ -119,12 +138,20 @@ private:
     bool wifi_events_subscribed_ = false;
     bool wifi_handlers_attached_ = false;
     bool wifi_screen_was_active_ = false;
+    bool softap_screen_was_active_ = false;
     bool wifi_scan_after_enable_pending_ = false;
     bool wifi_open_ap_pending_ = false;
     uint8_t wifi_open_ap_countdown_ = 0;
     size_t wifi_scan_visible_count_ = 0;
     std::atomic_bool wifi_scan_dirty_{false};
+    std::atomic_bool softap_action_in_flight_{false};
+    std::atomic_bool softap_ui_dirty_{false};
+    std::atomic_bool softap_stopped_event_{false};
+    std::mutex softap_state_mutex_;
+    std::string softap_ssid_;
+    std::string softap_password_;
     esp_brookesia::service::EventRegistry::SignalConnection wifi_scan_event_connection_;
+    esp_brookesia::service::EventRegistry::SignalConnection softap_event_connection_;
     esp_brookesia::service::EventRegistry::SignalConnection brightness_event_connection_;
     esp_brookesia::service::EventRegistry::SignalConnection volume_event_connection_;
     esp_brookesia::service::EventRegistry::SignalConnection mute_event_connection_;

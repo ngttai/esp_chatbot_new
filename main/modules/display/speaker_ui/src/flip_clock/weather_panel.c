@@ -5,9 +5,8 @@
  * HTC_Flip_Clock_with_weather's weather_panel.c -- that file's full
  * (rectangular-face) variant and its forecast/sun/wind rows weren't
  * ported, since sdl_ui_simulator only ever targets the round 360x360
- * face. Refreshed on a timer from weather_source.c (mock data only,
- * see that file -- the original's weather_client.c, which this replaces,
- * did real network fetches).
+ * face. It refreshes from a cached snapshot only; network work stays outside
+ * the LVGL thread.
  */
 
 #include "weather_panel.h"
@@ -16,9 +15,13 @@
 #include <stdio.h>
 
 #define REFRESH_PERIOD_MS 12000
-/* Semi-transparent instead of LV_OPA_COVER: lets the background scene show
- * through slightly, clipped to the panel's own radius. */
-#define PANEL_OPA LV_OPA_70
+/* Hardware uses a partial QSPI framebuffer. An opaque panel is required to
+ * clear the previous text/icon before a live weather update is drawn. */
+#if defined(ESP_PLATFORM)
+    #define PANEL_OPA LV_OPA_COVER
+#else
+    #define PANEL_OPA LV_OPA_70
+#endif
 
 static lv_obj_t * make_label(lv_obj_t * parent, const lv_font_t * font, lv_color_t color)
 {
@@ -43,7 +46,8 @@ static void compact_refresh(compact_weather_t * cw)
 
     lv_label_set_text(cw->city_label, w.city);
     weather_icon_set_type(cw->icon, w.icon);
-    snprintf(buf, sizeof(buf), "%d\xC2\xB0", w.current_temp);
+    if(w.available) snprintf(buf, sizeof(buf), "%d\xC2\xB0", w.current_temp);
+    else snprintf(buf, sizeof(buf), "--\xC2\xB0");
     lv_label_set_text(cw->temp_label, buf);
     lv_label_set_text(cw->condition_label, w.condition);
 }

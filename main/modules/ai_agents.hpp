@@ -6,6 +6,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <vector>
 #include "brookesia/service_manager/event/registry.hpp"
 #include "brookesia/service_manager/service/manager.hpp"
@@ -41,6 +42,17 @@ public:
     void handle_touch_sensor_long_press();
 
 private:
+    enum class EmoteState : uint8_t {
+        Idle,
+        Listening,
+        Thinking,
+        Speaking,
+        Sleeping,
+        Error,
+        Stopped,
+        Max,
+    };
+
     AI_Agents() = default;
     ~AI_Agents() = default;
     AI_Agents(const AI_Agents &) = delete;
@@ -65,32 +77,36 @@ private:
     void process_emote_when_emote_got();
     void process_emote_when_power_battery_state_changed();
     void process_emote_when_coze_event_happened();
+    EmoteState resolve_emote_state() const;
+    void refresh_emote_state();
+    void refresh_emote_state_delayed();
+    void apply_emote_state(EmoteState state);
 
     void process_wifi_events();
 
     bool is_listening() const
     {
-        return is_listening_;
+        return is_listening_.load(std::memory_order_relaxed);
     }
 
     bool is_speaking() const
     {
-        return is_speaking_;
+        return is_speaking_.load(std::memory_order_relaxed);
     }
 
     bool is_suspended() const
     {
-        return is_suspended_;
+        return is_suspended_.load(std::memory_order_relaxed);
     }
 
     bool is_sleeping() const
     {
-        return is_sleeping_;
+        return is_sleeping_.load(std::memory_order_relaxed);
     }
 
     bool is_stopped() const
     {
-        return is_stopped_;
+        return is_stopped_.load(std::memory_order_relaxed);
     }
 
     bool is_inactive() const
@@ -100,7 +116,7 @@ private:
 
     bool is_wifi_connected() const
     {
-        return is_wifi_connected_;
+        return is_wifi_connected_.load(std::memory_order_relaxed);
     }
 
     static boost::json::object get_agent_coze_info();
@@ -111,12 +127,16 @@ private:
     uint32_t agent_restart_delay_s_ = 0;
     uint32_t coze_error_show_emote_delay_s_ = 0;
 
-    bool is_listening_ = false;
-    bool is_speaking_ = false;
-    bool is_suspended_ = false;
-    bool is_sleeping_ = false;
-    bool is_stopped_ = false;
-    bool is_wifi_connected_ = false;
+    std::atomic_bool is_listening_{false};
+    std::atomic_bool is_speaking_{false};
+    std::atomic_bool is_suspended_{false};
+    std::atomic_bool is_sleeping_{false};
+    std::atomic_bool is_thinking_{false};
+    std::atomic_bool has_agent_error_{false};
+    std::atomic_bool is_stopped_{false};
+    std::atomic_bool is_wifi_connected_{false};
+    std::atomic_bool is_boot_idle_{false};
+    std::atomic<EmoteState> emote_state_{EmoteState::Max};
     std::atomic_bool should_resume_bt_speaker_{false};
     std::atomic_int paused_bt_connection_id_{-1};
 

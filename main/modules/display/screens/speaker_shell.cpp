@@ -7,24 +7,30 @@
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
+#include "esp_heap_caps.h"
 #include "esp_mac.h"
+#include "esp_partition.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string_view>
 #include "private/utils.hpp"
 #include "brookesia/gui_lvgl.hpp"
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "modules/battery_monitor.hpp"
+#include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
+#include "modules/weather_config.hpp"
 #include "modules/developer_mode.hpp"
 #include "modules/display/display.hpp"
 
 extern "C" {
+#include "boot_splash.h"
 #include "speaker_ui.h"
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level1_36_36);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level2_36_36);
@@ -46,7 +52,10 @@ constexpr uint32_t SERVICE_POLL_PERIOD_MS = 20;
 constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
+constexpr uint32_t WIFI_AGENT_AUDIO_DRAIN_MS = 100;
+constexpr uint32_t BOOT_SPLASH_START_DELAY_MS = 1050;
 constexpr uint16_t MEMORY_POLL_TICKS = 50;
+constexpr std::time_t MIN_VALID_NETWORK_TIME = 1704067200; // 2024-01-01 UTC
 constexpr uint8_t WIFI_OPEN_AP_DELAY_TICKS = 10;
 constexpr std::array<int, 3> QUICK_BRIGHTNESS_PERCENT{{40, 70, 100}};
 constexpr std::array<int, 3> QUICK_VOLUME_PERCENT{{30, 60, 90}};
@@ -164,10 +173,12 @@ bool ScreenSpeakerShell::start(
     });
 
     speaker_ui_create();
+    boot_splash_create(BOOT_SPLASH_START_DELAY_MS);
     speaker_ui_set_wifi_managed_externally(true);
     speaker_ui_set_input(input);
     configure_about();
     attach_developer_mode_handler();
+    attach_self_test_handler();
 
     display_output_id_ = display_output_id;
     task_scheduler_ = std::move(task_scheduler);
@@ -202,6 +213,22 @@ void ScreenSpeakerShell::attach_developer_mode_handler()
     );
 }
 
+void ScreenSpeakerShell::self_test_run_clicked_callback(lv_event_t *event)
+{
+    auto *shell = static_cast<ScreenSpeakerShell *>(lv_event_get_user_data(event));
+    if (shell != nullptr) {
+        shell->run_self_test();
+    }
+}
+
+void ScreenSpeakerShell::attach_self_test_handler()
+{
+    BROOKESIA_CHECK_FALSE_EXIT(
+        speaker_ui_set_self_test_run_callback(self_test_run_clicked_callback, this),
+        "Failed to attach Speaker UI self-test handler"
+    );
+}
+
 void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)
 {
     auto *shell = static_cast<ScreenSpeakerShell *>(lv_timer_get_user_data(timer));
@@ -220,14 +247,140 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_memory();
     poll_battery();
     poll_touch_sensor();
+    poll_self_test();
     poll_factory_reset();
+}
+
+void ScreenSpeakerShell::run_self_test()
+{
+    if (self_test_running_.exchange(true)) {
+        return;
+    }
+
+    for (int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+        self_test_results_[item].store(SPEAKER_UI_SELF_TEST_TESTING);
+        speaker_ui_set_self_test_status(
+            static_cast<speaker_ui_self_test_item_t>(item), SPEAKER_UI_SELF_TEST_TESTING
+        );
+    }
+
+    const bool posted = task_scheduler_->post([this]() {
+        using AudioEncoderHelper = service::helper::AudioEncoder<0>;
+        using AudioPlaybackHelper = service::helper::AudioPlayback;
+        using WifiHelper = service::helper::Wifi;
+
+        auto publish = [this](speaker_ui_self_test_item_t item, bool passed) {
+            self_test_results_[item].store(
+                passed ? SPEAKER_UI_SELF_TEST_PASS : SPEAKER_UI_SELF_TEST_FAIL
+            );
+            self_test_results_dirty_ = true;
+        };
+
+        // Reaching this callback from the rendered Self-test page confirms that
+        // the panel, LVGL input path and display service are alive.
+        publish(SPEAKER_UI_SELF_TEST_DISPLAY, true);
+        publish(SPEAKER_UI_SELF_TEST_TOUCH, TouchSensor::get_instance().is_initialized());
+
+        bool speaker_ok = AudioPlaybackHelper::is_running();
+        if (speaker_ok) {
+            auto volume_result = AudioPlaybackHelper::call_function_sync<double>(
+                                     AudioPlaybackHelper::FunctionId::GetVolume,
+                                     service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                 );
+            speaker_ok = static_cast<bool>(volume_result);
+        }
+        publish(SPEAKER_UI_SELF_TEST_SPEAKER, speaker_ok);
+
+        bool microphone_ok = AudioEncoderHelper::is_running();
+        if (microphone_ok) {
+            auto wake_words_result = AudioEncoderHelper::call_function_sync<boost::json::array>(
+                                         AudioEncoderHelper::FunctionId::GetAFEWakeWords,
+                                         service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                     );
+            microphone_ok = static_cast<bool>(wake_words_result);
+        }
+        publish(SPEAKER_UI_SELF_TEST_MICROPHONE, microphone_ok);
+
+        publish(SPEAKER_UI_SELF_TEST_BMI270, ImuGesture::get_instance().is_initialized());
+
+        const auto battery = BatteryMonitor::get_instance().get_snapshot();
+        publish(SPEAKER_UI_SELF_TEST_BATTERY, battery.valid);
+        publish(SPEAKER_UI_SELF_TEST_CHARGING, battery.valid && battery.charging);
+
+        const bool wifi_connected = WifiHelper::is_running() &&
+                                    (wifi_state_.load() ==
+                                     static_cast<int>(WifiHelper::GeneralState::Connected));
+        publish(SPEAKER_UI_SELF_TEST_WIFI, wifi_connected);
+        publish(SPEAKER_UI_SELF_TEST_NTP, std::time(nullptr) >= MIN_VALID_NETWORK_TIME);
+
+        publish(SPEAKER_UI_SELF_TEST_MEMORY, heap_caps_check_integrity_all(true));
+
+        uint8_t flash_probe[32]{};
+        const esp_partition_t *app_partition = esp_partition_find_first(
+                                                   ESP_PARTITION_TYPE_APP,
+                                                   ESP_PARTITION_SUBTYPE_ANY, nullptr
+                                               );
+        const bool flash_ok = (app_partition != nullptr) &&
+                              (esp_partition_read(
+                                   app_partition, 0, flash_probe, sizeof(flash_probe)
+                               ) == ESP_OK);
+        publish(SPEAKER_UI_SELF_TEST_FLASH, flash_ok);
+
+        self_test_running_ = false;
+        BROOKESIA_LOGI("Speaker UI hardware self-test completed");
+    });
+
+    if (!posted) {
+        for (int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+            self_test_results_[item].store(SPEAKER_UI_SELF_TEST_FAIL);
+        }
+        self_test_results_dirty_ = true;
+        self_test_running_ = false;
+        BROOKESIA_LOGE("Failed to schedule Speaker UI hardware self-test");
+    }
+}
+
+void ScreenSpeakerShell::poll_self_test()
+{
+    if (!self_test_results_dirty_.exchange(false)) {
+        return;
+    }
+    for (int item = 0; item < SPEAKER_UI_SELF_TEST_COUNT; ++item) {
+        const int status = self_test_results_[item].load();
+        if (status == SPEAKER_UI_SELF_TEST_PASS || status == SPEAKER_UI_SELF_TEST_FAIL) {
+            speaker_ui_set_self_test_status(
+                static_cast<speaker_ui_self_test_item_t>(item),
+                static_cast<speaker_ui_self_test_status_t>(status)
+            );
+        }
+    }
 }
 
 void ScreenSpeakerShell::poll_display_mode()
 {
+    // Keep LVGL visible until the startup overlay has finished. The normal
+    // idle-screen policy switches to the native Emote source immediately
+    // afterwards.
+    if (boot_splash_is_active()) {
+        return;
+    }
+
     auto &display = Display::get_instance();
     if (!display.emote_ready()) {
         return;
+    }
+
+    if (display_mode_result_ready_.exchange(false, std::memory_order_acquire)) {
+        const bool requested_idle = display_mode_requested_idle_.load(std::memory_order_relaxed);
+        if (display_mode_switch_succeeded_.load(std::memory_order_relaxed)) {
+            idle_display_mode_ = requested_idle;
+            idle_display_mode_initialized_ = true;
+            BROOKESIA_LOGI(
+                "Speaker UI display source: %1%", requested_idle ? "Native Emote" : "LVGL"
+            );
+        } else {
+            BROOKESIA_LOGE("Failed to switch display source for Speaker UI idle state");
+        }
     }
 
     const bool idle_active = speaker_ui_is_idle_active();
@@ -235,15 +388,23 @@ void ScreenSpeakerShell::poll_display_mode()
         return;
     }
 
-    const bool switched = idle_active ? display.show_emote() : display.show_ui();
-    if (!switched) {
-        BROOKESIA_LOGE("Failed to switch display source for Speaker UI idle state");
+    bool expected = false;
+    if (!display_mode_switch_in_flight_.compare_exchange_strong(expected, true)) {
         return;
     }
 
-    idle_display_mode_ = idle_active;
-    idle_display_mode_initialized_ = true;
-    BROOKESIA_LOGI("Speaker UI display source: %1%", idle_active ? "Native Emote" : "LVGL");
+    const bool posted = task_scheduler_->post([this, idle_active]() {
+        auto &worker_display = Display::get_instance();
+        const bool switched = idle_active ? worker_display.show_emote() : worker_display.show_ui();
+        display_mode_requested_idle_.store(idle_active, std::memory_order_relaxed);
+        display_mode_switch_succeeded_.store(switched, std::memory_order_relaxed);
+        display_mode_result_ready_.store(true, std::memory_order_release);
+        display_mode_switch_in_flight_.store(false, std::memory_order_release);
+    });
+    if (!posted) {
+        display_mode_switch_in_flight_.store(false, std::memory_order_release);
+        BROOKESIA_LOGE("Failed to schedule display source switch");
+    }
 }
 
 void ScreenSpeakerShell::poll_battery()
@@ -510,6 +671,9 @@ void ScreenSpeakerShell::perform_factory_reset()
             BROOKESIA_LOGE("Failed to reset audio playback data: %1%", result.error());
         }
     }
+    if (!WeatherConfig::get_instance().clear()) {
+        BROOKESIA_LOGE("Failed to reset weather configuration");
+    }
 
     BROOKESIA_LOGI("Speaker UI factory reset complete; restarting");
     esp_restart();
@@ -734,13 +898,37 @@ void ScreenSpeakerShell::poll_wifi()
 
     ensure_wifi_event_subscriptions();
 
+    if (softap_stopped_event_.exchange(false) && speaker_ui_is_screen_active("softap")) {
+        BROOKESIA_LOGI("SoftAP provisioning stopped; returning Speaker UI to WLAN");
+        speaker_ui_show("wlan");
+    }
+
     const bool enabled = speaker_ui_is_wlan_on();
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
+    const bool softap_active = speaker_ui_is_screen_active("softap");
+
+    if (wifi_scan_result_received_.exchange(false)) {
+        wifi_scan_after_enable_pending_ = false;
+    }
+
+    if (softap_active != softap_screen_was_active_) {
+        softap_screen_was_active_ = softap_active;
+        if (!softap_active) {
+            // Wait for provisioning shutdown before restarting the WLAN scan.
+            wifi_scan_after_enable_pending_ = enabled && wlan_active;
+        }
+        request_softap_provision(softap_active && enabled);
+    }
+    if (softap_active) {
+        update_softap_ui();
+    }
     if (enabled != last_wlan_enabled_) {
         last_wlan_enabled_ = enabled;
         wifi_scan_after_enable_pending_ = enabled && wlan_active;
         if (!enabled) {
             wifi_state_ = static_cast<int>(WifiHelper::GeneralState::Max);
+            wifi_scan_waiting_for_result_ = false;
+            wifi_scan_result_received_ = false;
         }
         {
             std::lock_guard lock(wifi_scan_mutex_);
@@ -756,17 +944,27 @@ void ScreenSpeakerShell::poll_wifi()
     }
     if (wlan_active) {
         attach_wifi_ui_handlers();
-        const bool connecting = wifi_state_.load() == static_cast<int>(WifiHelper::GeneralState::Connecting);
-        const bool scan_after_enable = wifi_scan_after_enable_pending_ && !wifi_action_in_flight_.load();
-        if ((!wifi_screen_was_active_ || scan_after_enable) && enabled && !connecting &&
-                !wifi_connect_in_flight_.load()) {
-            wifi_scan_after_enable_pending_ = false;
+        if (!wifi_screen_was_active_ && enabled) {
+            wifi_scan_after_enable_pending_ = true;
+        }
+        const int wifi_state = wifi_state_.load();
+        const bool scan_ready =
+            (wifi_state == static_cast<int>(WifiHelper::GeneralState::Started)) ||
+            (wifi_state == static_cast<int>(WifiHelper::GeneralState::Connected));
+        const bool scan_pending = wifi_scan_after_enable_pending_ && !wifi_action_in_flight_.load();
+        if (scan_pending && enabled && scan_ready &&
+                !softap_action_in_flight_.load() &&
+                !wifi_connect_in_flight_.load() &&
+                !wifi_scan_request_in_flight_.load() &&
+                !wifi_scan_waiting_for_result_.load()) {
             request_wifi_scan();
         }
         update_wifi_scan_ui();
         update_wifi_status_ui();
     } else if (wifi_screen_was_active_) {
         wifi_scan_after_enable_pending_ = false;
+        wifi_scan_waiting_for_result_ = false;
+        wifi_scan_result_received_ = false;
         request_wifi_scan_stop();
     }
     wifi_screen_was_active_ = wlan_active;
@@ -779,6 +977,71 @@ void ScreenSpeakerShell::poll_wifi()
             request_wifi_connect(wifi_selected_ssid_, "");
             speaker_ui_show("wlan");
         }
+    }
+}
+
+void ScreenSpeakerShell::request_softap_provision(bool enabled)
+{
+    if (softap_action_in_flight_.exchange(true)) {
+        return;
+    }
+
+    const bool posted = task_scheduler_->post([this, enabled]() {
+        using WifiHelper = service::helper::Wifi;
+
+        const auto function = enabled ? WifiHelper::FunctionId::TriggerSoftApProvisionStart :
+                              WifiHelper::FunctionId::TriggerSoftApProvisionStop;
+        auto result = WifiHelper::call_function_sync(
+                          function, service::helper::Timeout(5000)
+                      );
+        if (!result) {
+            BROOKESIA_LOGE(
+                "Failed to %1% Speaker UI SoftAP provisioning: %2%",
+                enabled ? "start" : "stop", result.error()
+            );
+        } else if (enabled) {
+            auto params_result = WifiHelper::call_function_sync<boost::json::object>(
+                                     WifiHelper::FunctionId::GetSoftApParams,
+                                     service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                 );
+            WifiHelper::SoftApParams params;
+            if (!params_result || !BROOKESIA_DESCRIBE_FROM_JSON(params_result.value(), params)) {
+                BROOKESIA_LOGE("Failed to read Speaker UI SoftAP parameters");
+            } else {
+                const std::string softap_name = params.ssid;
+                {
+                    std::lock_guard lock(softap_state_mutex_);
+                    softap_ssid_ = std::move(params.ssid);
+                    softap_password_ = std::move(params.password);
+                }
+                softap_ui_dirty_ = true;
+                BROOKESIA_LOGI("Speaker UI SoftAP provisioning requested for '%1%'", softap_name);
+            }
+        }
+        softap_action_in_flight_ = false;
+    });
+
+    if (!posted) {
+        softap_action_in_flight_ = false;
+        BROOKESIA_LOGE("Failed to schedule Speaker UI SoftAP provisioning action");
+    }
+}
+
+void ScreenSpeakerShell::update_softap_ui()
+{
+    if (!softap_ui_dirty_.exchange(false)) {
+        return;
+    }
+
+    std::string ssid;
+    std::string password;
+    {
+        std::lock_guard lock(softap_state_mutex_);
+        ssid = softap_ssid_;
+        password = softap_password_;
+    }
+    if (!speaker_ui_set_softap_credentials(ssid.c_str(), password.c_str())) {
+        BROOKESIA_LOGE("Failed to update Speaker UI SoftAP credentials");
     }
 }
 
@@ -840,10 +1103,48 @@ void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
         return;
     }
 
-    const bool posted = task_scheduler_->post([this, enabled]() {
+    const bool restart_softap = enabled && softap_screen_was_active_;
+    const bool posted = task_scheduler_->post([this, enabled, restart_softap]() {
+        using AgentHelper = service::helper::AgentManager;
+        using AudioEncoderHelper = service::helper::AudioEncoder<0>;
         using WifiHelper = service::helper::Wifi;
 
         if (!enabled) {
+            // Stop XiaoZhi while the network is still available. If Wi-Fi is
+            // stopped first, the transport can force Agent Stop while the
+            // encoder fetch task is blocked in its FIFO, racing recorder
+            // teardown and tripping the interrupt watchdog.
+            auto agent_state_result = AgentHelper::call_function_sync<std::string>(
+                                          AgentHelper::FunctionId::GetGeneralState,
+                                          service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                      );
+            AgentHelper::GeneralState agent_state = AgentHelper::GeneralState::Max;
+            if (agent_state_result) {
+                (void)BROOKESIA_DESCRIBE_STR_TO_ENUM(agent_state_result.value(), agent_state);
+            }
+            if ((agent_state == AgentHelper::GeneralState::Started) ||
+                    (agent_state == AgentHelper::GeneralState::Slept)) {
+                if (AudioEncoderHelper::is_running()) {
+                    auto pause_result = AudioEncoderHelper::call_function_sync(
+                                            AudioEncoderHelper::FunctionId::Pause,
+                                            service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+                                        );
+                    if (!pause_result) {
+                        BROOKESIA_LOGW("Failed to pause audio encoder before WiFi stop: %1%", pause_result.error());
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(WIFI_AGENT_AUDIO_DRAIN_MS));
+                }
+
+                auto stop_agent_result = AgentHelper::call_function_sync(
+                                             AgentHelper::FunctionId::TriggerGeneralAction,
+                                             BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Stop),
+                                             service::helper::Timeout(5000)
+                                         );
+                if (!stop_agent_result) {
+                    BROOKESIA_LOGW("Failed to stop Agent before WiFi stop: %1%", stop_agent_result.error());
+                }
+            }
+
             (void)WifiHelper::call_function_sync(
                 WifiHelper::FunctionId::TriggerScanStop,
                 service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
@@ -869,6 +1170,9 @@ void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
             );
         }
         wifi_action_in_flight_ = false;
+        if (result && restart_softap) {
+            request_softap_provision(true);
+        }
         request_wifi_state();
     });
 
@@ -903,7 +1207,8 @@ void ScreenSpeakerShell::request_wifi_state()
             }
             wifi_state_ = parsed_state;
 
-            if (parsed_state == static_cast<int>(WifiHelper::GeneralState::Connected)) {
+            if ((parsed_state == static_cast<int>(WifiHelper::GeneralState::Connected)) ||
+                    (parsed_state == static_cast<int>(WifiHelper::GeneralState::Connecting))) {
                 auto ap_result = WifiHelper::call_function_sync<boost::json::object>(
                                      WifiHelper::FunctionId::GetConnectAp,
                                      service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
@@ -915,6 +1220,9 @@ void ScreenSpeakerShell::request_wifi_state()
                         wifi_ssid_ = ap_info.ssid;
                     }
                 }
+            } else {
+                std::lock_guard lock(wifi_state_mutex_);
+                wifi_ssid_.clear();
             }
             wifi_scan_dirty_ = true;
         } else {
@@ -971,12 +1279,27 @@ void ScreenSpeakerShell::ensure_wifi_event_subscriptions()
             std::lock_guard lock(wifi_scan_mutex_);
             wifi_scan_entries_ = std::move(entries);
         }
+        wifi_scan_waiting_for_result_ = false;
+        wifi_scan_result_received_ = true;
         wifi_scan_dirty_ = true;
     }
                                   );
-    wifi_events_subscribed_ = wifi_scan_event_connection_.connected();
+    softap_event_connection_ = WifiHelper::subscribe_event(
+                                   WifiHelper::EventId::SoftApEventHappened,
+    [this](const std::string &, const std::string & event) {
+        WifiHelper::SoftApEvent softap_event;
+        if (!BROOKESIA_DESCRIBE_STR_TO_ENUM(event, softap_event)) {
+            BROOKESIA_LOGE("Failed to parse Speaker UI SoftAP event: %1%", event);
+            return;
+        }
+        if (softap_event == WifiHelper::SoftApEvent::Stopped) {
+            softap_stopped_event_ = true;
+        }
+    }
+                               );
+    wifi_events_subscribed_ = wifi_scan_event_connection_.connected() && softap_event_connection_.connected();
     if (!wifi_events_subscribed_) {
-        BROOKESIA_LOGE("Failed to subscribe to Speaker UI WiFi scan results");
+        BROOKESIA_LOGE("Failed to subscribe to Speaker UI WiFi events");
     }
 }
 
@@ -990,19 +1313,21 @@ void ScreenSpeakerShell::request_wifi_scan()
 
         WifiHelper::ScanParams params{
             .ap_count = 20,
-            .interval_ms = 5000,
-            .timeout_ms = 60000,
+            .interval_ms = 15000,
+            .timeout_ms = 15000,
         };
         auto json = BROOKESIA_DESCRIBE_TO_JSON(params);
         auto params_result = WifiHelper::call_function_sync(
                                  WifiHelper::FunctionId::SetScanParams, json.as_object(),
                                  service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
                              );
+        wifi_scan_waiting_for_result_ = true;
         auto scan_result = params_result ? WifiHelper::call_function_sync(
                                WifiHelper::FunctionId::TriggerScanStart,
                                service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
                            ) : std::expected<void, std::string>(std::unexpected(params_result.error()));
         if (!scan_result) {
+            wifi_scan_waiting_for_result_ = false;
             BROOKESIA_LOGE("Failed to start Speaker UI WiFi scan: %1%", scan_result.error());
         }
         wifi_scan_request_in_flight_ = false;
@@ -1205,6 +1530,9 @@ void ScreenSpeakerShell::update_wifi_status_ui()
         wifi_connected_name_label_ = find_label(lv_screen_active(), "Studio-WiFi");
         wifi_connected_status_label_ = find_label(lv_screen_active(), "Connected");
         if (wifi_connected_name_label_ != nullptr) {
+            // The imported layout uses a demo SSID. Erase it before the
+            // connecting group can become visible.
+            lv_label_set_text(wifi_connected_name_label_, "");
             auto *row = lv_obj_get_parent(wifi_connected_name_label_);
             auto *panel = row == nullptr ? nullptr : lv_obj_get_parent(row);
             wifi_connected_group_ = panel == nullptr ? nullptr : lv_obj_get_parent(panel);
@@ -1217,8 +1545,14 @@ void ScreenSpeakerShell::update_wifi_status_ui()
                            (state == static_cast<int>(WifiHelper::GeneralState::Connected));
     const bool connecting = wlan_enabled &&
                             (state == static_cast<int>(WifiHelper::GeneralState::Connecting));
+    std::string ssid;
+    {
+        std::lock_guard lock(wifi_state_mutex_);
+        ssid = wifi_ssid_;
+    }
+    const bool show_connection = (connected || connecting) && !ssid.empty();
     if (wifi_connected_group_ != nullptr) {
-        if (connected || connecting) {
+        if (show_connection) {
             lv_obj_remove_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
@@ -1227,10 +1561,7 @@ void ScreenSpeakerShell::update_wifi_status_ui()
     if (wifi_connected_status_label_ != nullptr) {
         lv_label_set_text(wifi_connected_status_label_, connected ? "Connected" : "Connecting...");
     }
-    if ((connected || connecting) && (wifi_connected_name_label_ != nullptr)) {
-        std::lock_guard lock(wifi_state_mutex_);
-        if (!wifi_ssid_.empty()) {
-            lv_label_set_text(wifi_connected_name_label_, wifi_ssid_.c_str());
-        }
+    if (show_connection && (wifi_connected_name_label_ != nullptr)) {
+        lv_label_set_text(wifi_connected_name_label_, ssid.c_str());
     }
 }

@@ -89,7 +89,7 @@ fi
 echo "[6/6] Scanning tracked files for committed credentials or logs"
 credential_candidates=$(git -C "$project_root" grep -nE \
     '(^|[^[:xdigit:]])[[:xdigit:]]{32}([^[:xdigit:]]|$)' -- . \
-    ':!*.bmp' ':!*.png' ':!*.gif' 2>/dev/null || true)
+    ':!*.bmp' ':!*.png' ':!*.gif' ':!*.eaf' 2>/dev/null || true)
 credential_candidates=$(grep -vE 'sid=[[:xdigit:]]{32}' <<<"$credential_candidates" || true)
 if [[ -n "$credential_candidates" ]]; then
     echo "Possible 32-character API credential found in tracked text:" >&2

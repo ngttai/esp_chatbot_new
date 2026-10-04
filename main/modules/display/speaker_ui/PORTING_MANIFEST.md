@@ -122,3 +122,12 @@ These exclusions are recorded, not substitutions. Their hashes remain available 
 - Vendor/import files unchanged from the original source: 72/72.
 - Integration surfaces frozen at the accepted release state: 2/2.
 - Total release integrity manifest: 74/74.
+
+## Release v1.1.0 integrity baseline
+
+- Vendor/import files remain unchanged from the original source: 72/72.
+- `src/speaker_ui.c` is frozen again after the accepted WLAN state and launcher
+  app-order changes; `src/speaker_ui.h` remains unchanged from v1.0.0.
+- The hardware-only boot splash is tracked by Git but remains outside the
+  original 74-file import manifest.
+- Total release integrity manifest: 74/74.
