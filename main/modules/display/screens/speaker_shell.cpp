@@ -1512,7 +1512,7 @@ void ScreenSpeakerShell::update_wifi_scan_ui()
     // scan hidden on every poll so that timer cannot resurrect placeholder APs.
     for (size_t index = wifi_scan_visible_count_; index < wifi_network_rows_.size(); ++index) {
         auto *row = wifi_network_rows_[index];
-        if (row != nullptr) {
+        if ((row != nullptr) && !lv_obj_has_flag(row, LV_OBJ_FLAG_HIDDEN)) {
             lv_obj_add_flag(row, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -1552,16 +1552,24 @@ void ScreenSpeakerShell::update_wifi_status_ui()
     }
     const bool show_connection = (connected || connecting) && !ssid.empty();
     if (wifi_connected_group_ != nullptr) {
-        if (show_connection) {
+        const bool hidden = lv_obj_has_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
+        if (show_connection && hidden) {
             lv_obj_remove_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
-        } else {
+        } else if (!show_connection && !hidden) {
             lv_obj_add_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
         }
     }
     if (wifi_connected_status_label_ != nullptr) {
-        lv_label_set_text(wifi_connected_status_label_, connected ? "Connected" : "Connecting...");
+        const char *status = connected ? "Connected" : "Connecting...";
+        const char *current = lv_label_get_text(wifi_connected_status_label_);
+        if ((current == nullptr) || (std::string_view(current) != status)) {
+            lv_label_set_text(wifi_connected_status_label_, status);
+        }
     }
     if (show_connection && (wifi_connected_name_label_ != nullptr)) {
-        lv_label_set_text(wifi_connected_name_label_, ssid.c_str());
+        const char *current = lv_label_get_text(wifi_connected_name_label_);
+        if ((current == nullptr) || (std::string_view(current) != ssid)) {
+            lv_label_set_text(wifi_connected_name_label_, ssid.c_str());
+        }
     }
 }

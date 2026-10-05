@@ -40,6 +40,7 @@ public:
     void init_xiaozhi();
     void handle_touch_sensor_click();
     void handle_touch_sensor_long_press();
+    void set_emote_output_active(bool active);
 
 private:
     enum class EmoteState : uint8_t {
@@ -136,6 +137,7 @@ private:
     std::atomic_bool is_stopped_{false};
     std::atomic_bool is_wifi_connected_{false};
     std::atomic_bool is_boot_idle_{false};
+    std::atomic_bool emote_output_active_{true};
     std::atomic<EmoteState> emote_state_{EmoteState::Max};
     std::atomic_bool should_resume_bt_speaker_{false};
     std::atomic_int paused_bt_connection_id_{-1};
