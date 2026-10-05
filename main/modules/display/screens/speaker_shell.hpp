@@ -37,6 +37,7 @@ private:
 
     static void service_timer_callback(lv_timer_t *timer);
     static void factory_reset_clicked_callback(lv_event_t *event);
+    static void factory_reset_task(void *context);
     static void developer_mode_clicked_callback(lv_event_t *event);
     static void self_test_run_clicked_callback(lv_event_t *event);
     static void wifi_network_selected_callback(lv_event_t *event);
