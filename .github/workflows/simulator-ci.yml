@@ -1,10 +1,9 @@
-name: Simulator CI
+name: ESP Chatbot CI
 
 on:
   push:
     branches:
       - main
-      - dev/simulator-ui-port
   pull_request:
     branches:
       - main
@@ -14,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: simulator-ci-${{ github.ref }}
+  group: esp-chatbot-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -73,3 +72,29 @@ jobs:
           path: .local-artifacts/ci-parity/
           if-no-files-found: ignore
           retention-days: 7
+
+  firmware:
+    name: ESP VoCat firmware
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: espressif/idf:v6.1@sha256:f81b6e077e6a81835a18fc5777eb76da534622a147e5a855ccd4f19e58d4a3d0bf
+
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v7
+
+      - name: Report ESP-IDF version
+        run: idf.py --version
+
+      - name: Generate VoCat board configuration
+        run: idf.py -B build-idf-ci bmgr -b esp_vocat_board_v1_0
+
+      - name: Build firmware
+        run: idf.py -B build-idf-ci build
+
+      - name: Verify dependency lock is stable
+        run: git diff --exit-code -- dependencies.lock
+
+      - name: Report firmware size
+        run: idf.py -B build-idf-ci size

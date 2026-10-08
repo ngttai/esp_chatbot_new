@@ -704,10 +704,36 @@ void AI_Agents::refresh_emote_state_delayed()
     }
 }
 
+void AI_Agents::set_emote_output_active(bool active)
+{
+    const bool previous = emote_output_active_.exchange(active, std::memory_order_relaxed);
+    if (previous == active || !EmoteHelper::is_available()) {
+        return;
+    }
+
+    if (!active) {
+        // The Display service drops inactive-source frames, but the native
+        // animation renderer still consumes CPU unless its objects are hidden.
+        // Queue StopAnimation first because it makes the base emoji visible.
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideQrcode);
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEmoji);
+        return;
+    }
+
+    // State changes are cached while LVGL owns the display. Force one refresh
+    // when the native Emote source becomes active again.
+    emote_state_.store(EmoteState::Max, std::memory_order_relaxed);
+    refresh_emote_state();
+}
+
 void AI_Agents::apply_emote_state(EmoteState state)
 {
     const auto previous = emote_state_.exchange(state, std::memory_order_relaxed);
     if (previous == state) {
+        return;
+    }
+    if (!emote_output_active_.load(std::memory_order_relaxed)) {
         return;
     }
 
@@ -1425,6 +1451,9 @@ void AI_Agents::process_wifi_events()
         case WifiHelper::SoftApEvent::Started: {
             auto task_func = [this]() {
                 BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+                if (!emote_output_active_.load(std::memory_order_relaxed)) {
+                    return;
+                }
                 auto get_soft_ap_params_result = WifiHelper::call_function_sync<boost::json::object>(
                                                      WifiHelper::FunctionId::GetSoftApParams
                                                  );

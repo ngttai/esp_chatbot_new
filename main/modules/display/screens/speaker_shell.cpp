@@ -12,6 +12,7 @@
 #include "esp_partition.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -57,6 +58,8 @@ constexpr uint32_t BOOT_SPLASH_START_DELAY_MS = 1050;
 constexpr uint16_t MEMORY_POLL_TICKS = 50;
 constexpr std::time_t MIN_VALID_NETWORK_TIME = 1704067200; // 2024-01-01 UTC
 constexpr uint8_t WIFI_OPEN_AP_DELAY_TICKS = 10;
+constexpr uint32_t FACTORY_RESET_TASK_STACK_SIZE = 8 * 1024;
+constexpr UBaseType_t FACTORY_RESET_TASK_PRIORITY = 5;
 constexpr std::array<int, 3> QUICK_BRIGHTNESS_PERCENT{{40, 70, 100}};
 constexpr std::array<int, 3> QUICK_VOLUME_PERCENT{{30, 60, 90}};
 
@@ -617,8 +620,29 @@ void ScreenSpeakerShell::factory_reset_clicked_callback(lv_event_t *event)
     auto *shell = static_cast<ScreenSpeakerShell *>(lv_event_get_user_data(event));
     if ((shell != nullptr) && !shell->factory_reset_in_progress_) {
         shell->factory_reset_in_progress_ = true;
+        const BaseType_t created = xTaskCreateWithCaps(
+                                       factory_reset_task,
+                                       "factory_reset",
+                                       FACTORY_RESET_TASK_STACK_SIZE,
+                                       shell,
+                                       FACTORY_RESET_TASK_PRIORITY,
+                                       nullptr,
+                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+                                   );
+        if (created != pdPASS) {
+            shell->factory_reset_in_progress_ = false;
+            BROOKESIA_LOGE("Failed to create internal-stack factory-reset task");
+        }
+    }
+}
+
+void ScreenSpeakerShell::factory_reset_task(void *context)
+{
+    auto *shell = static_cast<ScreenSpeakerShell *>(context);
+    if (shell != nullptr) {
         shell->perform_factory_reset();
     }
+    vTaskDeleteWithCaps(nullptr);
 }
 
 void ScreenSpeakerShell::poll_factory_reset()
@@ -1512,7 +1536,7 @@ void ScreenSpeakerShell::update_wifi_scan_ui()
     // scan hidden on every poll so that timer cannot resurrect placeholder APs.
     for (size_t index = wifi_scan_visible_count_; index < wifi_network_rows_.size(); ++index) {
         auto *row = wifi_network_rows_[index];
-        if (row != nullptr) {
+        if ((row != nullptr) && !lv_obj_has_flag(row, LV_OBJ_FLAG_HIDDEN)) {
             lv_obj_add_flag(row, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -1552,16 +1576,24 @@ void ScreenSpeakerShell::update_wifi_status_ui()
     }
     const bool show_connection = (connected || connecting) && !ssid.empty();
     if (wifi_connected_group_ != nullptr) {
-        if (show_connection) {
+        const bool hidden = lv_obj_has_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
+        if (show_connection && hidden) {
             lv_obj_remove_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
-        } else {
+        } else if (!show_connection && !hidden) {
             lv_obj_add_flag(wifi_connected_group_, LV_OBJ_FLAG_HIDDEN);
         }
     }
     if (wifi_connected_status_label_ != nullptr) {
-        lv_label_set_text(wifi_connected_status_label_, connected ? "Connected" : "Connecting...");
+        const char *status = connected ? "Connected" : "Connecting...";
+        const char *current = lv_label_get_text(wifi_connected_status_label_);
+        if ((current == nullptr) || (std::string_view(current) != status)) {
+            lv_label_set_text(wifi_connected_status_label_, status);
+        }
     }
     if (show_connection && (wifi_connected_name_label_ != nullptr)) {
-        lv_label_set_text(wifi_connected_name_label_, ssid.c_str());
+        const char *current = lv_label_get_text(wifi_connected_name_label_);
+        if ((current == nullptr) || (std::string_view(current) != ssid)) {
+            lv_label_set_text(wifi_connected_name_label_, ssid.c_str());
+        }
     }
 }

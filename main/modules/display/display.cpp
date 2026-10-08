@@ -14,6 +14,7 @@
 #include "brookesia/service_helper.hpp"
 #include "brookesia/expression_emote.hpp"
 #include "brookesia/gui_lvgl.hpp"
+#include "modules/ai_agents.hpp"
 #include "screens/speaker_shell.hpp"
 #include "display.hpp"
 
@@ -185,18 +186,45 @@ bool Display::set_active_source_role(DrawSource source)
 
 bool Display::show_video()
 {
-    return set_active_source_role(DrawSource::Video);
+    auto &agents = AI_Agents::get_instance();
+    if (agents.is_initialized()) {
+        agents.set_emote_output_active(false);
+    }
+    if (set_active_source_role(DrawSource::Video)) {
+        return true;
+    }
+    if (agents.is_initialized()) {
+        agents.set_emote_output_active(true);
+    }
+    return false;
 }
 
 bool Display::show_ui()
 {
-    return set_active_source_role(DrawSource::Lvgl);
+    auto &agents = AI_Agents::get_instance();
+    if (agents.is_initialized()) {
+        agents.set_emote_output_active(false);
+    }
+    if (set_active_source_role(DrawSource::Lvgl)) {
+        return true;
+    }
+    if (agents.is_initialized()) {
+        agents.set_emote_output_active(true);
+    }
+    return false;
 }
 
 bool Display::show_emote()
 {
     BROOKESIA_CHECK_FALSE_RETURN(emote_ready_, false, "Native Emote is not ready");
-    return set_active_source_role(DrawSource::Emote);
+    BROOKESIA_CHECK_FALSE_RETURN(
+        set_active_source_role(DrawSource::Emote), false, "Failed to activate native Emote source"
+    );
+    auto &agents = AI_Agents::get_instance();
+    if (agents.is_initialized()) {
+        agents.set_emote_output_active(true);
+    }
+    return true;
 }
 
 bool Display::start_expression_emote_assets()

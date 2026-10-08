@@ -46,6 +46,8 @@ extern "C" void app_main(void)
     esp_log_level_set("NEW_DATA_BUS", ESP_LOG_WARN);
     esp_log_level_set("ESP_XIAOZHI_MQTT", ESP_LOG_WARN);
     esp_log_level_set("ESP_XIAOZHI_CHAT", ESP_LOG_WARN);
+    // MCP initialization payloads can contain server-issued tokens.
+    esp_log_level_set("esp_mcp_mgr", ESP_LOG_WARN);
     esp_log_level_set("AFE", ESP_LOG_ERROR);
 
     /* Create a task scheduler for backend usage */

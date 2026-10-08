@@ -17,6 +17,24 @@ generated `managed_components/` directory.
 `components/bq27220` and `components/gen_bmgr_codes` are project components;
 they are not Registry component overrides.
 
+## v1.1.1 review
+
+Reviewed on 2026-10-04 against the exact Registry packages resolved by
+`dependencies.lock`. All four overrides remain necessary:
+
+- Wi-Fi 0.8.2 does not contain the scan-first recovery and bounded reconnect
+  changes in the local `service_wifi.cpp`.
+- Display 0.8.2 still defaults backlight auto-load to enabled when the false
+  Kconfig bool is absent.
+- XiaoZhi agent 0.8.2 does not cancel its delayed audio-channel open on sleep.
+- GUI LVGL 0.8.5 does not forward the `use_psram` display-source setting.
+
+`brookesia_service_helper` remains pinned to 0.8.4. Registry version 0.8.5
+includes `brookesia/hal_interface/interfaces/expansion/module_manager.hpp`,
+but the resolved `brookesia_hal_interface` 0.8.2 package does not provide that
+header. Upgrading the helper therefore requires a coordinated HAL dependency
+upgrade and is outside the scope of the v1.1.1 patch.
+
 ## Identify active overrides
 
 List the local paths selected by the project manifest:

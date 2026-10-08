@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-set(PROJECT_VER "1.1.0")
+set(PROJECT_VER "1.1.1")
 
 # Work around esp-idf-configdep mapping CONFIG_ESP_LVGL_ADAPTER_PARTIAL_AUX_IMG_CACHE
 # to a Windows-invalid path containing the reserved device name "aux".
@@ -21,7 +21,7 @@ if(CMAKE_HOST_WIN32)
     set(CONFIGDEP_ENABLE 0 CACHE BOOL "Disable esp-idf-configdep for Windows AUX path compatibility" FORCE)
 endif()
 
-project(example_agent_chatbot)
+project(esp_chatbot)
 
 # Temporary workaround for `espressif__mcp-c-sdk` stringop-truncation warning
 idf_build_set_property(COMPILE_OPTIONS -Wno-error=stringop-truncation APPEND)
