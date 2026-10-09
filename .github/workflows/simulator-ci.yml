@@ -109,7 +109,7 @@ jobs:
             build
 
       - name: Verify dependency lock is stable
-        run: git diff --exit-code -- dependencies.lock
+        run: cmp /tmp/dependencies.lock dependencies.lock
 
       - name: Report firmware size
         run: |
