@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     container:
-      image: espressif/idf:v6.1@sha256:f81b6e077e6a81835a18fc5777eb76da534622a147e5a855ccd4f19e58d4a3d0bf
+      image: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
 
     steps:
       - name: Check out project
