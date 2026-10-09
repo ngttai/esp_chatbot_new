@@ -80,6 +80,8 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      IDF_TARGET: esp32s3
     container:
       image: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
 
@@ -95,12 +97,16 @@ jobs:
       - name: Generate VoCat board configuration
         run: |
           source /opt/esp/idf/export.sh
-          idf.py bmgr -b esp_vocat_board_v1_0
+          cp dependencies.lock /tmp/dependencies.lock
+          idf.py gen-bmgr-config -b esp_vocat_board_v1_0
+          cp /tmp/dependencies.lock dependencies.lock
 
       - name: Build firmware
         run: |
           source /opt/esp/idf/export.sh
-          idf.py -B build-idf-ci build
+          idf.py -B build-idf-ci \
+            -DSDKCONFIG=sdkconfig.ci.board.esp_vocat_board_v1_0 \
+            build
 
       - name: Verify dependency lock is stable
         run: git diff --exit-code -- dependencies.lock
