@@ -95,7 +95,7 @@ jobs:
       - name: Generate VoCat board configuration
         run: |
           source /opt/esp/idf/export.sh
-          idf.py -B build-idf-ci bmgr -b esp_vocat_board_v1_0
+          idf.py bmgr -b esp_vocat_board_v1_0
 
       - name: Build firmware
         run: |
