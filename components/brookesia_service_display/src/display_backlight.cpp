@@ -29,7 +29,7 @@ constexpr const char *KEY_ON = "On";
 
 } // namespace
 
-std::expected<void, std::string> Display::set_backlight_brightness_temporary(
+std::expected<void, std::string> Display::set_backlight_pwm_temporary(
     uint32_t output_id, uint8_t brightness
 )
 {
@@ -37,8 +37,6 @@ std::expected<void, std::string> Display::set_backlight_brightness_temporary(
         return std::unexpected("Brightness must be in range [0, 100]");
     }
 
-    std::string output_name;
-    uint8_t old_brightness = 0;
     {
         std::lock_guard lock(mutex_);
         auto output_it = outputs_.find(output_id);
@@ -51,20 +49,35 @@ std::expected<void, std::string> Display::set_backlight_brightness_temporary(
             return std::unexpected((boost::format("Display output '%1%' has no backlight") %
                                     output.info.name).str());
         }
-        if (output.backlight_brightness == brightness) {
+        if (output.temporary_backlight_pwm == brightness) {
             return {};
         }
 
-        output_name = output.info.name;
-        old_brightness = output.backlight_brightness;
-        output.backlight_brightness = brightness;
+        const auto previous = output.temporary_backlight_pwm;
+        output.temporary_backlight_pwm = brightness;
         if (!apply_backlight_state_to_hal(output)) {
-            output.backlight_brightness = old_brightness;
+            output.temporary_backlight_pwm = previous;
             return std::unexpected("Failed to set temporary display backlight brightness");
         }
     }
 
-    emit_backlight_brightness_changed(output_id, output_name, brightness);
+    return {};
+}
+
+std::expected<void, std::string> Display::restore_backlight(uint32_t output_id)
+{
+    std::lock_guard lock(mutex_);
+    auto it = outputs_.find(output_id);
+    if (it == outputs_.end() || !it->second.backlight) {
+        return std::unexpected("Display backlight is unavailable");
+    }
+    auto &output = it->second;
+    const auto previous = output.temporary_backlight_pwm;
+    output.temporary_backlight_pwm.reset();
+    if (!apply_backlight_state_to_hal(output)) {
+        output.temporary_backlight_pwm = previous;
+        return std::unexpected("Failed to restore display backlight");
+    }
     return {};
 }
 
@@ -454,6 +467,14 @@ bool Display::apply_backlight_state_to_hal(OutputContext &output)
 
     if (!output.backlight) {
         return false;
+    }
+
+    if (output.temporary_backlight_pwm.has_value()) {
+        if (output.backlight->is_light_on_off_supported() &&
+                !output.backlight->set_light_on_off(true)) {
+            return false;
+        }
+        return output.backlight->set_brightness(output.temporary_backlight_pwm.value());
     }
 
     const auto hw_value = map_percentage_to_hardware(

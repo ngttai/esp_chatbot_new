@@ -386,6 +386,19 @@ int test_power_policy()
         return 117;
     }
 
+    PowerPolicy cancel(dim_timeout_ms, hardware_sleep_timeout_ms, true);
+    cancel.update(input(0, 0));
+    cancel.update(input(60, 0));
+    if (cancel.update(input(360, 0, true, true)) != PowerPolicyAction::ExitDim ||
+            cancel.state() != PowerPolicyState::Active ||
+            cancel.update(input(420, 0)) != PowerPolicyAction::EnterDim ||
+            cancel.update(input(719, 0)) != PowerPolicyAction::None ||
+            cancel.update(input(720, 0)) != PowerPolicyAction::EnterHardwareSleep ||
+            cancel.update(input(721, 1)) != PowerPolicyAction::WakeHardware) {
+        std::fprintf(stderr, "Sleep boundary blocker or touch wake failed\n");
+        return 118;
+    }
+
     std::puts("Power manager policy passed");
     return 0;
 }

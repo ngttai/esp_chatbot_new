@@ -12,7 +12,6 @@
 struct PowerManagerInput {
     uint32_t now_ms = 0;
     uint32_t activity_revision = 0;
-    int current_brightness = -1;
     bool agent_slept = false;
     bool blocked = false;
     bool display_ready = false;
@@ -33,6 +32,7 @@ private:
 
     PowerPolicy policy_;
     uint32_t display_output_id_ = 0;
-    int restore_brightness_ = -1;
+    bool restore_pending_ = false;
+    uint32_t restore_retry_ms_ = 0;
     bool started_ = false;
 };

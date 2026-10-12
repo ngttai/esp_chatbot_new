@@ -14,7 +14,7 @@ using namespace esp_brookesia;
 
 namespace {
 
-constexpr bool HARDWARE_SLEEP_ENABLED = false;
+constexpr bool HARDWARE_SLEEP_ENABLED = true;
 
 const char *state_name(PowerPolicyState state)
 {
@@ -45,10 +45,10 @@ PowerManager::PowerManager():
 void PowerManager::start(uint32_t display_output_id)
 {
     display_output_id_ = display_output_id;
-    restore_brightness_ = -1;
+    restore_pending_ = false;
     started_ = true;
     BROOKESIA_LOGI(
-        "Power manager started: dim=%1% ms, brightness=%2%%%, hardware sleep backend=disabled",
+        "Power manager started: dim=%1% ms, brightness=%2%%%, hardware sleep backend=backlight-only",
         CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS, CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT
     );
 }
@@ -59,14 +59,18 @@ void PowerManager::update(const PowerManagerInput &input)
         return;
     }
 
-    if ((policy_.state() == PowerPolicyState::Dimmed) &&
-            (input.current_brightness >= 0) &&
-            (input.current_brightness != CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT)) {
-        restore_brightness_ = input.current_brightness;
-        if (!set_temporary_brightness(CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT)) {
-            restore_brightness_ = -1;
-            policy_.recover_active(input.now_ms, input.activity_revision);
+    if (restore_pending_) {
+        if (static_cast<uint32_t>(input.now_ms - restore_retry_ms_) < 1000) {
+            return;
         }
+        restore_retry_ms_ = input.now_ms;
+        auto result = service::Display::get_instance().restore_backlight(display_output_id_);
+        if (!result) {
+            BROOKESIA_LOGE("Backlight restore retry failed: %1%", result.error());
+            return;
+        }
+        restore_pending_ = false;
+        policy_.recover_active(input.now_ms, input.activity_revision);
     }
 
     const PowerPolicyState previous_state = policy_.state();
@@ -83,24 +87,31 @@ void PowerManager::update(const PowerManagerInput &input)
         break;
 
     case PowerPolicyAction::EnterDim:
-        restore_brightness_ = input.current_brightness;
         if (!set_temporary_brightness(CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT)) {
-            restore_brightness_ = -1;
             policy_.recover_active(input.now_ms, input.activity_revision);
+            restore_pending_ = true;
+            restore_retry_ms_ = input.now_ms;
         }
         break;
 
     case PowerPolicyAction::ExitDim:
-        if ((restore_brightness_ >= 0) && !set_temporary_brightness(restore_brightness_)) {
-            policy_.recover_active(input.now_ms, input.activity_revision);
+    case PowerPolicyAction::WakeHardware: {
+        auto result = service::Display::get_instance().restore_backlight(display_output_id_);
+        if (!result) {
+            BROOKESIA_LOGE("Backlight restore failed: %1%", result.error());
+            restore_pending_ = true;
+            restore_retry_ms_ = input.now_ms;
         }
-        restore_brightness_ = -1;
+        policy_.recover_active(input.now_ms, input.activity_revision);
         break;
+    }
 
     case PowerPolicyAction::EnterHardwareSleep:
-    case PowerPolicyAction::WakeHardware:
-        // Phase 5 supplies the hardware-specific actuator.
-        policy_.recover_active(input.now_ms, input.activity_revision);
+        if (!set_temporary_brightness(0)) {
+            policy_.recover_active(input.now_ms, input.activity_revision);
+            restore_pending_ = true;
+            restore_retry_ms_ = input.now_ms;
+        }
         break;
     }
 
@@ -114,7 +125,7 @@ void PowerManager::update(const PowerManagerInput &input)
 bool PowerManager::set_temporary_brightness(int brightness)
 {
     brightness = std::clamp(brightness, 0, 100);
-    auto result = service::Display::get_instance().set_backlight_brightness_temporary(
+    auto result = service::Display::get_instance().set_backlight_pwm_temporary(
                       display_output_id_, static_cast<uint8_t>(brightness)
                   );
     if (!result) {
