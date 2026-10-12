@@ -829,6 +829,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             break;
         case AgentHelper::GeneralAction::Start:
             is_sleeping_ = false;
+            is_slept_ = false;
             is_suspended_ = false;
             is_listening_ = false;
             is_speaking_ = false;
@@ -842,6 +843,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             );
             break;
         case AgentHelper::GeneralAction::Sleep: {
+            is_slept_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -861,6 +863,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
         case AgentHelper::GeneralAction::WakeUp:
             is_boot_idle_ = false;
             is_sleeping_ = false;
+            is_slept_ = false;
             is_thinking_ = false;
             refresh_emote_state();
             EmoteHelper::call_function_async(
@@ -870,6 +873,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             break;
         case AgentHelper::GeneralAction::Stop:
             is_boot_idle_ = false;
+            is_slept_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -924,6 +928,7 @@ void AI_Agents::process_emote_when_general_event_happened()
         case AgentHelper::GeneralEvent::Started: {
             is_stopped_ = false;
             is_sleeping_ = false;
+            is_slept_ = false;
             is_listening_ = false;
             has_agent_error_ = false;
             emote_state_ = EmoteState::Max;
@@ -942,12 +947,14 @@ void AI_Agents::process_emote_when_general_event_happened()
         }
         case AgentHelper::GeneralEvent::Slept: {
             is_sleeping_ = true;
+            is_slept_ = true;
             refresh_emote_state();
             break;
         }
         case AgentHelper::GeneralEvent::Awake: {
             is_boot_idle_ = false;
             is_sleeping_ = false;
+            is_slept_ = false;
             is_stopped_ = false;
             // Half-Duplex starts listening as soon as the audio channel is
             // awake. Keep the original immediate Listening UI transition.
@@ -961,6 +968,7 @@ void AI_Agents::process_emote_when_general_event_happened()
         }
         case AgentHelper::GeneralEvent::Stopped: {
             is_boot_idle_ = false;
+            is_slept_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;

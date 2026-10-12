@@ -45,12 +45,25 @@ typedef enum {
     SPEAKER_UI_SELF_TEST_FAIL,
 } speaker_ui_self_test_status_t;
 
+typedef enum {
+    SPEAKER_UI_SCREEN_UNKNOWN,
+    SPEAKER_UI_SCREEN_HOME,
+    SPEAKER_UI_SCREEN_LAUNCHER,
+    SPEAKER_UI_SCREEN_CLOCK,
+    SPEAKER_UI_SCREEN_SETTINGS,
+    SPEAKER_UI_SCREEN_CRITICAL,
+    SPEAKER_UI_SCREEN_AI,
+    SPEAKER_UI_SCREEN_QUICK,
+} speaker_ui_screen_t;
+
 void speaker_ui_create(void);
 void speaker_ui_set_input(lv_indev_t *input);
 void speaker_ui_set_wifi_managed_externally(bool managed);
 bool speaker_ui_is_launcher_active(void);
 bool speaker_ui_is_idle_active(void);
 bool speaker_ui_is_screen_active(const char *screen_name);
+speaker_ui_screen_t speaker_ui_get_active_screen(void);
+uint32_t speaker_ui_get_activity_revision(void);
 int speaker_ui_launcher_page(void);
 bool speaker_ui_show(const char *screen_name);
 bool speaker_ui_settings_bar_stays_fixed(void);

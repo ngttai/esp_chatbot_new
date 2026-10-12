@@ -197,6 +197,7 @@ configure_file(
 target_include_directories(esp_chatbot_host_sim PRIVATE
     "${HOST_SIM_GENERATED_DIR}"
     "${HOST_SIM_DIR}/tests"
+    "${PROJECT_ROOT}/main/modules"
     "${SPEAKER_UI_DIR}/src"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker"
@@ -221,6 +222,9 @@ if(BUILD_TESTING)
         --self-test-home
         --self-test-launcher
         --self-test-idle
+        --self-test-ui-observability
+        --self-test-idle-coordinator
+        --self-test-power-policy
         --self-test-settings-bar
         --self-test-settings-no-scroll
         --self-test-settings-pages

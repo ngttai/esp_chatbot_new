@@ -25,6 +25,8 @@
 #include "wifi_adapter.hpp"
 #include "weather_adapter.hpp"
 #include "host_capabilities_config.hpp"
+#include "power_policy.hpp"
+#include "ui_idle_coordinator.hpp"
 
 extern "C" {
 #include "speaker_ui.h"
@@ -58,6 +60,16 @@ bool show(const char *name)
 bool active(const char *name)
 {
     return with_ui_lock([&]() { return speaker_ui_is_screen_active(name); });
+}
+
+speaker_ui_screen_t active_screen()
+{
+    return with_ui_lock([]() { return speaker_ui_get_active_screen(); });
+}
+
+uint32_t activity_revision()
+{
+    return with_ui_lock([]() { return speaker_ui_get_activity_revision(); });
 }
 
 bool input_ok(bool result, const InputInjector &input)
@@ -134,6 +146,248 @@ auto get_backlight_on_off(uint32_t output_id)
         static_cast<double>(output_id),
         esp_brookesia::service::helper::Timeout(1000)
     );
+}
+
+int test_ui_observability(InputInjector &input)
+{
+    struct ScreenCase {
+        const char *name;
+        speaker_ui_screen_t expected;
+    };
+    static constexpr std::array<ScreenCase, 15> screen_cases{{
+        {"idle", SPEAKER_UI_SCREEN_HOME},
+        {"launcher", SPEAKER_UI_SCREEN_LAUNCHER},
+        {"timer", SPEAKER_UI_SCREEN_CLOCK},
+        {"settings", SPEAKER_UI_SCREEN_SETTINGS},
+        {"wlan", SPEAKER_UI_SCREEN_SETTINGS},
+        {"sound", SPEAKER_UI_SCREEN_SETTINGS},
+        {"display", SPEAKER_UI_SCREEN_SETTINGS},
+        {"about", SPEAKER_UI_SCREEN_SETTINGS},
+        {"developer", SPEAKER_UI_SCREEN_CRITICAL},
+        {"wlan-connect", SPEAKER_UI_SCREEN_CRITICAL},
+        {"softap", SPEAKER_UI_SCREEN_CRITICAL},
+        {"self-test", SPEAKER_UI_SCREEN_CRITICAL},
+        {"restore", SPEAKER_UI_SCREEN_CRITICAL},
+        {"ai", SPEAKER_UI_SCREEN_AI},
+        {"quick", SPEAKER_UI_SCREEN_QUICK},
+    }};
+
+    const uint32_t initial_revision = activity_revision();
+    for (const auto &screen_case : screen_cases) {
+        if (!show(screen_case.name) || active_screen() != screen_case.expected) {
+            std::fprintf(stderr, "Typed screen query failed: %s\n", screen_case.name);
+            return 94;
+        }
+        if (activity_revision() != initial_revision) {
+            std::fprintf(stderr, "Programmatic screen change counted as human activity\n");
+            return 95;
+        }
+    }
+
+    show("timer");
+    input.pump(1100);
+    if (activity_revision() != initial_revision) {
+        std::fprintf(stderr, "Clock background updates counted as human activity\n");
+        return 96;
+    }
+    if (!active("timer") || !input_ok(input.click(180, 120), input)) return 97;
+    if (activity_revision() == initial_revision) {
+        std::fprintf(stderr, "Physical input did not update the activity revision\n");
+        return 98;
+    }
+
+    std::puts("UI idle observability passed");
+    return 0;
+}
+
+int test_idle_coordinator()
+{
+    constexpr uint32_t timeout_ms = 100;
+    constexpr uint8_t launcher_key = 1;
+    constexpr uint8_t settings_key = 2;
+    constexpr uint8_t home_key = 3;
+    constexpr uint8_t clock_key = 4;
+
+    auto initialize = [](UiIdleCoordinator &coordinator, uint8_t screen_key,
+                         UiIdleScreenRole role) {
+        return coordinator.update(0, 0, screen_key, role, false);
+    };
+
+    for (const auto &[name, key] : std::array<std::pair<const char *, uint8_t>, 2>{{
+             {"Launcher", launcher_key}, {"Settings", settings_key}
+         }}) {
+        UiIdleCoordinator coordinator(timeout_ms);
+        if (initialize(coordinator, key, UiIdleScreenRole::Navigation) != UiIdleDecision::Hold ||
+                coordinator.update(timeout_ms - 1, 0, key, UiIdleScreenRole::Navigation,
+                                   false) !=
+                    UiIdleDecision::Hold ||
+                coordinator.update(timeout_ms, 0, key, UiIdleScreenRole::Navigation,
+                                   false) !=
+                    UiIdleDecision::NavigateHome ||
+                coordinator.update(timeout_ms + 1, 0, key, UiIdleScreenRole::Navigation,
+                                   false) !=
+                    UiIdleDecision::Hold) {
+            std::fprintf(stderr, "%s timeout did not emit exactly one Home action\n", name);
+            return 103;
+        }
+    }
+
+    UiIdleCoordinator touched(timeout_ms);
+    initialize(touched, settings_key, UiIdleScreenRole::Navigation);
+    touched.update(timeout_ms - 1, 1, settings_key, UiIdleScreenRole::Navigation,
+                   false);
+    if (touched.update((2 * timeout_ms) - 2, 1, settings_key, UiIdleScreenRole::Navigation,
+                       false) != UiIdleDecision::Hold ||
+            touched.update((2 * timeout_ms) - 1, 1, settings_key,
+                           UiIdleScreenRole::Navigation, false) !=
+                UiIdleDecision::NavigateHome) {
+        std::fprintf(stderr, "Human input did not reset the UI timeout\n");
+        return 105;
+    }
+
+    UiIdleCoordinator background(timeout_ms);
+    initialize(background, settings_key, UiIdleScreenRole::Navigation);
+    if (background.update(timeout_ms, 0, settings_key, UiIdleScreenRole::Navigation,
+                          false) != UiIdleDecision::NavigateHome) {
+        std::fprintf(stderr, "Background updates incorrectly reset the UI timeout\n");
+        return 106;
+    }
+
+    for (bool critical_operation : {false, true}) {
+        UiIdleCoordinator critical(timeout_ms);
+        const UiIdleScreenRole role = critical_operation ? UiIdleScreenRole::Navigation :
+                                          UiIdleScreenRole::Critical;
+        initialize(critical, settings_key, role);
+        if (critical.update(timeout_ms, 0, settings_key, role, critical_operation) !=
+                UiIdleDecision::Hold) {
+            std::fprintf(stderr, "Critical screen or operation did not block timeout\n");
+            return 107;
+        }
+    }
+
+    UiIdleCoordinator clock(timeout_ms);
+    initialize(clock, clock_key, UiIdleScreenRole::Clock);
+    if (clock.update(timeout_ms, 0, clock_key, UiIdleScreenRole::Clock, false) !=
+            UiIdleDecision::Hold) {
+        std::fprintf(stderr, "Clock unexpectedly emitted a UI navigation action\n");
+        return 108;
+    }
+
+    UiIdleCoordinator home(timeout_ms);
+    initialize(home, home_key, UiIdleScreenRole::Home);
+    home.update(timeout_ms + 1, 1, home_key, UiIdleScreenRole::Home, false);
+    if (home.update((2 * timeout_ms) + 1, 1, home_key, UiIdleScreenRole::Home,
+                    false) !=
+            UiIdleDecision::Hold) {
+        std::fprintf(stderr, "Home input unexpectedly navigated\n");
+        return 109;
+    }
+
+    UiIdleCoordinator screen_change(timeout_ms);
+    initialize(screen_change, launcher_key, UiIdleScreenRole::Navigation);
+    if (screen_change.update(timeout_ms - 1, 0, settings_key,
+                             UiIdleScreenRole::Navigation, false) != UiIdleDecision::Hold ||
+            screen_change.update((2 * timeout_ms) - 2, 0, settings_key,
+                                 UiIdleScreenRole::Navigation, false) != UiIdleDecision::Hold ||
+            screen_change.update((2 * timeout_ms) - 1, 0, settings_key,
+                                 UiIdleScreenRole::Navigation, false) !=
+                UiIdleDecision::NavigateHome) {
+        std::fprintf(stderr, "New screen entry did not start a fresh UI timeout\n");
+        return 110;
+    }
+
+    std::puts("UI idle coordinator policy passed");
+    return 0;
+}
+
+int test_power_policy()
+{
+    constexpr uint32_t dim_timeout_ms = 60;
+    constexpr uint32_t hardware_sleep_timeout_ms = 300;
+
+    auto input = [](uint32_t now_ms, uint32_t revision, bool agent_slept = true,
+                    bool blocked = false, bool display_ready = true) {
+        return PowerPolicyInput{
+            .now_ms = now_ms,
+            .activity_revision = revision,
+            .agent_slept = agent_slept,
+            .blocked = blocked,
+            .display_ready = display_ready,
+        };
+    };
+
+    PowerPolicy basic(dim_timeout_ms, hardware_sleep_timeout_ms, false);
+    if (basic.update(input(0, 0, true, false, false)) != PowerPolicyAction::None ||
+            basic.state() != PowerPolicyState::Boot ||
+            basic.update(input(10, 0)) != PowerPolicyAction::None ||
+            basic.state() != PowerPolicyState::Active ||
+            basic.update(input(69, 0)) != PowerPolicyAction::None ||
+            basic.update(input(70, 0)) != PowerPolicyAction::EnterDim ||
+            basic.state() != PowerPolicyState::Dimmed ||
+            basic.update(input(370, 0)) != PowerPolicyAction::None ||
+            basic.state() != PowerPolicyState::Dimmed) {
+        std::fprintf(stderr, "Basic power dim policy or Phase 4 sleep disable failed\n");
+        return 111;
+    }
+    if (basic.update(input(371, 1)) != PowerPolicyAction::ExitDim ||
+            basic.state() != PowerPolicyState::Active ||
+            basic.update(input(430, 1)) != PowerPolicyAction::None ||
+            basic.update(input(431, 1)) != PowerPolicyAction::EnterDim) {
+        std::fprintf(stderr, "Physical activity did not restore and restart the dim timer\n");
+        return 112;
+    }
+
+    PowerPolicy wait_agent(dim_timeout_ms, hardware_sleep_timeout_ms, false);
+    wait_agent.update(input(0, 0, false));
+    if (wait_agent.update(input(60, 0, false)) != PowerPolicyAction::None ||
+            wait_agent.state() != PowerPolicyState::WaitAgentSleep ||
+            wait_agent.update(input(120, 0, false)) != PowerPolicyAction::None ||
+            wait_agent.update(input(121, 0, true)) != PowerPolicyAction::EnterDim ||
+            wait_agent.state() != PowerPolicyState::Dimmed) {
+        std::fprintf(stderr, "Agent-active deferral did not enter Dimmed when the agent slept\n");
+        return 113;
+    }
+    if (wait_agent.update(input(122, 0, false)) != PowerPolicyAction::ExitDim ||
+            wait_agent.state() != PowerPolicyState::Active) {
+        std::fprintf(stderr, "Agent wake did not restore an already dimmed display\n");
+        return 114;
+    }
+
+    PowerPolicy blocked(dim_timeout_ms, hardware_sleep_timeout_ms, false);
+    blocked.update(input(0, 0));
+    blocked.update(input(60, 0));
+    if (blocked.update(input(61, 0, true, true)) != PowerPolicyAction::ExitDim ||
+            blocked.update(input(120, 0, true, true)) != PowerPolicyAction::None ||
+            blocked.update(input(179, 0)) != PowerPolicyAction::None ||
+            blocked.update(input(180, 0)) != PowerPolicyAction::EnterDim) {
+        std::fprintf(stderr, "Power blocker did not restore and restart the dim timer\n");
+        return 115;
+    }
+
+    PowerPolicy hardware(dim_timeout_ms, hardware_sleep_timeout_ms, true);
+    hardware.update(input(1000, 0));
+    if (hardware.update(input(1060, 0)) != PowerPolicyAction::EnterDim ||
+            hardware.update(input(1359, 0)) != PowerPolicyAction::None ||
+            hardware.update(input(1360, 0)) != PowerPolicyAction::EnterHardwareSleep ||
+            hardware.state() != PowerPolicyState::HardwareSleep ||
+            hardware.update(input(1361, 0, false)) != PowerPolicyAction::WakeHardware ||
+            hardware.state() != PowerPolicyState::Waking ||
+            hardware.update(input(1362, 0, false)) != PowerPolicyAction::None ||
+            hardware.state() != PowerPolicyState::Active) {
+        std::fprintf(stderr, "Hardware sleep timer was not measured from Dimmed entry\n");
+        return 116;
+    }
+
+    PowerPolicy wrapped(dim_timeout_ms, hardware_sleep_timeout_ms, false);
+    wrapped.update(input(UINT32_MAX - 20, 0));
+    if (wrapped.update(input(38, 0)) != PowerPolicyAction::None ||
+            wrapped.update(input(39, 0)) != PowerPolicyAction::EnterDim) {
+        std::fprintf(stderr, "Power dim timer did not handle tick wraparound\n");
+        return 117;
+    }
+
+    std::puts("Power manager policy passed");
+    return 0;
 }
 
 int test_settings_pages(InputInjector &input)
@@ -1497,10 +1751,13 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 26> options{{
+    static constexpr std::array<std::string_view, 29> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
+        "--self-test-ui-observability",
+        "--self-test-idle-coordinator",
+        "--self-test-power-policy",
         "--self-test-settings-bar",
         "--self-test-settings-no-scroll",
         "--self-test-settings-pages",
@@ -1540,6 +1797,9 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-hardware-test-ui") return test_hardware_test_ui();
     if (option == "--self-test-settings-bar") return test_settings_bar();
     if (option == "--self-test-idle") return test_idle(input);
+    if (option == "--self-test-ui-observability") return test_ui_observability(input);
+    if (option == "--self-test-idle-coordinator") return test_idle_coordinator();
+    if (option == "--self-test-power-policy") return test_power_policy();
     if (option == "--self-test-launcher") return test_launcher(input);
     if (option == "--self-test-home") return test_home(input);
     if (option == "--self-test-settings-no-scroll") return test_settings_no_scroll(input);

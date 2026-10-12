@@ -120,6 +120,13 @@ public:
     ) const;
 
     /**
+     * @brief Set the active backlight level without changing the stored user preference.
+     */
+    std::expected<void, std::string> set_backlight_brightness_temporary(
+        uint32_t output_id, uint8_t brightness
+    );
+
+    /**
      * @brief Inject synthetic touch points for an output, overriding the hardware snapshot.
      *
      * Synthetic points take precedence over hardware reads in @ref get_touch_snapshot until

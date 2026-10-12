@@ -35,6 +35,11 @@ public:
         return task_scheduler_ != nullptr;
     }
 
+    bool is_slept() const
+    {
+        return is_slept_.load(std::memory_order_relaxed);
+    }
+
     void init_coze();
     void init_openai();
     void init_xiaozhi();
@@ -132,6 +137,7 @@ private:
     std::atomic_bool is_speaking_{false};
     std::atomic_bool is_suspended_{false};
     std::atomic_bool is_sleeping_{false};
+    std::atomic_bool is_slept_{false};
     std::atomic_bool is_thinking_{false};
     std::atomic_bool has_agent_error_{false};
     std::atomic_bool is_stopped_{false};

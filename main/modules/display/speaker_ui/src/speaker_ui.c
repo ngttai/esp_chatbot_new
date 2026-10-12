@@ -93,6 +93,7 @@ extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator2;
 
 typedef struct { const char *name; const lv_image_dsc_t *image; lv_event_cb_t cb; } app_t;
 static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen;
+static uint32_t activity_revision;
 static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about, *settings_self_test;
 static lv_obj_t *settings_developer, *settings_restore;
 static lv_obj_t *settings_developer_row;
@@ -467,6 +468,7 @@ static void input_gesture_event(lv_event_t *e)
     lv_indev_get_point(input, &point);
 
     if(code == LV_EVENT_PRESSED) {
+        activity_revision++;
         launcher_gesture_tracking = lv_screen_active() == launcher;
         if(launcher_gesture_tracking) launcher_gesture_start = point;
 
@@ -1873,7 +1875,34 @@ bool speaker_ui_is_screen_active(const char *name)
     if(!strcmp(name, "self-test")) return active == settings_self_test;
     if(!strcmp(name, "developer")) return active == settings_developer;
     if(!strcmp(name, "restore")) return active == settings_restore;
+    if(!strcmp(name, "ai")) return active == ai;
+    if(!strcmp(name, "timer")) return active == timer_screen;
     return false;
+}
+
+speaker_ui_screen_t speaker_ui_get_active_screen(void)
+{
+    lv_obj_t *active = lv_screen_active();
+    if(quick_open) return SPEAKER_UI_SCREEN_QUICK;
+    if(active == idle) return SPEAKER_UI_SCREEN_HOME;
+    if(active == launcher) return SPEAKER_UI_SCREEN_LAUNCHER;
+    if(active == timer_screen) return SPEAKER_UI_SCREEN_CLOCK;
+    if(active == ai) return SPEAKER_UI_SCREEN_AI;
+    if(active == settings_wlan_verify || active == settings_softap ||
+       active == settings_self_test || active == settings_developer ||
+       active == settings_restore) {
+        return SPEAKER_UI_SCREEN_CRITICAL;
+    }
+    if(active == settings || active == settings_wlan || active == settings_sound ||
+       active == settings_display || active == settings_about) {
+        return SPEAKER_UI_SCREEN_SETTINGS;
+    }
+    return SPEAKER_UI_SCREEN_UNKNOWN;
+}
+
+uint32_t speaker_ui_get_activity_revision(void)
+{
+    return activity_revision;
 }
 
 int speaker_ui_launcher_page(void)

@@ -24,6 +24,7 @@
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "modules/battery_monitor.hpp"
+#include "modules/ai_agents.hpp"
 #include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/weather_config.hpp"
@@ -62,6 +63,36 @@ constexpr uint32_t FACTORY_RESET_TASK_STACK_SIZE = 8 * 1024;
 constexpr UBaseType_t FACTORY_RESET_TASK_PRIORITY = 5;
 constexpr std::array<int, 3> QUICK_BRIGHTNESS_PERCENT{{40, 70, 100}};
 constexpr std::array<int, 3> QUICK_VOLUME_PERCENT{{30, 60, 90}};
+
+const char *screen_name(speaker_ui_screen_t screen)
+{
+    switch (screen) {
+    case SPEAKER_UI_SCREEN_HOME: return "Home";
+    case SPEAKER_UI_SCREEN_LAUNCHER: return "Launcher";
+    case SPEAKER_UI_SCREEN_CLOCK: return "Clock";
+    case SPEAKER_UI_SCREEN_SETTINGS: return "Settings";
+    case SPEAKER_UI_SCREEN_CRITICAL: return "Critical";
+    case SPEAKER_UI_SCREEN_AI: return "AI";
+    case SPEAKER_UI_SCREEN_QUICK: return "Quick";
+    default: return "Unknown";
+    }
+}
+
+UiIdleScreenRole idle_screen_role(speaker_ui_screen_t screen)
+{
+    switch (screen) {
+    case SPEAKER_UI_SCREEN_HOME: return UiIdleScreenRole::Home;
+    case SPEAKER_UI_SCREEN_CLOCK: return UiIdleScreenRole::Clock;
+    case SPEAKER_UI_SCREEN_CRITICAL: return UiIdleScreenRole::Critical;
+    case SPEAKER_UI_SCREEN_LAUNCHER:
+    case SPEAKER_UI_SCREEN_SETTINGS:
+    case SPEAKER_UI_SCREEN_AI:
+    case SPEAKER_UI_SCREEN_QUICK:
+        return UiIdleScreenRole::Navigation;
+    default:
+        return UiIdleScreenRole::Critical;
+    }
+}
 
 lv_obj_t *find_first_slider(lv_obj_t *object)
 {
@@ -193,6 +224,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_set_touch_sensor_on(touch_sensor_user_enabled_);
     ensure_control_event_subscriptions();
     refresh_control_state();
+    PowerManager::get_instance().start(display_output_id_);
     service_timer_ = lv_timer_create(service_timer_callback, SERVICE_POLL_PERIOD_MS, this);
     BROOKESIA_CHECK_NULL_RETURN(service_timer_, false, "Failed to create Speaker UI service adapter timer");
 
@@ -242,6 +274,9 @@ void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)
 
 void ScreenSpeakerShell::poll_service_controls()
 {
+    poll_idle_observability();
+    poll_idle_timeout();
+    poll_power_manager();
     poll_display_mode();
     sync_service_control_ui();
     poll_brightness();
@@ -252,6 +287,61 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_touch_sensor();
     poll_self_test();
     poll_factory_reset();
+}
+
+void ScreenSpeakerShell::poll_power_manager()
+{
+    const speaker_ui_screen_t screen = speaker_ui_get_active_screen();
+    const bool critical_operation = factory_reset_in_progress_ || self_test_running_.load() ||
+                                    wifi_connect_in_flight_.load() ||
+                                    display_mode_switch_in_flight_.load();
+    const bool blocked = critical_operation || (idle_screen_role(screen) == UiIdleScreenRole::Critical);
+    const int brightness = service_brightness_.load();
+    PowerManager::get_instance().update({
+        .now_ms = lv_tick_get(),
+        .activity_revision = speaker_ui_get_activity_revision(),
+        .current_brightness = brightness,
+        .agent_slept = AI_Agents::get_instance().is_slept(),
+        .blocked = blocked,
+        .display_ready = brightness >= 0,
+    });
+}
+
+void ScreenSpeakerShell::poll_idle_timeout()
+{
+    const speaker_ui_screen_t screen = speaker_ui_get_active_screen();
+    const bool critical_operation = factory_reset_in_progress_ || self_test_running_.load() ||
+                                    wifi_connect_in_flight_.load();
+    const UiIdleDecision decision = idle_coordinator_.update(
+        lv_tick_get(),
+        speaker_ui_get_activity_revision(),
+        static_cast<uint8_t>(screen),
+        idle_screen_role(screen),
+        critical_operation
+    );
+    if (decision != UiIdleDecision::NavigateHome) {
+        return;
+    }
+    if (speaker_ui_show("idle")) {
+        BROOKESIA_LOGI("UI idle timeout: navigating to Home");
+    } else {
+        BROOKESIA_LOGE("UI idle timeout: failed to navigate to Home");
+    }
+}
+
+void ScreenSpeakerShell::poll_idle_observability()
+{
+    const uint32_t activity_revision = speaker_ui_get_activity_revision();
+    const speaker_ui_screen_t screen = speaker_ui_get_active_screen();
+    if (activity_revision != observed_activity_revision_) {
+        observed_activity_revision_ = activity_revision;
+        BROOKESIA_LOGI("UI activity revision: %1%", activity_revision);
+    }
+    if (!idle_observability_initialized_ || screen != observed_screen_) {
+        observed_screen_ = screen;
+        BROOKESIA_LOGI("UI active screen: %1%", screen_name(screen));
+    }
+    idle_observability_initialized_ = true;
 }
 
 void ScreenSpeakerShell::run_self_test()

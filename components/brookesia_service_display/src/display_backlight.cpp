@@ -29,6 +29,45 @@ constexpr const char *KEY_ON = "On";
 
 } // namespace
 
+std::expected<void, std::string> Display::set_backlight_brightness_temporary(
+    uint32_t output_id, uint8_t brightness
+)
+{
+    if (brightness > 100) {
+        return std::unexpected("Brightness must be in range [0, 100]");
+    }
+
+    std::string output_name;
+    uint8_t old_brightness = 0;
+    {
+        std::lock_guard lock(mutex_);
+        auto output_it = outputs_.find(output_id);
+        if (output_it == outputs_.end()) {
+            return std::unexpected((boost::format("Display output id %1% is not available") % output_id).str());
+        }
+
+        auto &output = output_it->second;
+        if (!output.backlight) {
+            return std::unexpected((boost::format("Display output '%1%' has no backlight") %
+                                    output.info.name).str());
+        }
+        if (output.backlight_brightness == brightness) {
+            return {};
+        }
+
+        output_name = output.info.name;
+        old_brightness = output.backlight_brightness;
+        output.backlight_brightness = brightness;
+        if (!apply_backlight_state_to_hal(output)) {
+            output.backlight_brightness = old_brightness;
+            return std::unexpected("Failed to set temporary display backlight brightness");
+        }
+    }
+
+    emit_backlight_brightness_changed(output_id, output_name, brightness);
+    return {};
+}
+
 std::expected<void, std::string> Display::function_set_backlight_brightness(
     double output_id, double brightness
 )
