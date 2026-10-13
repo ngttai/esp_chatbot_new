@@ -286,6 +286,7 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_memory();
     poll_battery();
     poll_touch_sensor();
+    poll_lift_to_wake();
     poll_self_test();
     poll_factory_reset();
 }
@@ -637,6 +638,32 @@ void ScreenSpeakerShell::ensure_control_event_subscriptions()
     }
 }
 
+void ScreenSpeakerShell::poll_lift_to_wake()
+{
+    auto &imu = ImuGesture::get_instance();
+    if (!imu.is_initialized()) return;
+    if (!lift_setting_initialized_ || lift_setting_result_ready_.exchange(false)) {
+        speaker_ui_set_lift_to_wake_on(imu.is_lift_enabled());
+        lift_setting_initialized_ = true;
+    }
+    if (lift_setting_in_flight_.load()) return;
+    const bool enabled = speaker_ui_is_lift_to_wake_on();
+    if (enabled == imu.is_lift_enabled()) return;
+    lift_setting_in_flight_ = true;
+    const bool posted = task_scheduler_->post([this, enabled]() {
+        if (!ImuGesture::get_instance().set_lift_enabled(enabled)) {
+            BROOKESIA_LOGE("Failed to save Lift to wake setting");
+        }
+        lift_setting_result_ready_ = true;
+        lift_setting_in_flight_ = false;
+    });
+    if (!posted) {
+        lift_setting_in_flight_ = false;
+        speaker_ui_set_lift_to_wake_on(imu.is_lift_enabled());
+        BROOKESIA_LOGE("Failed to schedule Lift to wake setting");
+    }
+}
+
 void ScreenSpeakerShell::refresh_control_state()
 {
     using AudioPlaybackHelper = service::helper::AudioPlayback;
@@ -787,6 +814,9 @@ void ScreenSpeakerShell::perform_factory_reset()
     }
     if (!WeatherConfig::get_instance().clear()) {
         BROOKESIA_LOGE("Failed to reset weather configuration");
+    }
+    if (!ImuGesture::get_instance().set_lift_enabled(true)) {
+        BROOKESIA_LOGE("Failed to reset Lift to wake setting");
     }
 
     BROOKESIA_LOGI("Speaker UI factory reset complete; restarting");

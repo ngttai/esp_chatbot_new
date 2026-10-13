@@ -5,6 +5,9 @@
  */
 #pragma once
 
+#include <atomic>
+#include <mutex>
+
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -21,9 +24,11 @@ public:
     }
 
     bool init();
+    bool is_lift_enabled() const { return lift_enabled_.load(); }
+    bool set_lift_enabled(bool enabled);
     bool is_initialized() const
     {
-        return task_ != nullptr;
+        return initialized_.load();
     }
 
 private:
@@ -39,6 +44,7 @@ private:
     static void task_entry(void *context);
 
     bool configure_any_motion();
+    void load_settings();
     void run();
     void cleanup();
 
@@ -48,4 +54,8 @@ private:
     TaskHandle_t task_ = nullptr;
     bool i2c_bus_referenced_ = false;
     bool gpio_handler_added_ = false;
+    std::atomic_bool lift_enabled_{true};
+    std::atomic_bool initialized_{false};
+    std::atomic_uint32_t settings_revision_{0};
+    std::mutex settings_mutex_;
 };

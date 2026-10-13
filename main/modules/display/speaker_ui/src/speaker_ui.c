@@ -100,6 +100,7 @@ static lv_obj_t *settings_developer_row;
 static lv_obj_t *settings_wlan_verify, *settings_softap;
 static lv_obj_t *page_box, *dots;
 static lv_obj_t *timer_clock_widget;
+static lv_obj_t *lift_to_wake_switch;
 static lv_obj_t *settings_scroller, *settings_wlan_scroller;
 static lv_obj_t *launcher_home_bar, *quick_home_bar, *settings_home_bar, *ai_home_bar, *timer_home_bar;
 static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar, *self_test_home_bar;
@@ -1251,8 +1252,8 @@ static void create_settings_display(void)
     lv_obj_t *brightness = group(scroller, 78, "Brightness");
     slider_row(brightness, &esp_brookesia_app_icon_brightness_less_48_48,
                &esp_brookesia_app_icon_brightness_more_48_48, 72);
-    lv_obj_t *auto_row = plain_row(brightness, "Auto adjust", NULL);
-    add_switch(auto_row, false);
+    lv_obj_t *lift_row = plain_row(brightness, "Lift to wake", NULL);
+    lift_to_wake_switch = add_switch(lift_row, true);
 }
 
 static void create_settings_about(void)
@@ -2191,6 +2192,24 @@ bool speaker_ui_set_developer_mode_callback(lv_event_cb_t callback, void *user_d
 bool speaker_ui_is_touch_sensor_on(void)
 {
     return settings_touch_switch != NULL && lv_obj_has_state(settings_touch_switch, LV_STATE_CHECKED);
+}
+
+bool speaker_ui_is_lift_to_wake_on(void)
+{
+    return lift_to_wake_switch != NULL && lv_obj_has_state(lift_to_wake_switch, LV_STATE_CHECKED);
+}
+
+bool speaker_ui_set_lift_to_wake_on(bool enabled)
+{
+    if(lift_to_wake_switch == NULL) return false;
+    if(enabled) lv_obj_add_state(lift_to_wake_switch, LV_STATE_CHECKED);
+    else lv_obj_remove_state(lift_to_wake_switch, LV_STATE_CHECKED);
+    return true;
+}
+
+bool speaker_ui_get_lift_to_wake_switch_center(int32_t *x, int32_t *y)
+{
+    return get_center(lift_to_wake_switch, x, y);
 }
 
 bool speaker_ui_set_touch_sensor_on(bool enabled)
