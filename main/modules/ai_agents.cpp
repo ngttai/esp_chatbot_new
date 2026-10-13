@@ -828,7 +828,9 @@ void AI_Agents::process_emote_when_general_action_triggered()
             );
             break;
         case AgentHelper::GeneralAction::Start:
+            power_starting_ = !has_agent_error_.load() && !is_stopped_.load();
             is_sleeping_ = false;
+            is_slept_ = false;
             is_suspended_ = false;
             is_listening_ = false;
             is_speaking_ = false;
@@ -842,6 +844,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             );
             break;
         case AgentHelper::GeneralAction::Sleep: {
+            is_slept_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -859,8 +862,12 @@ void AI_Agents::process_emote_when_general_action_triggered()
             break;
         }
         case AgentHelper::GeneralAction::WakeUp:
+            power_session_requested_ = true;
+            has_agent_error_ = false;
+            is_stopped_ = false;
             is_boot_idle_ = false;
             is_sleeping_ = false;
+            is_slept_ = false;
             is_thinking_ = false;
             refresh_emote_state();
             EmoteHelper::call_function_async(
@@ -870,6 +877,7 @@ void AI_Agents::process_emote_when_general_action_triggered()
             break;
         case AgentHelper::GeneralAction::Stop:
             is_boot_idle_ = false;
+            is_slept_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
@@ -922,17 +930,17 @@ void AI_Agents::process_emote_when_general_event_happened()
             break;
         }
         case AgentHelper::GeneralEvent::Started: {
+            power_starting_ = false;
             is_stopped_ = false;
             is_sleeping_ = false;
+            is_slept_ = false;
             is_listening_ = false;
             has_agent_error_ = false;
             emote_state_ = EmoteState::Max;
             refresh_emote_state();
 
-            // XiaoZhi normally opens its audio channel five seconds after
-            // connecting. Enter an internal sleep immediately so boot stays
-            // visually idle and the microphone remains local until wake-up.
-            if (is_boot_idle_.load(std::memory_order_relaxed)) {
+            // Keep boot and background reconnect audio closed until user wake-up.
+            if (is_boot_idle_.load(std::memory_order_relaxed) || !power_session_requested_.load()) {
                 AgentHelper::call_function_async(
                     AgentHelper::FunctionId::TriggerGeneralAction,
                     BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Sleep)
@@ -941,13 +949,17 @@ void AI_Agents::process_emote_when_general_event_happened()
             break;
         }
         case AgentHelper::GeneralEvent::Slept: {
+            power_session_requested_ = false;
+            power_starting_ = false;
             is_sleeping_ = true;
+            is_slept_ = true;
             refresh_emote_state();
             break;
         }
         case AgentHelper::GeneralEvent::Awake: {
             is_boot_idle_ = false;
             is_sleeping_ = false;
+            is_slept_ = false;
             is_stopped_ = false;
             // Half-Duplex starts listening as soon as the audio channel is
             // awake. Keep the original immediate Listening UI transition.
@@ -960,7 +972,10 @@ void AI_Agents::process_emote_when_general_event_happened()
             break;
         }
         case AgentHelper::GeneralEvent::Stopped: {
+            power_session_requested_ = false;
+            power_starting_ = false;
             is_boot_idle_ = false;
+            is_slept_ = false;
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;

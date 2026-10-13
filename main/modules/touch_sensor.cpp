@@ -15,6 +15,7 @@
 #include "touch_sensor_lowlevel.h"
 #include "modules/ai_agents.hpp"
 #include "modules/head_led.hpp"
+#include "modules/power_manager.hpp"
 
 namespace {
 
@@ -189,6 +190,7 @@ void TouchSensor::run()
                 press_started = now;
                 ESP_LOGI(TAG, "Touch press detected (value=%" PRIu32 ", baseline=%" PRIu32 ")", value, baseline);
                 HeadLed::get_instance().set_touch_pressed(true);
+                PowerManager::get_instance().notify_user_activity();
             } else if (pressed && !long_press_sent &&
                        ((now - press_started) >= pdMS_TO_TICKS(LONG_PRESS_TIME_MS))) {
                 long_press_sent = true;

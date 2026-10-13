@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <vector>
+#include "modules/agent_power_activity.hpp"
 #include "brookesia/service_manager/event/registry.hpp"
 #include "brookesia/service_manager/service/manager.hpp"
 
@@ -33,6 +34,25 @@ public:
     bool is_initialized() const
     {
         return task_scheduler_ != nullptr;
+    }
+
+    bool is_slept() const
+    {
+        return is_slept_.load(std::memory_order_relaxed);
+    }
+
+    bool blocks_power_idle() const
+    {
+        return agent_blocks_power_idle({
+            .listening = is_listening_.load(),
+            .thinking = is_thinking_.load(),
+            .speaking = is_speaking_.load(),
+            .starting = power_starting_.load(),
+            .session_requested = power_session_requested_.load(),
+            .slept = is_slept_.load(),
+            .stopped = is_stopped_.load(),
+            .error = has_agent_error_.load(),
+        });
     }
 
     void init_coze();
@@ -132,6 +152,9 @@ private:
     std::atomic_bool is_speaking_{false};
     std::atomic_bool is_suspended_{false};
     std::atomic_bool is_sleeping_{false};
+    std::atomic_bool is_slept_{false};
+    std::atomic_bool power_starting_{false};
+    std::atomic_bool power_session_requested_{false};
     std::atomic_bool is_thinking_{false};
     std::atomic_bool has_agent_error_{false};
     std::atomic_bool is_stopped_{false};

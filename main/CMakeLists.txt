@@ -8,6 +8,7 @@ set(SRCS
     "modules/general_services.cpp"
     "modules/head_led.cpp"
     "modules/imu_gesture.cpp"
+    "modules/power_manager.cpp"
     "modules/profiler.cpp"
     "modules/touch_sensor.cpp"
     "modules/weather_config.cpp"

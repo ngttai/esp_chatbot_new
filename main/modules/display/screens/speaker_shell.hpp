@@ -13,8 +13,11 @@
 #include <string>
 #include <vector>
 
+#include "sdkconfig.h"
 #include "brookesia/lib_utils/task_scheduler.hpp"
 #include "brookesia/service_manager/event/registry.hpp"
+#include "modules/ui_idle_coordinator.hpp"
+#include "modules/power_manager.hpp"
 #include "lvgl.h"
 
 extern "C" {
@@ -52,6 +55,9 @@ private:
     void poll_self_test();
     void poll_factory_reset();
     void poll_display_mode();
+    void poll_idle_observability();
+    void poll_idle_timeout();
+    void poll_power_manager();
     void configure_about();
     void attach_developer_mode_handler();
     void attach_self_test_handler();
@@ -110,6 +116,10 @@ private:
     std::array<std::atomic_int, SPEAKER_UI_SELF_TEST_COUNT> self_test_results_{};
     bool idle_display_mode_initialized_ = false;
     bool idle_display_mode_ = false;
+    bool idle_observability_initialized_ = false;
+    uint32_t observed_activity_revision_ = 0;
+    speaker_ui_screen_t observed_screen_ = SPEAKER_UI_SCREEN_UNKNOWN;
+    UiIdleCoordinator idle_coordinator_{CONFIG_EXAMPLE_UI_AUTO_HOME_TIMEOUT_MS};
     std::atomic_bool display_mode_switch_in_flight_{false};
     std::atomic_bool display_mode_result_ready_{false};
     std::atomic_bool display_mode_switch_succeeded_{false};

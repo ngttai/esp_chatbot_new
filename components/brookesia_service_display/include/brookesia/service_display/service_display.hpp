@@ -120,6 +120,15 @@ public:
     ) const;
 
     /**
+     * @brief Override raw backlight PWM (0-100) without changing user brightness or storage.
+     */
+    std::expected<void, std::string> set_backlight_pwm_temporary(
+        uint32_t output_id, uint8_t percent
+    );
+    /** @brief Clear the PWM override and apply the current user backlight settings. */
+    std::expected<void, std::string> restore_backlight(uint32_t output_id);
+
+    /**
      * @brief Inject synthetic touch points for an output, overriding the hardware snapshot.
      *
      * Synthetic points take precedence over hardware reads in @ref get_touch_snapshot until
@@ -242,6 +251,7 @@ private:
         std::optional<AsyncFrame> pending_frame;
         hal::InterfaceHandle<hal::display::BacklightIface> backlight;
         uint8_t backlight_brightness = 0;
+        std::optional<uint8_t> temporary_backlight_pwm;
         bool backlight_on = false;
         bool render_scheduled = false;
         uint32_t inflight_frame_id = 0;

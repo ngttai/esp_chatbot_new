@@ -19,9 +19,18 @@ constexpr gpio_num_t HEAD_LED_GPIO = GPIO_NUM_43;
 
 enum BlinkType {
     BLINK_TOUCH_PRESS_DOWN = 0,
+    BLINK_WAKE,
+    BLINK_RELEASE_ACTIVE,
+    BLINK_RELEASE_DIMMED,
+    BLINK_RELEASE_SLEEP,
+    BLINK_DEVELOPER_MODE,
+    BLINK_SLEEP,
+    BLINK_DIM_WIFI_OFF,
+    BLINK_WIFI_OFF,
+    BLINK_DIM_CONNECTED,
+    BLINK_DIM_DISCONNECTED,
     BLINK_WIFI_CONNECTED,
     BLINK_WIFI_DISCONNECTED,
-    BLINK_DEVELOPER_MODE,
     BLINK_MAX,
 };
 
@@ -31,14 +40,59 @@ const blink_step_t TOUCH_PRESS_DOWN_PATTERN[] = {
 };
 
 const blink_step_t WIFI_CONNECTED_PATTERN[] = {
-    {LED_BLINK_HOLD, LED_STATE_ON, 1000},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_ON, 1000},
     {LED_BLINK_LOOP, 0, 0},
 };
 
 const blink_step_t WIFI_DISCONNECTED_PATTERN[] = {
-    {LED_BLINK_HOLD, LED_STATE_ON, 100},
-    {LED_BLINK_HOLD, LED_STATE_OFF, 200},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_ON, 100},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 150},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_ON, 100},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 1650},
     {LED_BLINK_LOOP, 0, 0},
+};
+
+const blink_step_t DIM_CONNECTED_PATTERN[] = {
+    {LED_BLINK_BRIGHTNESS, LED_STATE_50_PERCENT, 1000},
+    {LED_BLINK_LOOP, 0, 0},
+};
+const blink_step_t DIM_DISCONNECTED_PATTERN[] = {
+    {LED_BLINK_BRIGHTNESS, LED_STATE_50_PERCENT, 100},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 150},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_50_PERCENT, 100},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 1650},
+    {LED_BLINK_LOOP, 0, 0},
+};
+const blink_step_t SLEEP_PATTERN[] = {
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 1000},
+    {LED_BLINK_LOOP, 0, 0},
+};
+const blink_step_t WIFI_OFF_PATTERN[] = {
+    {LED_BLINK_BRIGHTNESS, LED_STATE_ON, 100},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 1900},
+    {LED_BLINK_LOOP, 0, 0},
+};
+const blink_step_t DIM_WIFI_OFF_PATTERN[] = {
+    {LED_BLINK_BRIGHTNESS, LED_STATE_50_PERCENT, 100},
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 1900},
+    {LED_BLINK_LOOP, 0, 0},
+};
+const blink_step_t WAKE_PATTERN[] = {
+    {LED_BLINK_BRIGHTNESS, LED_STATE_OFF, 0},
+    {LED_BLINK_BREATHE, LED_STATE_ON, 300},
+    {LED_BLINK_STOP, 0, 0},
+};
+const blink_step_t RELEASE_ACTIVE_PATTERN[] = {
+    {LED_BLINK_BREATHE, LED_STATE_ON, 150},
+    {LED_BLINK_STOP, 0, 0},
+};
+const blink_step_t RELEASE_DIMMED_PATTERN[] = {
+    {LED_BLINK_BREATHE, LED_STATE_50_PERCENT, 150},
+    {LED_BLINK_STOP, 0, 0},
+};
+const blink_step_t RELEASE_SLEEP_PATTERN[] = {
+    {LED_BLINK_BREATHE, LED_STATE_OFF, 150},
+    {LED_BLINK_STOP, 0, 0},
 };
 
 const blink_step_t DEVELOPER_MODE_PATTERN[] = {
@@ -51,9 +105,18 @@ const blink_step_t DEVELOPER_MODE_PATTERN[] = {
 
 blink_step_t const *BLINK_LISTS[] = {
     [BLINK_TOUCH_PRESS_DOWN] = TOUCH_PRESS_DOWN_PATTERN,
+    [BLINK_WAKE] = WAKE_PATTERN,
+    [BLINK_RELEASE_ACTIVE] = RELEASE_ACTIVE_PATTERN,
+    [BLINK_RELEASE_DIMMED] = RELEASE_DIMMED_PATTERN,
+    [BLINK_RELEASE_SLEEP] = RELEASE_SLEEP_PATTERN,
+    [BLINK_DEVELOPER_MODE] = DEVELOPER_MODE_PATTERN,
+    [BLINK_SLEEP] = SLEEP_PATTERN,
+    [BLINK_DIM_WIFI_OFF] = DIM_WIFI_OFF_PATTERN,
+    [BLINK_WIFI_OFF] = WIFI_OFF_PATTERN,
+    [BLINK_DIM_CONNECTED] = DIM_CONNECTED_PATTERN,
+    [BLINK_DIM_DISCONNECTED] = DIM_DISCONNECTED_PATTERN,
     [BLINK_WIFI_CONNECTED] = WIFI_CONNECTED_PATTERN,
     [BLINK_WIFI_DISCONNECTED] = WIFI_DISCONNECTED_PATTERN,
-    [BLINK_DEVELOPER_MODE] = DEVELOPER_MODE_PATTERN,
     [BLINK_MAX] = nullptr,
 };
 
@@ -124,11 +187,14 @@ void HeadLed::set_touch_pressed(bool pressed)
     if (!initialized_.load()) {
         return;
     }
-    if (pressed) {
-        led_indicator_start(handle_, BLINK_TOUCH_PRESS_DOWN);
-    } else {
-        led_indicator_stop(handle_, BLINK_TOUCH_PRESS_DOWN);
-    }
+    std::lock_guard lock(mutex_);
+    if (touch_pressed_ == pressed) return;
+    touch_pressed_ = pressed;
+    if (developer_mode_) return;
+    const int release = power_state_ == PowerPolicyState::HardwareSleep ? BLINK_RELEASE_SLEEP :
+                        power_state_ == PowerPolicyState::Dimmed ? BLINK_RELEASE_DIMMED :
+                        BLINK_RELEASE_ACTIVE;
+    apply_pattern_locked(pressed ? -1 : release);
 }
 
 void HeadLed::set_wifi_connected(bool connected)
@@ -136,8 +202,9 @@ void HeadLed::set_wifi_connected(bool connected)
     if (!initialized_.load()) {
         return;
     }
-    led_indicator_stop(handle_, connected ? BLINK_WIFI_DISCONNECTED : BLINK_WIFI_CONNECTED);
-    led_indicator_start(handle_, connected ? BLINK_WIFI_CONNECTED : BLINK_WIFI_DISCONNECTED);
+    std::lock_guard lock(mutex_);
+    wifi_connected_ = connected;
+    apply_pattern_locked();
     ESP_LOGI(TAG, "Wi-Fi LED state: %s", connected ? "connected" : "disconnected");
 }
 
@@ -146,8 +213,54 @@ void HeadLed::set_developer_mode()
     if (!initialized_.load()) {
         return;
     }
-    led_indicator_stop(handle_, BLINK_WIFI_CONNECTED);
-    led_indicator_stop(handle_, BLINK_WIFI_DISCONNECTED);
-    led_indicator_start(handle_, BLINK_DEVELOPER_MODE);
+    std::lock_guard lock(mutex_);
+    developer_mode_ = true;
+    apply_pattern_locked();
     ESP_LOGI(TAG, "Developer-mode LED pattern started");
+}
+
+void HeadLed::set_power_state(PowerPolicyState state)
+{
+    if (!initialized_.load()) return;
+    std::lock_guard lock(mutex_);
+    if (power_state_ == state) return;
+    const bool wake = (power_state_ == PowerPolicyState::HardwareSleep ||
+                       power_state_ == PowerPolicyState::Dimmed) &&
+                      state == PowerPolicyState::Active;
+    power_state_ = state;
+    apply_pattern_locked(wake ? BLINK_WAKE : -1);
+}
+
+void HeadLed::set_wifi_enabled(bool enabled)
+{
+    if (!initialized_.load()) return;
+    std::lock_guard lock(mutex_);
+    if (wifi_enabled_ == enabled) return;
+    wifi_enabled_ = enabled;
+    if (!enabled) wifi_connected_ = false;
+    apply_pattern_locked();
+    ESP_LOGI(TAG, "WLAN LED state: %s", enabled ? "enabled" : "disabled");
+}
+
+void HeadLed::apply_pattern_locked(int transition)
+{
+    for (int pattern = 0; pattern < BLINK_MAX; ++pattern) {
+        led_indicator_stop(handle_, pattern);
+    }
+    if (developer_mode_) {
+        led_indicator_start(handle_, BLINK_DEVELOPER_MODE);
+        return;
+    }
+    const int base = power_state_ == PowerPolicyState::HardwareSleep ? BLINK_SLEEP :
+                     power_state_ == PowerPolicyState::Dimmed ?
+                     (!wifi_enabled_ ? BLINK_DIM_WIFI_OFF :
+                      wifi_connected_ ? BLINK_DIM_CONNECTED : BLINK_DIM_DISCONNECTED) :
+                     (!wifi_enabled_ ? BLINK_WIFI_OFF :
+                      wifi_connected_ ? BLINK_WIFI_CONNECTED : BLINK_WIFI_DISCONNECTED);
+    led_indicator_start(handle_, base);
+    if (touch_pressed_) {
+        led_indicator_start(handle_, BLINK_TOUCH_PRESS_DOWN);
+    } else if (transition >= 0) {
+        led_indicator_start(handle_, transition);
+    }
 }

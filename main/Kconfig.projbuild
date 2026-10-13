@@ -89,4 +89,34 @@ menu "Example Configuration"
         bool "Enable Xiaozhi agent"
         select BROOKESIA_AGENT_XIAOZHI_ENABLE_AUTO_REGISTER
         default y
+
+    config EXAMPLE_UI_AUTO_HOME_TIMEOUT_MS
+        int "UI auto-Home timeout (ms)"
+        range 1000 3600000
+        default 30000
+        help
+            Time without physical LCD input before navigation screens may
+            return to Home. Clock and critical flows are not redirected.
+
+    config EXAMPLE_PWR_DIM_TIMEOUT_MS
+        int "Power dim timeout (ms)"
+        range 1000 3600000
+        default 60000
+        help
+            Time without physical LCD input before the power manager may dim
+            the display. If the agent is active, dimming waits until it sleeps.
+
+    config EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT
+        int "Power dim brightness (percent)"
+        range 1 100
+        default 10
+
+    config EXAMPLE_PWR_HW_SLEEP_TIMEOUT_MS
+        int "Hardware sleep timeout after dimming (ms)"
+        range 1000 86400000
+        default 300000
+        help
+            Time measured from successful entry into the Dimmed state. The
+            hardware sleep actuator is introduced in the next phase.
+
 endmenu
