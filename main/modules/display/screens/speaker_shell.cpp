@@ -24,6 +24,7 @@
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_helper.hpp"
 #include "modules/battery_monitor.hpp"
+#include "modules/head_led.hpp"
 #include "modules/ai_agents.hpp"
 #include "modules/imu_gesture.hpp"
 #include "modules/touch_sensor.hpp"
@@ -1017,6 +1018,7 @@ void ScreenSpeakerShell::poll_wifi()
     }
 
     const bool enabled = speaker_ui_is_wlan_on();
+    HeadLed::get_instance().set_wifi_enabled(enabled);
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
     const bool softap_active = speaker_ui_is_screen_active("softap");
 

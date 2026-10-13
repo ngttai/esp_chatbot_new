@@ -9,6 +9,7 @@
 #include "brookesia/service_display.hpp"
 #include "private/utils.hpp"
 #include "modules/power_manager.hpp"
+#include "modules/head_led.hpp"
 
 using namespace esp_brookesia;
 
@@ -71,6 +72,7 @@ void PowerManager::update(const PowerManagerInput &input)
         }
         restore_pending_ = false;
         policy_.recover_active(input.now_ms, input.activity_revision);
+        HeadLed::get_instance().set_power_state(policy_.state());
     }
 
     const PowerPolicyState previous_state = policy_.state();
@@ -116,6 +118,7 @@ void PowerManager::update(const PowerManagerInput &input)
     }
 
     if (previous_state != policy_.state()) {
+        HeadLed::get_instance().set_power_state(policy_.state());
         BROOKESIA_LOGI(
             "Power state: %1% -> %2%", state_name(previous_state), state_name(policy_.state())
         );
