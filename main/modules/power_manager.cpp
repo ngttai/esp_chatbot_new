@@ -77,7 +77,7 @@ void PowerManager::update(const PowerManagerInput &input)
     const PowerPolicyAction action = policy_.update({
         .now_ms = input.now_ms,
         .activity_revision = input.activity_revision,
-        .agent_slept = input.agent_slept,
+        .agent_idle_allowed = input.agent_idle_allowed,
         .blocked = input.blocked,
         .display_ready = input.display_ready,
     });

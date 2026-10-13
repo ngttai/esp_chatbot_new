@@ -27,7 +27,7 @@ enum class PowerPolicyAction : uint8_t {
 struct PowerPolicyInput {
     uint32_t now_ms = 0;
     uint32_t activity_revision = 0;
-    bool agent_slept = false;
+    bool agent_idle_allowed = false;
     bool blocked = false;
     bool display_ready = false;
 };
@@ -70,7 +70,7 @@ public:
             if (elapsed(input.now_ms, last_activity_ms_) < dim_timeout_ms_) {
                 return PowerPolicyAction::None;
             }
-            if (!input.agent_slept) {
+            if (!input.agent_idle_allowed) {
                 state_ = PowerPolicyState::WaitAgentSleep;
                 return PowerPolicyAction::None;
             }
@@ -79,7 +79,7 @@ public:
             return PowerPolicyAction::EnterDim;
 
         case PowerPolicyState::WaitAgentSleep:
-            if (!input.agent_slept) {
+            if (!input.agent_idle_allowed) {
                 return PowerPolicyAction::None;
             }
             state_ = PowerPolicyState::Dimmed;
@@ -87,7 +87,7 @@ public:
             return PowerPolicyAction::EnterDim;
 
         case PowerPolicyState::Dimmed:
-            if (!input.agent_slept) {
+            if (!input.agent_idle_allowed) {
                 return activate(input.now_ms, input.activity_revision);
             }
             if (hardware_sleep_enabled_ &&
@@ -98,7 +98,7 @@ public:
             return PowerPolicyAction::None;
 
         case PowerPolicyState::HardwareSleep:
-            if (!input.agent_slept) {
+            if (!input.agent_idle_allowed) {
                 state_ = PowerPolicyState::Waking;
                 return PowerPolicyAction::WakeHardware;
             }

@@ -26,6 +26,7 @@
 #include "weather_adapter.hpp"
 #include "host_capabilities_config.hpp"
 #include "power_policy.hpp"
+#include "agent_power_activity.hpp"
 #include "ui_idle_coordinator.hpp"
 
 extern "C" {
@@ -302,6 +303,18 @@ int test_idle_coordinator()
 
 int test_power_policy()
 {
+    if (agent_blocks_power_idle({.stopped = true}) ||
+            agent_blocks_power_idle({.session_requested = true, .error = true}) ||
+            agent_blocks_power_idle({.slept = true}) ||
+            agent_blocks_power_idle({}) ||
+            !agent_blocks_power_idle({.starting = true}) ||
+            !agent_blocks_power_idle({.session_requested = true}) ||
+            !agent_blocks_power_idle({.listening = true, .error = true}) ||
+            !agent_blocks_power_idle({.thinking = true, .error = true}) ||
+            !agent_blocks_power_idle({.speaking = true, .error = true})) {
+        std::fprintf(stderr, "Agent power activity classification failed\n");
+        return 119;
+    }
     constexpr uint32_t dim_timeout_ms = 60;
     constexpr uint32_t hardware_sleep_timeout_ms = 300;
 
@@ -310,7 +323,7 @@ int test_power_policy()
         return PowerPolicyInput{
             .now_ms = now_ms,
             .activity_revision = revision,
-            .agent_slept = agent_slept,
+            .agent_idle_allowed = agent_slept,
             .blocked = blocked,
             .display_ready = display_ready,
         };

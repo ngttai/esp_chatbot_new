@@ -300,7 +300,7 @@ void ScreenSpeakerShell::poll_power_manager()
     PowerManager::get_instance().update({
         .now_ms = lv_tick_get(),
         .activity_revision = speaker_ui_get_activity_revision(),
-        .agent_slept = AI_Agents::get_instance().is_slept(),
+        .agent_idle_allowed = !AI_Agents::get_instance().blocks_power_idle(),
         .blocked = blocked,
         .display_ready = brightness >= 0,
     });

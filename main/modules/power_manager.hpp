@@ -12,7 +12,7 @@
 struct PowerManagerInput {
     uint32_t now_ms = 0;
     uint32_t activity_revision = 0;
-    bool agent_slept = false;
+    bool agent_idle_allowed = false;
     bool blocked = false;
     bool display_ready = false;
 };
