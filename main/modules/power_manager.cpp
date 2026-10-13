@@ -54,11 +54,14 @@ void PowerManager::start(uint32_t display_output_id)
     );
 }
 
-void PowerManager::update(const PowerManagerInput &input)
+void PowerManager::update(const PowerManagerInput &source_input)
 {
     if (!started_) {
         return;
     }
+
+    PowerManagerInput input = source_input;
+    input.activity_revision += external_activity_revision_.load(std::memory_order_relaxed);
 
     if (restore_pending_) {
         if (static_cast<uint32_t>(input.now_ms - restore_retry_ms_) < 1000) {
