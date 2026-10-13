@@ -225,6 +225,7 @@ if(BUILD_TESTING)
         --self-test-ui-observability
         --self-test-idle-coordinator
         --self-test-power-policy
+        --self-test-lift-to-wake
         --self-test-settings-bar
         --self-test-settings-no-scroll
         --self-test-settings-pages

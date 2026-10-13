@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 #include "imu_gesture.hpp"
+#include "lift_to_wake_detector.hpp"
+#include "power_manager.hpp"
+#include "sdkconfig.h"
 
 #include <cstring>
 
@@ -24,8 +27,14 @@ constexpr uint32_t ANY_MOTION_EMOTE_DURATION_MS = 2500;
 constexpr char ANY_MOTION_EMOTE[] = "confused";
 constexpr EventBits_t INTERRUPT_EVENT = BIT0;
 constexpr size_t MAX_WRITE_LENGTH = 64;
+constexpr uint32_t LIFT_SAMPLE_PERIOD_MS = 50;
+constexpr float ACCEL_COUNTS_PER_G = 8192.0F;
+constexpr uint32_t SETTINGS_STORAGE_TIMEOUT_MS = 3000;
+constexpr char SETTINGS_NAMESPACE[] = "imu_gesture";
+constexpr char LIFT_SETTING_KEY[] = "lift_enabled";
 
 using EmoteHelper = esp_brookesia::service::helper::ExpressionEmote;
+using StorageHelper = esp_brookesia::service::helper::Storage;
 
 } // namespace
 
@@ -90,10 +99,17 @@ void ImuGesture::task_entry(void *context)
 
 bool ImuGesture::configure_any_motion()
 {
-    uint8_t sensors[] = {BMI2_ACCEL, BMI2_ANY_MOTION};
-    int8_t result = bmi270_sensor_enable(sensors, sizeof(sensors), &device_);
+    bmi2_sens_config accel_config = {};
+    accel_config.type = BMI2_ACCEL;
+    int8_t result = bmi270_get_sensor_config(&accel_config, 1, &device_);
+    if (result != BMI2_OK) return false;
+    accel_config.cfg.acc.range = BMI2_ACC_RANGE_4G;
+    accel_config.cfg.acc.odr = BMI2_ACC_ODR_50HZ;
+    accel_config.cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4;
+    accel_config.cfg.acc.filter_perf = BMI2_PERF_OPT_MODE;
+    result = bmi270_set_sensor_config(&accel_config, 1, &device_);
     if (result != BMI2_OK) {
-        ESP_LOGE(TAG, "Failed to enable BMI270 accelerometer/any-motion: %d", result);
+        ESP_LOGE(TAG, "Failed to configure lift-to-wake accelerometer: %d", result);
         return false;
     }
 
@@ -141,6 +157,14 @@ bool ImuGesture::configure_any_motion()
         ESP_LOGE(TAG, "Failed to map BMI270 any-motion interrupt: %d", result);
         return false;
     }
+
+    // Enable detection only after the accelerometer and interrupt path are configured.
+    uint8_t sensors[] = {BMI2_ACCEL, BMI2_ANY_MOTION};
+    result = bmi270_sensor_enable(sensors, sizeof(sensors), &device_);
+    if (result != BMI2_OK) {
+        ESP_LOGE(TAG, "Failed to enable BMI270 accelerometer/any-motion: %d", result);
+        return false;
+    }
     return true;
 }
 
@@ -150,6 +174,7 @@ bool ImuGesture::init()
         return true;
     }
 
+    load_settings();
     void *i2c_bus = nullptr;
     esp_err_t ret = esp_board_periph_ref_handle(ESP_BOARD_PERIPH_NAME_I2C_MASTER, &i2c_bus);
     if ((ret != ESP_OK) || (i2c_bus == nullptr)) {
@@ -245,13 +270,78 @@ bool ImuGesture::init()
     }
 
     ESP_LOGI(TAG, "BMI270 any-motion detection started on GPIO%d", BMI270_INTERRUPT_GPIO);
+    ESP_LOGI(TAG, "Lift to wake: %s, tilt=%d deg, stable=%d ms, cooldown=%d ms",
+             lift_enabled_.load() ? "enabled" : "disabled", CONFIG_EXAMPLE_IMU_LIFT_TILT_DEGREES,
+             CONFIG_EXAMPLE_IMU_LIFT_STABLE_MS, CONFIG_EXAMPLE_IMU_LIFT_COOLDOWN_MS);
+    initialized_ = true;
+    return true;
+}
+
+void ImuGesture::load_settings()
+{
+    auto result = StorageHelper::get_key_value<bool>(
+        SETTINGS_NAMESPACE, LIFT_SETTING_KEY, SETTINGS_STORAGE_TIMEOUT_MS
+    );
+    if (result) {
+        lift_enabled_ = result.value();
+    } else {
+        lift_enabled_ = true;
+        ESP_LOGI(TAG, "Lift setting not loaded; using default enabled: %s", result.error().c_str());
+    }
+}
+
+bool ImuGesture::set_lift_enabled(bool enabled)
+{
+    std::lock_guard lock(settings_mutex_);
+    auto result = StorageHelper::save_key_value(
+        SETTINGS_NAMESPACE, LIFT_SETTING_KEY, enabled, SETTINGS_STORAGE_TIMEOUT_MS
+    );
+    if (!result) {
+        ESP_LOGE(TAG, "Cannot save lift setting: %s", result.error().c_str());
+        return false;
+    }
+    lift_enabled_ = enabled;
+    ++settings_revision_;
+    ESP_LOGI(TAG, "Lift to wake: %s", enabled ? "enabled" : "disabled");
     return true;
 }
 
 void ImuGesture::run()
 {
+    LiftToWakeDetector detector(CONFIG_EXAMPLE_IMU_LIFT_TILT_DEGREES,
+                                CONFIG_EXAMPLE_IMU_LIFT_STABLE_MS,
+                                CONFIG_EXAMPLE_IMU_LIFT_COOLDOWN_MS);
+    uint32_t revision = settings_revision_.load();
+    bool sample_logged = false;
     while (true) {
-        xEventGroupWaitBits(event_group_, INTERRUPT_EVENT, pdTRUE, pdTRUE, portMAX_DELAY);
+        const EventBits_t events = xEventGroupWaitBits(
+            event_group_, INTERRUPT_EVENT, pdTRUE, pdTRUE, pdMS_TO_TICKS(LIFT_SAMPLE_PERIOD_MS)
+        );
+        const uint32_t current_revision = settings_revision_.load();
+        if (revision != current_revision) {
+            revision = current_revision;
+            detector.reset();
+        }
+        bmi2_sens_data sample = {};
+        const int8_t sample_result = bmi2_get_sensor_data(&sample, &device_);
+        if (sample_result == BMI2_OK && !sample_logged &&
+                (sample.acc.x != 0 || sample.acc.y != 0 || sample.acc.z != 0)) {
+            ESP_LOGI(TAG, "Accelerometer sample (4g range): x=%d y=%d z=%d",
+                     sample.acc.x, sample.acc.y, sample.acc.z);
+            sample_logged = true;
+        }
+        if (sample_result == BMI2_OK && lift_enabled_.load()) {
+            const uint32_t now = static_cast<uint32_t>(xTaskGetTickCount() * portTICK_PERIOD_MS);
+            if (detector.update(now, {sample.acc.x / ACCEL_COUNTS_PER_G,
+                                     sample.acc.y / ACCEL_COUNTS_PER_G,
+                                     sample.acc.z / ACCEL_COUNTS_PER_G})) {
+                PowerManager::get_instance().notify_user_activity();
+                ESP_LOGI(TAG, "Lift gesture: wake display only");
+            }
+        } else {
+            detector.reset();
+        }
+        if ((events & INTERRUPT_EVENT) == 0) continue;
 
         uint16_t interrupt_status = 0;
         const int8_t result = bmi2_get_int_status(&interrupt_status, &device_);
@@ -273,6 +363,7 @@ void ImuGesture::run()
 
 void ImuGesture::cleanup()
 {
+    initialized_ = false;
     if (task_ != nullptr) {
         vTaskDelete(task_);
         task_ = nullptr;

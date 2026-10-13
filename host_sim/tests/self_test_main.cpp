@@ -26,6 +26,7 @@
 #include "weather_adapter.hpp"
 #include "host_capabilities_config.hpp"
 #include "power_policy.hpp"
+#include "lift_to_wake_detector.hpp"
 #include "agent_power_activity.hpp"
 #include "ui_idle_coordinator.hpp"
 
@@ -198,6 +199,76 @@ int test_ui_observability(InputInjector &input)
     }
 
     std::puts("UI idle observability passed");
+    return 0;
+}
+
+int test_lift_to_wake(InputInjector &input)
+{
+    using Vector = LiftToWakeDetector::Vector;
+    constexpr Vector flat{0, 0, 1};
+    constexpr Vector tilted{0.5F, 0, 0.8660254F};
+    LiftToWakeDetector detector(25, 200, 3000);
+    for (uint32_t now = 0; now <= 1000; now += 50) {
+        if (detector.update(now, flat)) return 120;
+    }
+    // Small alternating vibrations and a brief acceleration spike cannot wake.
+    for (uint32_t now = 1050; now <= 1400; now += 50) {
+        if (detector.update(now, {now % 100 == 0 ? 0.05F : -0.05F, 0, 1})) return 121;
+    }
+    if (detector.update(1450, {0, 0, 1.8F}) ||
+            detector.update(1500, flat) || detector.update(1550, flat) ||
+            detector.update(1600, tilted) || detector.update(1750, tilted) ||
+            !detector.update(1800, tilted)) {
+        std::fprintf(stderr, "Lift threshold/stable-pose filter failed\n");
+        return 122;
+    }
+    for (uint32_t now = 1850; now <= 4900; now += 50) {
+        if (detector.update(now, tilted)) return 123;
+    }
+    if (detector.update(5000, flat) || !detector.update(5200, flat)) return 124;
+    for (uint32_t now = 5250; now <= 8000; now += 50) {
+        const Vector pose = (now / 250) % 2 == 0 ? flat : tilted;
+        if (detector.update(now, pose)) {
+            std::fprintf(stderr, "Repeated movement bypassed lift cooldown\n");
+            return 131;
+        }
+    }
+    detector.reset();
+    if (detector.update(8050, tilted) || detector.update(8200, tilted)) return 125;
+
+    LiftToWakeDetector wrapped(25, 200, 3000);
+    const uint32_t start = UINT32_MAX - 1000;
+    for (uint32_t delta = 0; delta <= 800; delta += 50) {
+        if (wrapped.update(start + delta, flat)) return 126;
+    }
+    if (wrapped.update(start + 900, tilted) ||
+            !wrapped.update(start + 1100, tilted)) return 127;
+
+    if (!show("display")) return 128;
+    input.pump(100);
+    int32_t x = 0, y = 0;
+    if (!with_ui_lock([&]() { return speaker_ui_get_lift_to_wake_switch_center(&x, &y); }) ||
+            x < 0 || x >= 360 || y < 0 || y >= 340 ||
+            !with_ui_lock([]() { return speaker_ui_is_lift_to_wake_on(); }) ||
+            !input_ok(input.click(x, y), input) ||
+            with_ui_lock([]() { return speaker_ui_is_lift_to_wake_on(); })) {
+        std::fprintf(stderr, "Lift to wake switch is not visible or does not toggle\n");
+        return 129;
+    }
+    const uint32_t before = activity_revision();
+    if (!with_ui_lock([]() { return speaker_ui_set_lift_to_wake_on(true); }) ||
+            activity_revision() != before) return 130;
+    using StorageHelper = esp_brookesia::service::helper::Storage;
+    for (bool enabled : {false, true, false}) {
+        auto saved = StorageHelper::save_key_value("lift_test", "lift_enabled", enabled, 1000);
+        auto loaded = StorageHelper::get_key_value<bool>("lift_test", "lift_enabled", 1000);
+        if (!saved || !loaded || loaded.value() != enabled) {
+            std::fprintf(stderr, "StorageService lift-setting round trip failed\n");
+            return 132;
+        }
+    }
+    if (!StorageHelper::erase_keys("lift_test", {"lift_enabled"}, 1000)) return 133;
+    std::puts("Lift to wake detector, UI and StorageService setting passed");
     return 0;
 }
 
@@ -1777,13 +1848,14 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 29> options{{
+    static constexpr std::array<std::string_view, 30> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
         "--self-test-ui-observability",
         "--self-test-idle-coordinator",
         "--self-test-power-policy",
+        "--self-test-lift-to-wake",
         "--self-test-settings-bar",
         "--self-test-settings-no-scroll",
         "--self-test-settings-pages",
@@ -1819,6 +1891,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
                   WifiAdapter *wifi_adapter, WeatherAdapter *weather_adapter)
 {
     InputInjector input(output_name, input_device);
+    if (option == "--self-test-lift-to-wake") return test_lift_to_wake(input);
     if (option == "--self-test-settings-pages") return test_settings_pages(input);
     if (option == "--self-test-hardware-test-ui") return test_hardware_test_ui();
     if (option == "--self-test-settings-bar") return test_settings_bar();

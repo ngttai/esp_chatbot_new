@@ -73,6 +73,10 @@ the visual parity test when present. The v1.1 overrides record the intentional
 single-page launcher (`Clock`, `Settings`), its pressed state, and the Self-test
 entry added to Settings without replacing the imported Phase 0 references.
 
+The approved Display override contains manual Brightness and the enabled
+Lift to wake switch, with no Auto adjust row. Its SHA-256 is
+`c39f11bc9a4b04f57ca3cb72c615fc7043d749c7cb80f7dfe7effe7f2589c77d`.
+
 The screenshots use the reference runner's standard capture delay (30 UI pumps at 10 ms). The Clock image was captured at 2026-09-18 22:28:39 +07:00 and contains live system time, so Phase 4 must compare its layout and non-time pixels rather than expecting a future whole-file hash match. WLAN screenshots likewise preserve the exact early state produced by the standard 300 ms capture delay, before the mocked multi-second reveal sequence settles.
 
 ## Acceptance

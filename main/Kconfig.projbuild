@@ -98,6 +98,21 @@ menu "Example Configuration"
             Time without physical LCD input before navigation screens may
             return to Home. Clock and critical flows are not redirected.
 
+    config EXAMPLE_IMU_LIFT_TILT_DEGREES
+        int "Lift-to-wake tilt threshold (degrees)"
+        range 10 60
+        default 25
+
+    config EXAMPLE_IMU_LIFT_STABLE_MS
+        int "Lift-to-wake stable pose duration (ms)"
+        range 100 1000
+        default 200
+
+    config EXAMPLE_IMU_LIFT_COOLDOWN_MS
+        int "Lift-to-wake cooldown (ms)"
+        range 1000 10000
+        default 3000
+
     config EXAMPLE_PWR_DIM_TIMEOUT_MS
         int "Power dim timeout (ms)"
         range 1000 3600000

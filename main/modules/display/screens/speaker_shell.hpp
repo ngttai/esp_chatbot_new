@@ -52,6 +52,7 @@ private:
     void poll_memory();
     void poll_battery();
     void poll_touch_sensor();
+    void poll_lift_to_wake();
     void poll_self_test();
     void poll_factory_reset();
     void poll_display_mode();
@@ -109,6 +110,9 @@ private:
     uint32_t battery_revision_ = 0;
     bool touch_sensor_user_enabled_ = true;
     bool touch_sensor_effective_enabled_ = true;
+    bool lift_setting_initialized_ = false;
+    std::atomic_bool lift_setting_in_flight_{false};
+    std::atomic_bool lift_setting_result_ready_{false};
     bool factory_reset_handler_attached_ = false;
     bool factory_reset_in_progress_ = false;
     std::atomic_bool self_test_running_{false};
