@@ -11,6 +11,7 @@
 #include "brookesia/lib_utils.hpp"
 #include "brookesia/service_manager.hpp"
 #include "modules/wifi_provisioning.hpp"
+#include "modules/wifi_control.hpp"
 #include "modules/ai_agents.hpp"
 #include "modules/general_services.hpp"
 #include "modules/battery_monitor.hpp"
@@ -82,6 +83,7 @@ extern "C" void app_main(void)
         BROOKESIA_CHECK_FALSE_EXIT(service_manager.start(), "Failed to start ServiceManager");
 
         GeneralServices::get_instance().start_device();
+        WifiControl::get_instance().init();
 
         /* Import an optional one-time weather configuration from the SD card,
          * then use the persisted NVS copy on later boots. */

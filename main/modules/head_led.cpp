@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 #include "head_led.hpp"
+#include "wifi_control.hpp"
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -176,6 +177,7 @@ bool HeadLed::init()
         return false;
     }
 
+    wifi_enabled_ = WifiControl::get_instance().is_enabled();
     initialized_.store(true);
     set_wifi_connected(false);
     ESP_LOGI(TAG, "VoCat head LED started on GPIO%d", HEAD_LED_GPIO);
@@ -203,7 +205,7 @@ void HeadLed::set_wifi_connected(bool connected)
         return;
     }
     std::lock_guard lock(mutex_);
-    wifi_connected_ = connected;
+    wifi_connected_ = wifi_enabled_ && connected;
     apply_pattern_locked();
     ESP_LOGI(TAG, "Wi-Fi LED state: %s", connected ? "connected" : "disconnected");
 }

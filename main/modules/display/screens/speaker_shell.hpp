@@ -134,6 +134,7 @@ private:
     bool last_wlan_enabled_ = true;
     uint16_t wifi_state_poll_count_ = 0;
     std::atomic_bool wifi_action_in_flight_{false};
+    std::atomic_bool wifi_action_result_ready_{false};
     std::atomic_bool wifi_state_request_in_flight_{false};
     std::atomic_bool wifi_scan_request_in_flight_{false};
     std::atomic_bool wifi_scan_stop_in_flight_{false};
