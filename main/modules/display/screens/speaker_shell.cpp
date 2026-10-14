@@ -1036,6 +1036,8 @@ void ScreenSpeakerShell::poll_wifi()
 {
     using WifiHelper = service::helper::Wifi;
 
+    speaker_ui_set_wifi_connected(WifiHelper::is_running() &&
+        wifi_state_.load() == static_cast<int>(WifiHelper::GeneralState::Connected));
     if (!WifiHelper::is_running()) {
         return;
     }

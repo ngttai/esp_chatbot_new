@@ -136,6 +136,7 @@ static lv_obj_t *quick_volume_button, *quick_brightness_button;
  * (no mute) -- mirrors firmware's QuickSettings::VolumeLevel / BrightnessLevel enums. */
 static int quick_volume_level = -1;
 static int quick_brightness_level = 0;
+static bool quick_wifi_connected = false;
 static lv_obj_t *settings_wlan_password;
 static lv_obj_t *wlan_keyboard_container, *wlan_keyboard;
 static lv_obj_t *softap_qr, *softap_info_label;
@@ -1105,6 +1106,7 @@ static void wlan_entry_settle_cb(lv_timer_t *t)
 {
     LV_UNUSED(t);
     if(wlan_connected_status_label != NULL) lv_label_set_text(wlan_connected_status_label, "Connected");
+    speaker_ui_set_wifi_connected(true);
     wlan_entry_settle_timer = NULL;
 }
 
@@ -1163,14 +1165,25 @@ static void set_wlan_enabled(bool enabled, lv_obj_t *source)
         else lv_obj_remove_state(quick_wifi_button, LV_STATE_CHECKED);
     }
 
-    /* Simplified two-state version of firmware's setWifiIconState(): hidden when WLAN is
-     * off, shown (using the component's default "no signal" artwork, the only status
-     * icon asset vendored) when on -- the simulator has no real signal-level data to
-     * pick between firmware's extra SIGNAL_1/2/3 icon variants. */
-    if(quick_wifi_status_icon != NULL) {
-        if(enabled) lv_obj_remove_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
-    }
+    if(!enabled) quick_wifi_connected = false;
+    speaker_ui_set_wifi_connected(quick_wifi_connected);
+}
+
+void speaker_ui_set_wifi_connected(bool connected)
+{
+    quick_wifi_connected = wlan_enabled && connected;
+    if(quick_wifi_status_icon == NULL) return;
+    if(!wlan_enabled) lv_obj_add_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_image_set_src(quick_wifi_status_icon, quick_wifi_connected ?
+                     (const void *)LV_SYMBOL_WIFI :
+                     (const void *)&speaker_image_middle_quick_settings_wifi_close_20_20);
+}
+
+int speaker_ui_get_quick_wifi_status(void)
+{
+    if(quick_wifi_status_icon == NULL || lv_obj_has_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN)) return 0;
+    return quick_wifi_connected ? 2 : 1;
 }
 
 static void wlan_switch_changed(lv_event_t *e)

@@ -59,6 +59,9 @@ typedef enum {
 void speaker_ui_create(void);
 void speaker_ui_set_input(lv_indev_t *input);
 void speaker_ui_set_wifi_managed_externally(bool managed);
+void speaker_ui_set_wifi_connected(bool connected);
+/* Quick status: 0 = WLAN off, 1 = disconnected, 2 = connected. */
+int speaker_ui_get_quick_wifi_status(void);
 bool speaker_ui_is_launcher_active(void);
 bool speaker_ui_is_idle_active(void);
 bool speaker_ui_is_screen_active(const char *screen_name);

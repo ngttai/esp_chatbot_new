@@ -845,6 +845,7 @@ int test_wlan_toggle(InputInjector &input)
         std::fprintf(stderr, "Quick Settings Wi-Fi button should turn off in sync with the WLAN switch\n");
         return 20;
     }
+    if (with_ui_lock([]() { speaker_ui_set_wifi_connected(true); return speaker_ui_get_quick_wifi_status(); }) != 0) return 41;
     if (!with_ui_lock([&]() { return speaker_ui_get_quick_wifi_button_center(&x, &y); })) {
         std::fprintf(stderr, "Could not locate the Quick Settings Wi-Fi button\n");
         return 21;
@@ -857,6 +858,10 @@ int test_wlan_toggle(InputInjector &input)
         std::fprintf(stderr, "Clicking the Quick Settings Wi-Fi button should turn WLAN back on\n");
         return 22;
     }
+    if (with_ui_lock([]() { return speaker_ui_get_quick_wifi_status(); }) != 1) return 42;
+    if (with_ui_lock([]() { speaker_ui_set_wifi_connected(true); return speaker_ui_get_quick_wifi_status(); }) != 2) return 43;
+    if (!with_ui_lock([]() { return speaker_ui_is_quick_wifi_on(); })) return 44;
+    if (with_ui_lock([]() { speaker_ui_set_wifi_connected(false); return speaker_ui_get_quick_wifi_status(); }) != 1) return 45;
 
     show("wlan");
     input.pump(1100);
