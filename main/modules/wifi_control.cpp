@@ -59,11 +59,13 @@ bool WifiControl::apply_enabled(bool enabled, bool &actual)
 {
     if (!enabled) {
         // Drain the encoder and stop the conversation before removing its network.
+        // Stop is valid in both stable and transitional Agent states.
         auto state = AgentHelper::call_function_sync<std::string>(
             AgentHelper::FunctionId::GetGeneralState, Timeout(1000));
         AgentHelper::GeneralState parsed = AgentHelper::GeneralState::Max;
         if (state) (void)BROOKESIA_DESCRIBE_STR_TO_ENUM(state.value(), parsed);
-        if (parsed == AgentHelper::GeneralState::Started || parsed == AgentHelper::GeneralState::Slept) {
+        if (parsed != AgentHelper::GeneralState::Ready && parsed != AgentHelper::GeneralState::TimeSyncing &&
+                parsed != AgentHelper::GeneralState::Max) {
             if (EncoderHelper::is_running()) {
                 auto paused = EncoderHelper::call_function_sync(EncoderHelper::FunctionId::Pause, Timeout(1000));
                 if (!paused) BROOKESIA_LOGW("Failed to pause encoder: %1%", paused.error());
@@ -71,7 +73,7 @@ bool WifiControl::apply_enabled(bool enabled, bool &actual)
             }
             auto stopped = AgentHelper::call_function_sync(
                 AgentHelper::FunctionId::TriggerGeneralAction,
-                BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Stop), Timeout(5000));
+                BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Stop), Timeout(8000));
             if (!stopped) BROOKESIA_LOGW("Failed to stop Agent: %1%", stopped.error());
         }
         (void)WifiHelper::call_function_sync(WifiHelper::FunctionId::TriggerScanStop, Timeout(1000));

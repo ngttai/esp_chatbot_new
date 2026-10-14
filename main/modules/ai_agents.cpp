@@ -25,6 +25,7 @@
 #include "brookesia/service_helper/media/bt_speaker.hpp"
 #include "private/utils.hpp"
 #include "modules/display/display.hpp"
+#include "modules/wifi_control.hpp"
 #include "ai_agents.hpp"
 
 using namespace esp_brookesia;
@@ -198,8 +199,14 @@ void AI_Agents::init_coze()
             BROOKESIA_LOGE("Insufficient credits balance");
             BROOKESIA_LOGW("Try to restart agent in %1% seconds...", agent_restart_delay_s_);
 
-            auto task_func = []() {
+            const auto wifi_request_revision = WifiControl::get_instance().request_revision();
+            auto task_func = [this, wifi_request_revision]() {
                 BROOKESIA_LOG_TRACE_GUARD();
+                if (!is_wifi_connected() ||
+                        !WifiControl::get_instance().is_request_current(wifi_request_revision, true)) {
+                    BROOKESIA_LOGI("Skip stale Coze agent restart task");
+                    return;
+                }
                 BROOKESIA_LOGW("Restarting agent...");
                 AgentHelper::call_function_async(
                     AgentHelper::FunctionId::TriggerGeneralAction,
@@ -391,15 +398,22 @@ void AI_Agents::process_agent_general_unexpected_events()
 
         switch (general_event_enum) {
         case AgentHelper::GeneralEvent::Stopped: {
-            if (!is_wifi_connected()) {
-                BROOKESIA_LOGW("WiFi is not connected, skip restart agent");
+            auto &wifi_control = WifiControl::get_instance();
+            const auto wifi_request_revision = wifi_control.request_revision();
+            if (!is_wifi_connected() || !wifi_control.is_request_current(wifi_request_revision, true)) {
+                BROOKESIA_LOGW("WiFi is not requested and connected, skip restart agent");
                 return;
             }
 
             BROOKESIA_LOGW("Try to restart agent in %1% seconds...", agent_restart_delay_s_);
 
-            auto task_func = []() {
+            auto task_func = [this, wifi_request_revision]() {
                 BROOKESIA_LOG_TRACE_GUARD();
+                if (!is_wifi_connected() ||
+                        !WifiControl::get_instance().is_request_current(wifi_request_revision, true)) {
+                    BROOKESIA_LOGI("Skip stale agent restart task");
+                    return;
+                }
                 BROOKESIA_LOGW("Restarting agent...");
                 auto result = AgentHelper::call_function_sync(
                                   AgentHelper::FunctionId::TriggerGeneralAction,
@@ -451,8 +465,14 @@ void AI_Agents::process_agent_general_suspend_status_changed()
     }
 }
 
-bool AI_Agents::start_agent()
+bool AI_Agents::start_agent(uint32_t wifi_request_revision)
 {
+    auto &wifi_control = WifiControl::get_instance();
+    if (!is_wifi_connected() || !wifi_control.is_request_current(wifi_request_revision, true)) {
+        BROOKESIA_LOGI("Skip stale agent start task");
+        return true;
+    }
+
     // The transport may connect at boot, but audio must remain closed until a
     // touch or wake-word event explicitly wakes the agent.
     is_boot_idle_ = true;
@@ -468,6 +488,11 @@ bool AI_Agents::start_agent()
                                BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Activate), activate_handler
                            );
     BROOKESIA_CHECK_FALSE_RETURN(activate_result, false, "Failed to activate agent");
+
+    if (!is_wifi_connected() || !wifi_control.is_request_current(wifi_request_revision, true)) {
+        BROOKESIA_LOGI("WiFi request changed after Agent Activate; skip Start");
+        return true;
+    }
 
     auto start_handler = [this](service::FunctionResult && result) {
         if (!result.success) {
@@ -821,6 +846,10 @@ void AI_Agents::process_emote_when_general_action_triggered()
             );
             break;
         case AgentHelper::GeneralAction::Activate:
+            if (!WifiControl::get_instance().requested_enabled()) {
+                BROOKESIA_LOGI("Ignore Agent Activate UI while WLAN is requested off");
+                break;
+            }
             EmoteHelper::call_function_async(EmoteHelper::FunctionId::SetEmoji, "winking");
             EmoteHelper::call_function_async(
                 EmoteHelper::FunctionId::SetEventMessage,
@@ -828,6 +857,10 @@ void AI_Agents::process_emote_when_general_action_triggered()
             );
             break;
         case AgentHelper::GeneralAction::Start:
+            if (!WifiControl::get_instance().requested_enabled()) {
+                BROOKESIA_LOGI("Ignore Agent Start UI while WLAN is requested off");
+                break;
+            }
             power_starting_ = !has_agent_error_.load() && !is_stopped_.load();
             is_sleeping_ = false;
             is_slept_ = false;
@@ -937,6 +970,11 @@ void AI_Agents::process_emote_when_general_event_happened()
             is_listening_ = false;
             has_agent_error_ = false;
             emote_state_ = EmoteState::Max;
+
+            if (!WifiControl::get_instance().requested_enabled()) {
+                BROOKESIA_LOGI("Agent Started after WLAN off request; wait for queued Stop");
+                break;
+            }
             refresh_emote_state();
 
             // Keep boot and background reconnect audio closed until user wake-up.
@@ -979,7 +1017,7 @@ void AI_Agents::process_emote_when_general_event_happened()
             is_listening_ = false;
             is_speaking_ = false;
             is_thinking_ = false;
-            if (is_unexpected) {
+            if (is_unexpected && WifiControl::get_instance().requested_enabled()) {
                 is_stopped_ = false;
                 has_agent_error_ = true;
                 refresh_emote_state();
@@ -991,6 +1029,12 @@ void AI_Agents::process_emote_when_general_event_happened()
             } else {
                 is_stopped_ = true;
                 refresh_emote_state();
+                if (!WifiControl::get_instance().requested_enabled()) {
+                    EmoteHelper::call_function_async(
+                        EmoteHelper::FunctionId::SetEventMessage,
+                        BROOKESIA_DESCRIBE_TO_STR(EmoteHelper::EventMessageType::Idle)
+                    );
+                }
             }
             break;
         }
@@ -1386,19 +1430,36 @@ void AI_Agents::process_wifi_events()
 
         switch (wifi_event_enum) {
         case WifiHelper::GeneralEvent::Connected: {
-            emote_message = "[WiFi] Connected";
             is_wifi_connected_ = true;
-            task_func = [this]() {
+            auto &wifi_control = WifiControl::get_instance();
+            const auto wifi_request_revision = wifi_control.request_revision();
+            if (!wifi_control.is_request_current(wifi_request_revision, true)) {
+                BROOKESIA_LOGI("WiFi connected after WLAN off request; skip Agent start");
+                break;
+            }
+            emote_message = "[WiFi] Connected";
+            task_func = [this, wifi_request_revision]() {
                 BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
-                BROOKESIA_CHECK_FALSE_EXIT(start_agent(), "Failed to start agent");
+                BROOKESIA_CHECK_FALSE_EXIT(start_agent(wifi_request_revision), "Failed to start agent");
             };
             break;
         }
         case WifiHelper::GeneralEvent::Disconnected: {
             emote_message = "[WiFi] Disconnected";
             is_wifi_connected_ = false;
-            task_func = [this]() {
+            auto &wifi_control = WifiControl::get_instance();
+            const auto wifi_request_revision = wifi_control.request_revision();
+            if (!wifi_control.is_request_current(wifi_request_revision, true)) {
+                BROOKESIA_LOGI("WLAN was deliberately disabled; controller owns Agent Stop");
+                break;
+            }
+            task_func = [this, wifi_request_revision]() {
                 BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+
+                if (!WifiControl::get_instance().is_request_current(wifi_request_revision, true)) {
+                    BROOKESIA_LOGI("Skip stale Agent stop after WiFi disconnect");
+                    return;
+                }
 
                 // Do not queue Stop while Activate/Start is still in flight.
                 // Such a request can survive a quick Wi-Fi reconnect and stop

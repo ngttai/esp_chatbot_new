@@ -49,6 +49,12 @@ public:
         return state.requested != state.confirmed || (state.dirty && state.save_attempts < 3);
     }
 
+    bool is_request_current(uint32_t revision, bool enabled) const
+    {
+        const auto state = snapshot();
+        return state.revision == revision && state.requested == enabled;
+    }
+
     void transition_done(uint32_t revision, bool actual, bool succeeded)
     {
         std::lock_guard lock(mutex_);

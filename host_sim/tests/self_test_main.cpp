@@ -546,8 +546,10 @@ int test_wifi_control_state()
     state.request(false);
     const auto first = state.snapshot();
     if (!state.pending() || !first.confirmed) return 141;
+    if (!state.is_request_current(first.revision, false)) return 155;
     // A newer request survives an older completion and needs its own confirmation.
     state.request(true);
+    if (state.is_request_current(first.revision, false)) return 156;
     state.transition_done(first.revision, false, true);
     if (!state.snapshot().requested || state.snapshot().confirmed || !state.pending()) return 142;
     const auto second = state.snapshot();
