@@ -705,6 +705,12 @@ static void quick_brightness_long_pressed(lv_event_t *e)
     load(settings_display);
 }
 
+static void quick_wifi_long_pressed(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    load(settings_wlan);
+}
+
 static void create_quick(void)
 {
     quick = lv_obj_create(lv_layer_top());
@@ -727,15 +733,17 @@ static void create_quick(void)
     /* Initial checked state is applied later by set_wlan_enabled(), once every screen
      * that shares the WLAN on/off state (this button, the Settings switch, the WLAN
      * screen's groups) has been created. */
-    lv_obj_add_event_cb(quick_wifi_button, quick_wifi_button_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_remove_flag(quick_wifi_button, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_add_event_cb(quick_wifi_button, quick_wifi_button_changed, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(quick_wifi_button, quick_wifi_long_pressed, LV_EVENT_LONG_PRESSED, NULL);
 
     /* Volume/Brightness buttons are siblings 1 and 2 of `buttons` (wifi is sibling 0),
      * matching ui_comp_quicksettings.c's cui_ContainerButtonsVolume/Brightness order. */
     quick_volume_button = lv_obj_get_child(lv_obj_get_child(buttons, 1), 0);
     quick_brightness_button = lv_obj_get_child(lv_obj_get_child(buttons, 2), 0);
-    lv_obj_add_event_cb(quick_volume_button, quick_volume_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(quick_volume_button, quick_volume_clicked, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(quick_volume_button, quick_volume_long_pressed, LV_EVENT_LONG_PRESSED, NULL);
-    lv_obj_add_event_cb(quick_brightness_button, quick_brightness_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(quick_brightness_button, quick_brightness_clicked, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(quick_brightness_button, quick_brightness_long_pressed, LV_EVENT_LONG_PRESSED, NULL);
     quick_update_volume_icon();
     quick_update_brightness_icon();
@@ -1174,7 +1182,7 @@ static void wlan_switch_changed(lv_event_t *e)
 static void quick_wifi_button_changed(lv_event_t *e)
 {
     lv_obj_t *btn = lv_event_get_target_obj(e);
-    set_wlan_enabled(lv_obj_has_state(btn, LV_STATE_CHECKED), btn);
+    set_wlan_enabled(!lv_obj_has_state(btn, LV_STATE_CHECKED), NULL);
 }
 
 static void wlan_network_selected(lv_event_t *e)

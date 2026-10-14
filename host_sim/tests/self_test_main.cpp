@@ -981,6 +981,7 @@ int test_quick_buttons(InputInjector &input)
         std::fprintf(stderr, "Could not locate the Quick Settings Volume button\n");
         return 33;
     }
+    const int volume_before_hold = with_ui_lock([]() { return speaker_ui_get_quick_volume_level(); });
     if (!input_ok(input.press(x, y), input)) return 1;
     input.pump(120);
     if (!input_ok(input.release(), input)) return 1;
@@ -1007,7 +1008,25 @@ int test_quick_buttons(InputInjector &input)
         return 36;
     }
 
-    std::puts("Quick Settings Volume/Brightness passed");
+    if (with_ui_lock([]() { return speaker_ui_get_quick_volume_level(); }) != volume_before_hold) return 37;
+    if (with_ui_lock([]() { return speaker_ui_get_quick_brightness_level(); }) != expect_brightness[sizeof(expect_brightness) / sizeof(expect_brightness[0]) - 1]) return 38;
+    for (bool enabled : {false, true}) {
+        show("quick");
+        input.pump(20);
+        if (!with_ui_lock([&]() { return speaker_ui_get_quick_wifi_button_center(&x, &y); })) return 39;
+        if (with_ui_lock([]() { return speaker_ui_is_quick_wifi_on(); }) != enabled) {
+            if (!input_ok(input.click(x, y), input)) return 1;
+            input.pump(20);
+        }
+        if (!input_ok(input.press(x, y), input)) return 1;
+        input.pump(120);
+        if (!input_ok(input.release(), input)) return 1;
+        input.pump(20);
+        if (!active("wlan") || active("quick") ||
+            with_ui_lock([]() { return speaker_ui_is_wlan_on(); }) != enabled ||
+            with_ui_lock([]() { return speaker_ui_is_quick_wifi_on(); }) != enabled) return 40;
+    }
+    std::puts("Quick Settings short-click and long-press passed");
     return 0;
 }
 
