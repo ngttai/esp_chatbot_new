@@ -647,9 +647,39 @@ static void create_launcher(void)
     page_index = 0; render_page();
 }
 
+static void reset_scroll_tree(lv_obj_t *obj)
+{
+    if(obj == NULL) return;
+    if(lv_obj_has_flag(obj, LV_OBJ_FLAG_SCROLLABLE) && lv_obj_get_scroll_dir(obj) == LV_DIR_VER) {
+        lv_obj_stop_scroll_anim(obj);
+        lv_obj_scroll_to(obj, 0, 0, LV_ANIM_OFF);
+    }
+    for(uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        reset_scroll_tree(lv_obj_get_child(obj, i));
+    }
+}
+
+static void home_loaded(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    lv_obj_t *screens[] = {
+        launcher, settings, settings_wlan, settings_wlan_verify, settings_softap,
+        settings_sound, settings_display, settings_about, settings_self_test,
+        settings_developer, settings_restore, ai, timer_screen
+    };
+    for(size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); i++) {
+        reset_scroll_tree(screens[i]);
+    }
+    if(page_index != 0) {
+        page_index = 0;
+        render_page();
+    }
+}
+
 static void create_idle(void)
 {
     idle = lv_obj_create(NULL);
+    lv_obj_add_event_cb(idle, home_loaded, LV_EVENT_SCREEN_LOADED, NULL);
     lv_obj_t *content = screen_content(idle, lv_color_hex(0x000000));
     lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(content, show_launcher_long, LV_EVENT_LONG_PRESSED, NULL);
@@ -1959,20 +1989,19 @@ bool speaker_ui_show(const char *name)
     }
     else if(!strcmp(name, "settings") || !strcmp(name, "settings-bottom")) {
         lv_screen_load(settings);
-        lv_obj_update_layout(settings_scroller);
-        lv_obj_scroll_to_y(settings_scroller,
-                           !strcmp(name, "settings-bottom") ?
-                               lv_obj_get_scroll_y(settings_scroller) + lv_obj_get_scroll_bottom(settings_scroller) : 0,
-                           LV_ANIM_OFF);
+        if(!strcmp(name, "settings-bottom")) {
+            lv_obj_update_layout(settings_scroller);
+            lv_obj_scroll_to_y(settings_scroller,
+                lv_obj_get_scroll_y(settings_scroller) + lv_obj_get_scroll_bottom(settings_scroller), LV_ANIM_OFF);
+        }
     }
     else if(!strcmp(name, "wlan") || !strcmp(name, "wlan-bottom")) {
         lv_screen_load(settings_wlan);
-        lv_obj_update_layout(settings_wlan_scroller);
-        lv_obj_scroll_to_y(settings_wlan_scroller,
-                           !strcmp(name, "wlan-bottom") ?
-                               lv_obj_get_scroll_y(settings_wlan_scroller) +
-                                   lv_obj_get_scroll_bottom(settings_wlan_scroller) : 0,
-                           LV_ANIM_OFF);
+        if(!strcmp(name, "wlan-bottom")) {
+            lv_obj_update_layout(settings_wlan_scroller);
+            lv_obj_scroll_to_y(settings_wlan_scroller,
+                lv_obj_get_scroll_y(settings_wlan_scroller) + lv_obj_get_scroll_bottom(settings_wlan_scroller), LV_ANIM_OFF);
+        }
     }
     else if(!strcmp(name, "wlan-connect")) lv_screen_load(settings_wlan_verify);
     else if(!strcmp(name, "softap")) lv_screen_load(settings_softap);

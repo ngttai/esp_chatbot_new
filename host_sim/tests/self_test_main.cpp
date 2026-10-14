@@ -506,6 +506,7 @@ int test_settings_pages(InputInjector &input)
     }};
 
     for (const auto &test_case : cases) {
+        show("idle");
         show(test_case.start);
         input.pump(30);
         if (!input_ok(input.click(180, test_case.y), input)) return 1;
@@ -531,6 +532,68 @@ int test_settings_pages(InputInjector &input)
         }
     }
     std::puts("Settings child-page navigation passed");
+    return 0;
+}
+
+int drag(InputInjector &input, int start_x, int start_y, int end_x, int end_y,
+         int step, int pump_per_step, int settle);
+
+int test_home_scroll_reset(InputInjector &input)
+{
+    auto scroll_state = [](bool move_to_bottom) {
+        auto visit = [&](auto &&self, lv_obj_t *obj) -> int32_t {
+            int32_t total = 0;
+            if (lv_obj_has_flag(obj, LV_OBJ_FLAG_SCROLLABLE)) {
+                if (move_to_bottom) {
+                    lv_obj_update_layout(obj);
+                    lv_obj_scroll_to_y(obj, lv_obj_get_scroll_y(obj) + lv_obj_get_scroll_bottom(obj), LV_ANIM_OFF);
+                }
+                total += std::abs(lv_obj_get_scroll_y(obj));
+            }
+            for (uint32_t i = 0; i < lv_obj_get_child_count(obj); ++i) total += self(self, lv_obj_get_child(obj, i));
+            return total;
+        };
+        return visit(visit, lv_screen_active());
+    };
+    show("settings-bottom");
+    input.pump(30);
+    const int32_t parent_scroll = with_ui_lock([]() { return speaker_ui_get_settings_scroll_y(); });
+    if (parent_scroll <= 0 || !input_ok(input.click(180, 112), input) || !active("about")) return 131;
+    if (with_ui_lock([&]() { return scroll_state(true); }) <= 0) return 132;
+    if (!input_ok(input.click(180, 38), input) || !active("settings")) return 133;
+    if (with_ui_lock([]() { return speaker_ui_get_settings_scroll_y(); }) != parent_scroll) return 134;
+    // Leaving for Launcher does not end the navigation session.
+    if (drag(input, 180, 350, 180, 210, -10, 2, 30)) return 1;
+    input.pump(30);
+    if (!with_ui_lock([]() { return speaker_ui_is_launcher_active(); })) return 135;
+    show("settings");
+    if (with_ui_lock([]() { return speaker_ui_get_settings_scroll_y(); }) != parent_scroll) return 136;
+    show("launcher");
+    if (drag(input, 180, 350, 180, 210, -10, 2, 30)) return 1;
+    input.pump(30);
+    if (!with_ui_lock([]() { return speaker_ui_is_idle_active(); })) return 137;
+    for (const char *screen : {"settings", "about"}) {
+        show(screen);
+        if (with_ui_lock([&]() { return scroll_state(false); }) != 0) return 138;
+    }
+    // Programmatic Home is the same entry point used by UI timeout.
+    for (const char *screen : {"settings", "wlan", "about", "self-test", "developer", "restore", "sound", "display", "softap", "wlan-connect"}) {
+        show(screen);
+        with_ui_lock([&]() { scroll_state(true); });
+    }
+    const int brightness = with_ui_lock([]() { return speaker_ui_get_quick_brightness_level(); });
+    const int volume = with_ui_lock([]() { return speaker_ui_get_quick_volume_level(); });
+    const bool wlan = with_ui_lock([]() { return speaker_ui_is_wlan_on(); });
+    show("idle");
+    for (const char *screen : {"settings", "wlan", "about", "self-test", "developer", "restore", "sound", "display", "softap", "wlan-connect"}) {
+        show(screen);
+        if (with_ui_lock([&]() { return scroll_state(false); }) != 0) return 139;
+    }
+    if (!with_ui_lock([&]() {
+        return speaker_ui_launcher_page() == 0 && speaker_ui_get_quick_brightness_level() == brightness &&
+            speaker_ui_get_quick_volume_level() == volume && speaker_ui_is_wlan_on() == wlan;
+    })) return 140;
+    std::puts("Home scroll reset and Back position preservation passed");
     return 0;
 }
 
@@ -1890,7 +1953,7 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 30> options{{
+    static constexpr std::array<std::string_view, 31> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -1901,6 +1964,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-settings-bar",
         "--self-test-settings-no-scroll",
         "--self-test-settings-pages",
+        "--self-test-home-scroll-reset",
         "--self-test-quick-gesture",
         "--self-test-quick-close-gesture",
         "--self-test-wlan-toggle",
@@ -1935,6 +1999,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
     InputInjector input(output_name, input_device);
     if (option == "--self-test-lift-to-wake") return test_lift_to_wake(input);
     if (option == "--self-test-settings-pages") return test_settings_pages(input);
+    if (option == "--self-test-home-scroll-reset") return test_home_scroll_reset(input);
     if (option == "--self-test-hardware-test-ui") return test_hardware_test_ui();
     if (option == "--self-test-settings-bar") return test_settings_bar();
     if (option == "--self-test-idle") return test_idle(input);
