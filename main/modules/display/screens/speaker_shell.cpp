@@ -27,6 +27,7 @@
 #include "modules/head_led.hpp"
 #include "modules/ai_agents.hpp"
 #include "modules/imu_gesture.hpp"
+#include "modules/wifi_preferences.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/weather_config.hpp"
 #include "modules/developer_mode.hpp"
@@ -202,6 +203,7 @@ bool ScreenSpeakerShell::start(
     BROOKESIA_CHECK_NULL_RETURN(input, false, "LVGL pointer input is not available");
     BROOKESIA_CHECK_NULL_RETURN(task_scheduler, false, "Backend task scheduler is not available");
 
+    const bool saved_wlan_enabled = wifi_preferences::load_enabled();
     esp_lv_adapter_lock(-1);
     lib_utils::FunctionGuard unlock_guard([]() {
         esp_lv_adapter_unlock();
@@ -210,6 +212,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_create();
     boot_splash_create(BOOT_SPLASH_START_DELAY_MS);
     speaker_ui_set_wifi_managed_externally(true);
+    speaker_ui_set_wlan_enabled(saved_wlan_enabled);
     speaker_ui_set_input(input);
     configure_about();
     attach_developer_mode_handler();
@@ -815,6 +818,8 @@ void ScreenSpeakerShell::perform_factory_reset()
     if (!WeatherConfig::get_instance().clear()) {
         BROOKESIA_LOGE("Failed to reset weather configuration");
     }
+    auto wifi_saved = wifi_preferences::save_enabled(true);
+    if (!wifi_saved) BROOKESIA_LOGE("Failed to reset WLAN preference: %1%", wifi_saved.error());
     if (!ImuGesture::get_instance().set_lift_enabled(true)) {
         BROOKESIA_LOGE("Failed to reset Lift to wake setting");
     }
@@ -1315,6 +1320,10 @@ void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
             BROOKESIA_LOGE(
                 "Failed to turn Speaker UI WiFi %1%: %2%", enabled ? "on" : "off", result.error()
             );
+        }
+        if (result) {
+            auto saved = wifi_preferences::save_enabled(enabled);
+            if (!saved) BROOKESIA_LOGE("Failed to save WLAN preference: %1%", saved.error());
         }
         wifi_action_in_flight_ = false;
         if (result && restart_softap) {

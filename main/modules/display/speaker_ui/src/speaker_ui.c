@@ -1180,6 +1180,11 @@ void speaker_ui_set_wifi_connected(bool connected)
                      (const void *)&speaker_image_middle_quick_settings_wifi_close_20_20);
 }
 
+void speaker_ui_set_wlan_enabled(bool enabled)
+{
+    set_wlan_enabled(enabled, NULL);
+}
+
 int speaker_ui_get_quick_wifi_status(void)
 {
     if(quick_wifi_status_icon == NULL || lv_obj_has_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN)) return 0;

@@ -27,6 +27,7 @@
 #include "host_capabilities_config.hpp"
 #include "power_policy.hpp"
 #include "lift_to_wake_detector.hpp"
+#include "wifi_preferences.hpp"
 #include "agent_power_activity.hpp"
 #include "ui_idle_coordinator.hpp"
 
@@ -939,6 +940,23 @@ int test_wlan_keyboard(InputInjector &input)
 
 int test_quick_buttons(InputInjector &input)
 {
+    using StorageHelper = esp_brookesia::service::helper::Storage;
+    auto previous = StorageHelper::get_key_value<bool>("wifi_ui", "enabled", 1000);
+    for (bool enabled : {false, true, false}) {
+        if (!wifi_preferences::save_enabled(enabled) || wifi_preferences::load_enabled() != enabled) {
+            std::fprintf(stderr, "WLAN preference persistence failed\n");
+            return 46;
+        }
+        with_ui_lock([&]() { speaker_ui_set_wlan_enabled(wifi_preferences::load_enabled()); });
+        if (with_ui_lock([]() { return speaker_ui_is_wlan_on(); }) != enabled ||
+            with_ui_lock([]() { return speaker_ui_is_quick_wifi_on(); }) != enabled) return 47;
+    }
+    if (previous) {
+        if (!wifi_preferences::save_enabled(previous.value())) return 48;
+    } else {
+        if (!StorageHelper::erase_keys("wifi_ui", {"enabled"}, 1000)) return 49;
+        if (!wifi_preferences::load_enabled()) return 50;
+    }
     show("quick");
     input.pump(20);
     bool initial_levels = with_ui_lock([]() {
