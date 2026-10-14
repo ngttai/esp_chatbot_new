@@ -15,6 +15,7 @@ set(SRCS
     "modules/weather_service.cpp"
     "modules/usb_msc.c"
     "modules/wifi_provisioning.cpp"
+    "modules/wifi_control.cpp"
 )
 
 # Limit imported source discovery to the active Speaker UI tree. This

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 #include "head_led.hpp"
+#include "wifi_control.hpp"
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -122,8 +123,9 @@ blink_step_t const *BLINK_LISTS[] = {
 
 void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        const auto *event = static_cast<const wifi_event_sta_disconnected_t *>(event_data);
+    if (event_base == WIFI_EVENT && (event_id == WIFI_EVENT_STA_DISCONNECTED || event_id == WIFI_EVENT_STA_STOP)) {
+        const auto *event = event_id == WIFI_EVENT_STA_DISCONNECTED ?
+            static_cast<const wifi_event_sta_disconnected_t *>(event_data) : nullptr;
         if (event != nullptr) {
             ESP_LOGW(
                 TAG, "Wi-Fi station disconnected: reason=%u, rssi=%d",
@@ -176,6 +178,7 @@ bool HeadLed::init()
         return false;
     }
 
+    wifi_enabled_ = WifiControl::get_instance().is_enabled();
     initialized_.store(true);
     set_wifi_connected(false);
     ESP_LOGI(TAG, "VoCat head LED started on GPIO%d", HEAD_LED_GPIO);

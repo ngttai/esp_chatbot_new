@@ -27,6 +27,7 @@
 #include "modules/head_led.hpp"
 #include "modules/ai_agents.hpp"
 #include "modules/imu_gesture.hpp"
+#include "modules/wifi_control.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/weather_config.hpp"
 #include "modules/developer_mode.hpp"
@@ -55,7 +56,6 @@ constexpr uint32_t SERVICE_POLL_PERIOD_MS = 20;
 constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
-constexpr uint32_t WIFI_AGENT_AUDIO_DRAIN_MS = 100;
 constexpr uint32_t BOOT_SPLASH_START_DELAY_MS = 1050;
 constexpr uint16_t MEMORY_POLL_TICKS = 50;
 constexpr std::time_t MIN_VALID_NETWORK_TIME = 1704067200; // 2024-01-01 UTC
@@ -202,6 +202,7 @@ bool ScreenSpeakerShell::start(
     BROOKESIA_CHECK_NULL_RETURN(input, false, "LVGL pointer input is not available");
     BROOKESIA_CHECK_NULL_RETURN(task_scheduler, false, "Backend task scheduler is not available");
 
+    const bool saved_wlan_enabled = WifiControl::get_instance().is_enabled();
     esp_lv_adapter_lock(-1);
     lib_utils::FunctionGuard unlock_guard([]() {
         esp_lv_adapter_unlock();
@@ -210,6 +211,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_create();
     boot_splash_create(BOOT_SPLASH_START_DELAY_MS);
     speaker_ui_set_wifi_managed_externally(true);
+    speaker_ui_set_wlan_enabled(saved_wlan_enabled);
     speaker_ui_set_input(input);
     configure_about();
     attach_developer_mode_handler();
@@ -815,6 +817,7 @@ void ScreenSpeakerShell::perform_factory_reset()
     if (!WeatherConfig::get_instance().clear()) {
         BROOKESIA_LOGE("Failed to reset weather configuration");
     }
+    (void)WifiControl::get_instance().reset_preferences();
     if (!ImuGesture::get_instance().set_lift_enabled(true)) {
         BROOKESIA_LOGE("Failed to reset Lift to wake setting");
     }
@@ -1036,6 +1039,8 @@ void ScreenSpeakerShell::poll_wifi()
 {
     using WifiHelper = service::helper::Wifi;
 
+    speaker_ui_set_wifi_connected(WifiHelper::is_running() &&
+        wifi_state_.load() == static_cast<int>(WifiHelper::GeneralState::Connected));
     if (!WifiHelper::is_running()) {
         return;
     }
@@ -1047,10 +1052,18 @@ void ScreenSpeakerShell::poll_wifi()
         speaker_ui_show("wlan");
     }
 
+    if (wifi_action_result_ready_.exchange(false)) {
+        const bool requested_enabled = WifiControl::get_instance().requested_enabled();
+        // Preserve a new physical toggle that arrived after the worker finished.
+        if (speaker_ui_is_wlan_on() == last_wlan_enabled_) {
+            speaker_ui_set_wlan_enabled(requested_enabled);
+            last_wlan_enabled_ = requested_enabled;
+        }
+    }
     const bool enabled = speaker_ui_is_wlan_on();
-    HeadLed::get_instance().set_wifi_enabled(enabled);
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
     const bool softap_active = speaker_ui_is_screen_active("softap");
+    wifi_restart_softap_requested_ = softap_active;
 
     if (wifi_scan_result_received_.exchange(false)) {
         wifi_scan_after_enable_pending_ = false;
@@ -1062,7 +1075,8 @@ void ScreenSpeakerShell::poll_wifi()
             // Wait for provisioning shutdown before restarting the WLAN scan.
             wifi_scan_after_enable_pending_ = enabled && wlan_active;
         }
-        request_softap_provision(softap_active && enabled);
+        request_softap_provision(softap_active && enabled &&
+            WifiControl::get_instance().is_enabled() && !WifiControl::get_instance().has_pending());
     }
     if (softap_active) {
         update_softap_ui();
@@ -1082,6 +1096,7 @@ void ScreenSpeakerShell::poll_wifi()
         wifi_scan_dirty_ = true;
         request_wifi_enabled(enabled);
     }
+    if (!wifi_action_in_flight_.load() && WifiControl::get_instance().has_pending()) schedule_wifi_control();
 
     if (++wifi_state_poll_count_ >= WIFI_STATE_POLL_TICKS) {
         wifi_state_poll_count_ = 0;
@@ -1244,84 +1259,24 @@ void ScreenSpeakerShell::wifi_password_ready_callback(lv_event_t *event)
 
 void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
 {
-    if (wifi_action_in_flight_.exchange(true)) {
-        return;
-    }
+    WifiControl::get_instance().request_enabled(enabled);
+    schedule_wifi_control();
+}
 
-    const bool restart_softap = enabled && softap_screen_was_active_;
-    const bool posted = task_scheduler_->post([this, enabled, restart_softap]() {
-        using AgentHelper = service::helper::AgentManager;
-        using AudioEncoderHelper = service::helper::AudioEncoder<0>;
-        using WifiHelper = service::helper::Wifi;
-
-        if (!enabled) {
-            // Stop XiaoZhi while the network is still available. If Wi-Fi is
-            // stopped first, the transport can force Agent Stop while the
-            // encoder fetch task is blocked in its FIFO, racing recorder
-            // teardown and tripping the interrupt watchdog.
-            auto agent_state_result = AgentHelper::call_function_sync<std::string>(
-                                          AgentHelper::FunctionId::GetGeneralState,
-                                          service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
-                                      );
-            AgentHelper::GeneralState agent_state = AgentHelper::GeneralState::Max;
-            if (agent_state_result) {
-                (void)BROOKESIA_DESCRIBE_STR_TO_ENUM(agent_state_result.value(), agent_state);
-            }
-            if ((agent_state == AgentHelper::GeneralState::Started) ||
-                    (agent_state == AgentHelper::GeneralState::Slept)) {
-                if (AudioEncoderHelper::is_running()) {
-                    auto pause_result = AudioEncoderHelper::call_function_sync(
-                                            AudioEncoderHelper::FunctionId::Pause,
-                                            service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
-                                        );
-                    if (!pause_result) {
-                        BROOKESIA_LOGW("Failed to pause audio encoder before WiFi stop: %1%", pause_result.error());
-                    }
-                    vTaskDelay(pdMS_TO_TICKS(WIFI_AGENT_AUDIO_DRAIN_MS));
-                }
-
-                auto stop_agent_result = AgentHelper::call_function_sync(
-                                             AgentHelper::FunctionId::TriggerGeneralAction,
-                                             BROOKESIA_DESCRIBE_TO_STR(AgentHelper::GeneralAction::Stop),
-                                             service::helper::Timeout(5000)
-                                         );
-                if (!stop_agent_result) {
-                    BROOKESIA_LOGW("Failed to stop Agent before WiFi stop: %1%", stop_agent_result.error());
-                }
-            }
-
-            (void)WifiHelper::call_function_sync(
-                WifiHelper::FunctionId::TriggerScanStop,
-                service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
-            );
-            // Provisioning owns SoftAP independently from the station state. Stop it
-            // first so the UI's WLAN-off state really disables the radio flow.
-            (void)WifiHelper::call_function_sync(
-                WifiHelper::FunctionId::TriggerSoftApProvisionStop,
-                service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
-            );
-        }
-
-        auto result = WifiHelper::call_function_sync(
-                          WifiHelper::FunctionId::TriggerGeneralAction,
-                          BROOKESIA_DESCRIBE_TO_STR(
-                              enabled ? WifiHelper::GeneralAction::Start : WifiHelper::GeneralAction::Stop
-                          ),
-                          service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
-                      );
-        if (!result) {
-            BROOKESIA_LOGE(
-                "Failed to turn Speaker UI WiFi %1%: %2%", enabled ? "on" : "off", result.error()
-            );
-        }
+void ScreenSpeakerShell::schedule_wifi_control()
+{
+    if (wifi_action_in_flight_.exchange(true)) return;
+    const bool posted = task_scheduler_->post([this]() {
+        const bool succeeded = WifiControl::get_instance().process_pending();
+        wifi_action_result_ready_ = true;
         wifi_action_in_flight_ = false;
-        if (result && restart_softap) {
-            request_softap_provision(true);
-        }
+        if (succeeded && WifiControl::get_instance().is_enabled() &&
+            wifi_restart_softap_requested_.load()) request_softap_provision(true);
         request_wifi_state();
     });
-
     if (!posted) {
+        WifiControl::get_instance().cancel_pending_request();
+        wifi_action_result_ready_ = true;
         wifi_action_in_flight_ = false;
         BROOKESIA_LOGE("Failed to schedule Speaker UI WiFi action");
     }

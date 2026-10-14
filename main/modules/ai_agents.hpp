@@ -79,7 +79,7 @@ private:
     AI_Agents(const AI_Agents &) = delete;
     AI_Agents &operator=(const AI_Agents &) = delete;
 
-    bool start_agent();
+    bool start_agent(uint32_t wifi_request_revision);
     void stop_agent();
 
     void process_agent_general_events();

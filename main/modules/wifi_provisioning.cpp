@@ -8,6 +8,7 @@
 #include "brookesia/service_manager.hpp"
 #include "brookesia/service_helper/network/wifi.hpp"
 #include "wifi_provisioning.hpp"
+#include "wifi_control.hpp"
 
 /* The following WiFi credentials are used for CI test. Please ignore them if you are not running CI test. */
 #if defined(CI_TEST_WIFI_2_4G_AP1_SSID) && defined(CI_TEST_WIFI_2_4G_AP1_PSW)
@@ -52,6 +53,10 @@ bool WifiProvisioning::start()
     BROOKESIA_CHECK_FALSE_RETURN(is_initialized_.load(), false, "Not initialized");
 
     auto run_connect_or_provision = [this]() {
+        if (!WifiControl::get_instance().is_enabled()) {
+            BROOKESIA_LOGI("WLAN disabled by saved preference; skip boot provisioning");
+            return;
+        }
         auto get_aps_result = WifiHelper::call_function_sync<boost::json::array>(
                                   WifiHelper::FunctionId::GetConnectedAps
                               );

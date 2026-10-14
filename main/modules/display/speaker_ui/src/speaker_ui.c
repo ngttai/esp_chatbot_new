@@ -136,6 +136,7 @@ static lv_obj_t *quick_volume_button, *quick_brightness_button;
  * (no mute) -- mirrors firmware's QuickSettings::VolumeLevel / BrightnessLevel enums. */
 static int quick_volume_level = -1;
 static int quick_brightness_level = 0;
+static bool quick_wifi_connected = false;
 static lv_obj_t *settings_wlan_password;
 static lv_obj_t *wlan_keyboard_container, *wlan_keyboard;
 static lv_obj_t *softap_qr, *softap_info_label;
@@ -646,9 +647,39 @@ static void create_launcher(void)
     page_index = 0; render_page();
 }
 
+static void reset_scroll_tree(lv_obj_t *obj)
+{
+    if(obj == NULL) return;
+    if(lv_obj_has_flag(obj, LV_OBJ_FLAG_SCROLLABLE) && lv_obj_get_scroll_dir(obj) == LV_DIR_VER) {
+        lv_obj_stop_scroll_anim(obj);
+        lv_obj_scroll_to(obj, 0, 0, LV_ANIM_OFF);
+    }
+    for(uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        reset_scroll_tree(lv_obj_get_child(obj, i));
+    }
+}
+
+static void home_loaded(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    lv_obj_t *screens[] = {
+        launcher, settings, settings_wlan, settings_wlan_verify, settings_softap,
+        settings_sound, settings_display, settings_about, settings_self_test,
+        settings_developer, settings_restore, ai, timer_screen
+    };
+    for(size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); i++) {
+        reset_scroll_tree(screens[i]);
+    }
+    if(page_index != 0) {
+        page_index = 0;
+        render_page();
+    }
+}
+
 static void create_idle(void)
 {
     idle = lv_obj_create(NULL);
+    lv_obj_add_event_cb(idle, home_loaded, LV_EVENT_SCREEN_LOADED, NULL);
     lv_obj_t *content = screen_content(idle, lv_color_hex(0x000000));
     lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(content, show_launcher_long, LV_EVENT_LONG_PRESSED, NULL);
@@ -705,6 +736,12 @@ static void quick_brightness_long_pressed(lv_event_t *e)
     load(settings_display);
 }
 
+static void quick_wifi_long_pressed(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    load(settings_wlan);
+}
+
 static void create_quick(void)
 {
     quick = lv_obj_create(lv_layer_top());
@@ -727,15 +764,17 @@ static void create_quick(void)
     /* Initial checked state is applied later by set_wlan_enabled(), once every screen
      * that shares the WLAN on/off state (this button, the Settings switch, the WLAN
      * screen's groups) has been created. */
-    lv_obj_add_event_cb(quick_wifi_button, quick_wifi_button_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_remove_flag(quick_wifi_button, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_add_event_cb(quick_wifi_button, quick_wifi_button_changed, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(quick_wifi_button, quick_wifi_long_pressed, LV_EVENT_LONG_PRESSED, NULL);
 
     /* Volume/Brightness buttons are siblings 1 and 2 of `buttons` (wifi is sibling 0),
      * matching ui_comp_quicksettings.c's cui_ContainerButtonsVolume/Brightness order. */
     quick_volume_button = lv_obj_get_child(lv_obj_get_child(buttons, 1), 0);
     quick_brightness_button = lv_obj_get_child(lv_obj_get_child(buttons, 2), 0);
-    lv_obj_add_event_cb(quick_volume_button, quick_volume_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(quick_volume_button, quick_volume_clicked, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(quick_volume_button, quick_volume_long_pressed, LV_EVENT_LONG_PRESSED, NULL);
-    lv_obj_add_event_cb(quick_brightness_button, quick_brightness_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(quick_brightness_button, quick_brightness_clicked, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(quick_brightness_button, quick_brightness_long_pressed, LV_EVENT_LONG_PRESSED, NULL);
     quick_update_volume_icon();
     quick_update_brightness_icon();
@@ -1097,6 +1136,7 @@ static void wlan_entry_settle_cb(lv_timer_t *t)
 {
     LV_UNUSED(t);
     if(wlan_connected_status_label != NULL) lv_label_set_text(wlan_connected_status_label, "Connected");
+    speaker_ui_set_wifi_connected(true);
     wlan_entry_settle_timer = NULL;
 }
 
@@ -1155,14 +1195,30 @@ static void set_wlan_enabled(bool enabled, lv_obj_t *source)
         else lv_obj_remove_state(quick_wifi_button, LV_STATE_CHECKED);
     }
 
-    /* Simplified two-state version of firmware's setWifiIconState(): hidden when WLAN is
-     * off, shown (using the component's default "no signal" artwork, the only status
-     * icon asset vendored) when on -- the simulator has no real signal-level data to
-     * pick between firmware's extra SIGNAL_1/2/3 icon variants. */
-    if(quick_wifi_status_icon != NULL) {
-        if(enabled) lv_obj_remove_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
-    }
+    if(!enabled) quick_wifi_connected = false;
+    speaker_ui_set_wifi_connected(quick_wifi_connected);
+}
+
+void speaker_ui_set_wifi_connected(bool connected)
+{
+    quick_wifi_connected = wlan_enabled && connected;
+    if(quick_wifi_status_icon == NULL) return;
+    if(!wlan_enabled) lv_obj_add_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_image_set_src(quick_wifi_status_icon, quick_wifi_connected ?
+                     (const void *)LV_SYMBOL_WIFI :
+                     (const void *)&speaker_image_middle_quick_settings_wifi_close_20_20);
+}
+
+void speaker_ui_set_wlan_enabled(bool enabled)
+{
+    set_wlan_enabled(enabled, NULL);
+}
+
+int speaker_ui_get_quick_wifi_status(void)
+{
+    if(quick_wifi_status_icon == NULL || lv_obj_has_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN)) return 0;
+    return quick_wifi_connected ? 2 : 1;
 }
 
 static void wlan_switch_changed(lv_event_t *e)
@@ -1174,7 +1230,7 @@ static void wlan_switch_changed(lv_event_t *e)
 static void quick_wifi_button_changed(lv_event_t *e)
 {
     lv_obj_t *btn = lv_event_get_target_obj(e);
-    set_wlan_enabled(lv_obj_has_state(btn, LV_STATE_CHECKED), btn);
+    set_wlan_enabled(!lv_obj_has_state(btn, LV_STATE_CHECKED), NULL);
 }
 
 static void wlan_network_selected(lv_event_t *e)
@@ -1933,20 +1989,19 @@ bool speaker_ui_show(const char *name)
     }
     else if(!strcmp(name, "settings") || !strcmp(name, "settings-bottom")) {
         lv_screen_load(settings);
-        lv_obj_update_layout(settings_scroller);
-        lv_obj_scroll_to_y(settings_scroller,
-                           !strcmp(name, "settings-bottom") ?
-                               lv_obj_get_scroll_y(settings_scroller) + lv_obj_get_scroll_bottom(settings_scroller) : 0,
-                           LV_ANIM_OFF);
+        if(!strcmp(name, "settings-bottom")) {
+            lv_obj_update_layout(settings_scroller);
+            lv_obj_scroll_to_y(settings_scroller,
+                lv_obj_get_scroll_y(settings_scroller) + lv_obj_get_scroll_bottom(settings_scroller), LV_ANIM_OFF);
+        }
     }
     else if(!strcmp(name, "wlan") || !strcmp(name, "wlan-bottom")) {
         lv_screen_load(settings_wlan);
-        lv_obj_update_layout(settings_wlan_scroller);
-        lv_obj_scroll_to_y(settings_wlan_scroller,
-                           !strcmp(name, "wlan-bottom") ?
-                               lv_obj_get_scroll_y(settings_wlan_scroller) +
-                                   lv_obj_get_scroll_bottom(settings_wlan_scroller) : 0,
-                           LV_ANIM_OFF);
+        if(!strcmp(name, "wlan-bottom")) {
+            lv_obj_update_layout(settings_wlan_scroller);
+            lv_obj_scroll_to_y(settings_wlan_scroller,
+                lv_obj_get_scroll_y(settings_wlan_scroller) + lv_obj_get_scroll_bottom(settings_wlan_scroller), LV_ANIM_OFF);
+        }
     }
     else if(!strcmp(name, "wlan-connect")) lv_screen_load(settings_wlan_verify);
     else if(!strcmp(name, "softap")) lv_screen_load(settings_softap);
