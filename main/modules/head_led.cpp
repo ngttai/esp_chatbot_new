@@ -123,8 +123,9 @@ blink_step_t const *BLINK_LISTS[] = {
 
 void wifi_event_handler(void *, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        const auto *event = static_cast<const wifi_event_sta_disconnected_t *>(event_data);
+    if (event_base == WIFI_EVENT && (event_id == WIFI_EVENT_STA_DISCONNECTED || event_id == WIFI_EVENT_STA_STOP)) {
+        const auto *event = event_id == WIFI_EVENT_STA_DISCONNECTED ?
+            static_cast<const wifi_event_sta_disconnected_t *>(event_data) : nullptr;
         if (event != nullptr) {
             ESP_LOGW(
                 TAG, "Wi-Fi station disconnected: reason=%u, rssi=%d",
@@ -205,7 +206,7 @@ void HeadLed::set_wifi_connected(bool connected)
         return;
     }
     std::lock_guard lock(mutex_);
-    wifi_connected_ = wifi_enabled_ && connected;
+    wifi_connected_ = connected;
     apply_pattern_locked();
     ESP_LOGI(TAG, "Wi-Fi LED state: %s", connected ? "connected" : "disconnected");
 }

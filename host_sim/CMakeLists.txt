@@ -230,6 +230,7 @@ if(BUILD_TESTING)
         --self-test-settings-no-scroll
         --self-test-settings-pages
         --self-test-home-scroll-reset
+        --self-test-wifi-control-state
         --self-test-hardware-test-ui
         --self-test-quick-gesture
         --self-test-quick-close-gesture

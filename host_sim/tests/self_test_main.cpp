@@ -28,6 +28,7 @@
 #include "power_policy.hpp"
 #include "lift_to_wake_detector.hpp"
 #include "wifi_preferences.hpp"
+#include "wifi_control_state.hpp"
 #include "agent_power_activity.hpp"
 #include "ui_idle_coordinator.hpp"
 
@@ -537,6 +538,58 @@ int test_settings_pages(InputInjector &input)
 
 int drag(InputInjector &input, int start_x, int start_y, int end_x, int end_y,
          int step, int pump_per_step, int settle);
+
+int test_wifi_control_state()
+{
+    WifiControlState state;
+    state.init(true);
+    state.request(false);
+    const auto first = state.snapshot();
+    if (!state.pending() || !first.confirmed) return 141;
+    // A newer request survives an older completion and needs its own confirmation.
+    state.request(true);
+    state.transition_done(first.revision, false, true);
+    if (!state.snapshot().requested || state.snapshot().confirmed || !state.pending()) return 142;
+    const auto second = state.snapshot();
+    state.transition_done(second.revision, true, true);
+    if (state.pending() || state.snapshot().dirty) return 143;
+    // A failed/timeout transition restores confirmed state, without radio retry.
+    state.request(false);
+    state.transition_done(state.snapshot().revision, true, false);
+    if (!state.snapshot().requested || state.pending()) return 144;
+    // An older failure cannot erase the latest user request.
+    state.request(false);
+    const auto stale = state.snapshot();
+    state.request(false);
+    state.transition_done(stale.revision, true, false);
+    if (state.snapshot().requested || !state.pending()) return 145;
+    state.transition_done(state.snapshot().revision, false, true);
+    if (!state.snapshot().dirty) return 146;
+    for (unsigned attempt = 0; attempt < 3; ++attempt) state.save_done(false, false);
+    if (state.pending() || !state.snapshot().dirty || state.snapshot().confirmed) return 147;
+    // Same-state requests retry storage, not the already-confirmed radio.
+    state.request(false);
+    auto retry = state.snapshot();
+    if (!state.pending() || retry.requested != retry.confirmed || retry.save_attempts != 0) return 148;
+    state.save_done(false, true);
+    if (state.pending() || state.snapshot().dirty) return 149;
+    // Failed persistence followed by recovery clears dirty without a radio command.
+    state.request(true);
+    state.transition_done(state.snapshot().revision, true, true);
+    state.save_done(true, false);
+    if (!state.pending() || !state.snapshot().confirmed) return 150;
+    state.save_done(true, true);
+    if (state.pending()) return 151;
+    for (const char *transient : {"Initing", "Starting", "Stopping", "Deiniting", "Max"}) {
+        if (wifi_confirmed_state(transient).has_value()) return 152;
+    }
+    for (const char *off : {"Idle", "Inited"}) if (wifi_confirmed_state(off) != false) return 153;
+    for (const char *on : {"Started", "Connected", "Connecting", "Disconnecting"}) {
+        if (wifi_confirmed_state(on) != true) return 154;
+    }
+    std::puts("WiFi request ordering, confirmation and persistence retries passed");
+    return 0;
+}
 
 int test_home_scroll_reset(InputInjector &input)
 {
@@ -1953,7 +2006,7 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 31> options{{
+    static constexpr std::array<std::string_view, 32> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-idle",
@@ -1965,6 +2018,7 @@ bool is_self_test_option(std::string_view option)
         "--self-test-settings-no-scroll",
         "--self-test-settings-pages",
         "--self-test-home-scroll-reset",
+        "--self-test-wifi-control-state",
         "--self-test-quick-gesture",
         "--self-test-quick-close-gesture",
         "--self-test-wlan-toggle",
@@ -2000,6 +2054,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-lift-to-wake") return test_lift_to_wake(input);
     if (option == "--self-test-settings-pages") return test_settings_pages(input);
     if (option == "--self-test-home-scroll-reset") return test_home_scroll_reset(input);
+    if (option == "--self-test-wifi-control-state") return test_wifi_control_state();
     if (option == "--self-test-hardware-test-ui") return test_hardware_test_ui();
     if (option == "--self-test-settings-bar") return test_settings_bar();
     if (option == "--self-test-idle") return test_idle(input);

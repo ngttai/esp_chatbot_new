@@ -1,17 +1,26 @@
 #pragma once
 
-#include <atomic>
 #include <mutex>
+#include "wifi_control_state.hpp"
 
 class WifiControl {
 public:
     static WifiControl &get_instance();
     void init();
-    bool is_enabled() const { return enabled_.load(); }
-    bool set_enabled(bool enabled);
+    bool is_enabled() const { return state_.snapshot().confirmed; }
+    bool requested_enabled() const { return state_.snapshot().requested; }
+    bool has_pending() const { return state_.pending(); }
+    void request_enabled(bool enabled) { state_.request(enabled); }
+    void cancel_pending_request()
+    {
+        const auto state = state_.snapshot();
+        state_.transition_done(state.revision, state.confirmed, false);
+    }
+    bool process_pending();
     bool reset_preferences();
 
 private:
-    std::atomic_bool enabled_{true};
+    bool apply_enabled(bool enabled, bool &actual);
+    WifiControlState state_;
     std::mutex mutex_;
 };

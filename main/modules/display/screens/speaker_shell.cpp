@@ -1053,13 +1053,17 @@ void ScreenSpeakerShell::poll_wifi()
     }
 
     if (wifi_action_result_ready_.exchange(false)) {
-        const bool actual_enabled = WifiControl::get_instance().is_enabled();
-        speaker_ui_set_wlan_enabled(actual_enabled);
-        last_wlan_enabled_ = actual_enabled;
+        const bool requested_enabled = WifiControl::get_instance().requested_enabled();
+        // Preserve a new physical toggle that arrived after the worker finished.
+        if (speaker_ui_is_wlan_on() == last_wlan_enabled_) {
+            speaker_ui_set_wlan_enabled(requested_enabled);
+            last_wlan_enabled_ = requested_enabled;
+        }
     }
     const bool enabled = speaker_ui_is_wlan_on();
     const bool wlan_active = speaker_ui_is_screen_active("wlan");
     const bool softap_active = speaker_ui_is_screen_active("softap");
+    wifi_restart_softap_requested_ = softap_active;
 
     if (wifi_scan_result_received_.exchange(false)) {
         wifi_scan_after_enable_pending_ = false;
@@ -1071,7 +1075,8 @@ void ScreenSpeakerShell::poll_wifi()
             // Wait for provisioning shutdown before restarting the WLAN scan.
             wifi_scan_after_enable_pending_ = enabled && wlan_active;
         }
-        request_softap_provision(softap_active && enabled);
+        request_softap_provision(softap_active && enabled &&
+            WifiControl::get_instance().is_enabled() && !WifiControl::get_instance().has_pending());
     }
     if (softap_active) {
         update_softap_ui();
@@ -1091,6 +1096,7 @@ void ScreenSpeakerShell::poll_wifi()
         wifi_scan_dirty_ = true;
         request_wifi_enabled(enabled);
     }
+    if (!wifi_action_in_flight_.load() && WifiControl::get_instance().has_pending()) schedule_wifi_control();
 
     if (++wifi_state_poll_count_ >= WIFI_STATE_POLL_TICKS) {
         wifi_state_poll_count_ = 0;
@@ -1253,16 +1259,23 @@ void ScreenSpeakerShell::wifi_password_ready_callback(lv_event_t *event)
 
 void ScreenSpeakerShell::request_wifi_enabled(bool enabled)
 {
+    WifiControl::get_instance().request_enabled(enabled);
+    schedule_wifi_control();
+}
+
+void ScreenSpeakerShell::schedule_wifi_control()
+{
     if (wifi_action_in_flight_.exchange(true)) return;
-    const bool restart_softap = enabled && softap_screen_was_active_;
-    const bool posted = task_scheduler_->post([this, enabled, restart_softap]() {
-        const bool succeeded = WifiControl::get_instance().set_enabled(enabled);
+    const bool posted = task_scheduler_->post([this]() {
+        const bool succeeded = WifiControl::get_instance().process_pending();
         wifi_action_result_ready_ = true;
         wifi_action_in_flight_ = false;
-        if (succeeded && restart_softap) request_softap_provision(true);
+        if (succeeded && WifiControl::get_instance().is_enabled() &&
+            wifi_restart_softap_requested_.load()) request_softap_provision(true);
         request_wifi_state();
     });
     if (!posted) {
+        WifiControl::get_instance().cancel_pending_request();
         wifi_action_result_ready_ = true;
         wifi_action_in_flight_ = false;
         BROOKESIA_LOGE("Failed to schedule Speaker UI WiFi action");

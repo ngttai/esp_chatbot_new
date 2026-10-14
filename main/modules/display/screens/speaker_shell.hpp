@@ -71,6 +71,7 @@ private:
     void apply_quick_volume(int level);
     void apply_volume(int percent);
     void request_wifi_enabled(bool enabled);
+    void schedule_wifi_control();
     void request_wifi_state();
     void request_wifi_scan();
     void request_wifi_scan_stop();
@@ -135,6 +136,7 @@ private:
     uint16_t wifi_state_poll_count_ = 0;
     std::atomic_bool wifi_action_in_flight_{false};
     std::atomic_bool wifi_action_result_ready_{false};
+    std::atomic_bool wifi_restart_softap_requested_{false};
     std::atomic_bool wifi_state_request_in_flight_{false};
     std::atomic_bool wifi_scan_request_in_flight_{false};
     std::atomic_bool wifi_scan_stop_in_flight_{false};

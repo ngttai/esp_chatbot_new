@@ -5,6 +5,7 @@
 #include "brookesia/lib_utils.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 
 using WifiHelper = esp_brookesia::service::helper::Wifi;
 using AgentHelper = esp_brookesia::service::helper::AgentManager;
@@ -20,7 +21,7 @@ WifiControl &WifiControl::get_instance()
 void WifiControl::init()
 {
     std::lock_guard lock(mutex_);
-    enabled_ = wifi_preferences::load_enabled();
+    state_.init(wifi_preferences::load_enabled());
 }
 
 bool WifiControl::reset_preferences()
@@ -31,10 +32,31 @@ bool WifiControl::reset_preferences()
     return result.has_value();
 }
 
-bool WifiControl::set_enabled(bool enabled)
+bool WifiControl::process_pending()
 {
     std::lock_guard lock(mutex_);
-    if (enabled == enabled_.load()) return true;
+    bool radio_succeeded = true;
+    for (unsigned step = 0; step < 6 && state_.pending(); ++step) {
+        auto state = state_.snapshot();
+        if (state.requested != state.confirmed) {
+            bool actual = state.confirmed;
+            radio_succeeded = apply_enabled(state.requested, actual);
+            state_.transition_done(state.revision, actual, radio_succeeded);
+            HeadLed::get_instance().set_wifi_enabled(actual);
+        } else if (state.dirty) {
+            auto saved = wifi_preferences::save_enabled(state.confirmed);
+            state_.save_done(state.confirmed, saved.has_value());
+            if (!saved) {
+                BROOKESIA_LOGE("WLAN preference save attempt %1% failed: %2%", state.save_attempts + 1, saved.error());
+                if (state.save_attempts < 2) vTaskDelay(pdMS_TO_TICKS(500));
+            }
+        }
+    }
+    return radio_succeeded;
+}
+
+bool WifiControl::apply_enabled(bool enabled, bool &actual)
+{
     if (!enabled) {
         // Drain the encoder and stop the conversation before removing its network.
         auto state = AgentHelper::call_function_sync<std::string>(
@@ -63,12 +85,17 @@ bool WifiControl::set_enabled(bool enabled)
         BROOKESIA_LOGE("Failed to change WLAN state: %1%", result.error());
         return false;
     }
-    enabled_ = enabled;
-    HeadLed::get_instance().set_wifi_enabled(enabled);
-    auto saved = wifi_preferences::save_enabled(enabled);
-    if (!saved) {
-        BROOKESIA_LOGE("WLAN changed but preference save failed: %1%", saved.error());
-        return false;
+    // TriggerGeneralAction accepts a queued command; confirm its resulting state separately.
+    const int64_t deadline = esp_timer_get_time() + 8000000;
+    while (esp_timer_get_time() < deadline) {
+        auto state = WifiHelper::call_function_sync<std::string>(WifiHelper::FunctionId::GetGeneralState, Timeout(500));
+        auto confirmed = state ? wifi_confirmed_state(state.value()) : std::nullopt;
+        if (confirmed) {
+            actual = confirmed.value();
+            if (actual == enabled) return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    return true;
+    BROOKESIA_LOGE("WLAN %1% confirmation timed out", enabled ? "start" : "stop");
+    return false;
 }
