@@ -216,6 +216,17 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(power_service_test
+        "${HOST_SIM_DIR}/tests/power_service_test.cpp"
+        "${PROJECT_ROOT}/main/modules/power_manager.cpp")
+    target_include_directories(power_service_test PRIVATE "${PROJECT_ROOT}/main")
+    target_compile_definitions(power_service_test PRIVATE
+        CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS=1000
+        CONFIG_EXAMPLE_PWR_HW_SLEEP_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT=10)
+    target_link_libraries(power_service_test PRIVATE brookesia::service_manager brookesia::lib_utils)
+    add_test(NAME power_service_lifecycle COMMAND power_service_test)
+    set_tests_properties(power_service_lifecycle PROPERTIES TIMEOUT 30)
     add_test(NAME host_sim_capabilities COMMAND esp_chatbot_host_sim --print-capabilities)
 
     set(SPEAKER_UI_SELF_TEST_OPTIONS

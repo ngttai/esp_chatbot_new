@@ -58,7 +58,7 @@ private:
     void poll_display_mode();
     void poll_idle_observability();
     void poll_idle_timeout();
-    void poll_power_manager();
+    void publish_power_inputs();
     void configure_about();
     void attach_developer_mode_handler();
     void attach_self_test_handler();
