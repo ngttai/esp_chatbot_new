@@ -117,7 +117,7 @@ bool PowerManager::on_start()
         return false;
     }
     BROOKESIA_LOGI(
-        "Pwr service started: shared scheduler, period=50 ms, dim=%1% ms, brightness=%2%%%, backend=backlight-only",
+        "Pwr service started: shared scheduler, period=50 ms, dim=%1% ms, brightness=%2%%%, actuator=Display PWM; registered participants coordinate suspend",
         CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS, CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT
     );
     return true;
@@ -241,8 +241,20 @@ void PowerManager::dispatch_suspend_command(SuspendCoordinator::Command command)
     default: return;
     }
     const auto snapshot = suspend_.snapshot();
-    BROOKESIA_LOGI("Pwr %1%: session=%2%, mask=%3%, reason=%4%", event, snapshot.session,
-                  static_cast<unsigned>(snapshot.expected), suspend_reason_name(snapshot.reason));
+    if (command == SuspendCoordinator::Command::Recovery) {
+        BROOKESIA_LOGE("Pwr %1%: session=%2%, mask=%3%, reason=%4%", event, snapshot.session,
+                      static_cast<unsigned>(snapshot.expected), suspend_reason_name(snapshot.reason));
+    } else if (snapshot.reason == SuspendCoordinator::Reason::PrepareTimeout ||
+               snapshot.reason == SuspendCoordinator::Reason::CommitTimeout ||
+               snapshot.reason == SuspendCoordinator::Reason::ResumeTimeout ||
+               snapshot.reason == SuspendCoordinator::Reason::Error ||
+               snapshot.reason == SuspendCoordinator::Reason::ActuatorError) {
+        BROOKESIA_LOGW("Pwr %1%: session=%2%, mask=%3%, reason=%4%", event, snapshot.session,
+                      static_cast<unsigned>(snapshot.expected), suspend_reason_name(snapshot.reason));
+    } else {
+        BROOKESIA_LOGD("Pwr %1%: session=%2%, mask=%3%, reason=%4%", event, snapshot.session,
+                      static_cast<unsigned>(snapshot.expected), suspend_reason_name(snapshot.reason));
+    }
     if (!publish_event(event, std::vector<service::EventItem>{
             static_cast<double>(snapshot.session), static_cast<double>(snapshot.expected),
             std::string(suspend_reason_name(snapshot.reason))})) {
@@ -261,7 +273,7 @@ void PowerManager::publish_state()
     (void)publish_event("StateChanged", std::vector<service::EventItem>{
         std::string(state_name(previous)), std::string(state_name(current))});
     BROOKESIA_LOGI("Power state: %1% -> %2%", state_name(previous), state_name(current));
-#if defined(ESP_PLATFORM)
+#if defined(ESP_PLATFORM) && defined(CONFIG_EXAMPLE_PWR_MEMORY_DIAGNOSTICS)
     BROOKESIA_LOGI("Pwr heap: internal free=%1%, min=%2%, largest=%3%; PSRAM free=%4%, min=%5%, largest=%6%",
         heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
         heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),

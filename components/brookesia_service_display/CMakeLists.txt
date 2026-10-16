@@ -19,6 +19,7 @@ list(APPEND COMPONENT_SRCS_C ${SERVICE_SRCS_C})
 list(APPEND COMPONENT_SRCS_CPP ${SERVICE_SRCS_CPP})
 
 if(ESP_PLATFORM)
+    list(APPEND COMPONENT_PRIV_REQUIRES esp_lcd)
     include(${CMAKE_CURRENT_LIST_DIR}/cmake/esp_platform.cmake)
 else()
     include(${CMAKE_CURRENT_LIST_DIR}/cmake/pc_platform.cmake)

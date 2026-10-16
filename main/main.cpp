@@ -123,17 +123,21 @@ extern "C" void app_main(void)
         AI_Agents::get_instance().init_openai();
         AI_Agents::get_instance().init_xiaozhi();
 
+#if defined(CONFIG_EXAMPLE_PWR_MEMORY_DIAGNOSTICS)
         const size_t pwr_internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         const size_t pwr_psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+#endif
         BROOKESIA_CHECK_FALSE_EXIT(
             service_manager.add_service(PowerManager::get_shared_instance()), "Failed to register Pwr service"
         );
         static service::ServiceBinding pwr_binding;
         pwr_binding = service_manager.bind(PowerManager::SERVICE_NAME);
         BROOKESIA_CHECK_FALSE_EXIT(pwr_binding.is_valid(), "Failed to start Pwr service");
+#if defined(CONFIG_EXAMPLE_PWR_MEMORY_DIAGNOSTICS)
         BROOKESIA_LOGI("Pwr heap startup: internal before=%1%, after=%2%; PSRAM before=%3%, after=%4%; no dedicated worker",
             pwr_internal_before, heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
             pwr_psram_before, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#endif
 
         if (!TouchSensor::get_instance().init()) {
             BROOKESIA_LOGW("VoCat touch sensor is unavailable; continue without touch-button input");

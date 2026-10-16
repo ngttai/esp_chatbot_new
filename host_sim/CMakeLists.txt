@@ -237,6 +237,9 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(panel_power_test "${HOST_SIM_DIR}/tests/panel_power_test.cpp")
+    target_include_directories(panel_power_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME panel_power COMMAND panel_power_test)
     add_executable(render_suspend_test "${HOST_SIM_DIR}/tests/render_suspend_test.cpp")
     target_include_directories(render_suspend_test PRIVATE "${PROJECT_ROOT}/main")
     add_test(NAME render_suspend COMMAND render_suspend_test)

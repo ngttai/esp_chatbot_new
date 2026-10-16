@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <mutex>
+#include "esp_timer.h"
 #include "brookesia/expression_emote.hpp"
 #include "brookesia/gui_lvgl.hpp"
 #include "brookesia/service_display.hpp"
@@ -12,7 +13,7 @@
 
 using namespace esp_brookesia;
 namespace {
-class RenderParticipants final : public RenderSuspend::Backend {
+class RenderParticipants final : public RenderSuspend::Backend, private PanelPower::Backend {
 public:
     bool start(std::shared_ptr<lib_utils::TaskScheduler> scheduler, uint32_t output_id,
                const std::string &output_name, uint32_t width, uint32_t height, bool has_emote)
@@ -101,7 +102,33 @@ public:
     {
         (void)pwr_.report_suspend_status(session, id, status);
     }
+    PanelPower::Result suspend_panel() override
+    {
+        return panel_power_.suspend(static_cast<uint32_t>(esp_timer_get_time() / 1000), *this);
+    }
+    PanelPower::Result resume_panel() override
+    {
+        return panel_power_.resume(static_cast<uint32_t>(esp_timer_get_time() / 1000), *this);
+    }
 private:
+    bool blackout() override { return display_.set_backlight_pwm_temporary(output_id_, 0).has_value(); }
+    bool command(PanelPower::Command command) override
+    {
+        using D = service::Display::PanelCommand;
+        D native;
+        const char *name;
+        switch (command) {
+        case PanelPower::Command::DisplayOff: native = D::DisplayOff; name = "DISPOFF"; break;
+        case PanelPower::Command::SleepIn: native = D::SleepIn; name = "SLPIN"; break;
+        case PanelPower::Command::SleepOut: native = D::SleepOut; name = "SLPOUT"; break;
+        case PanelPower::Command::DisplayOn: native = D::DisplayOn; name = "DISPON"; break;
+        default: return false;
+        }
+        const auto result = display_.send_panel_command(output_id_, native);
+        if (!result) { BROOKESIA_LOGE("Panel %1% failed: %2%", name, result.error()); return false; }
+        BROOKESIA_LOGD("Panel %1% sent", name);
+        return true;
+    }
     void disconnect()
     {
         for (auto &command : commands_) command.disconnect();
@@ -115,6 +142,7 @@ private:
     lib_utils::connection completed_;
     std::atomic_bool reconcile_requested_{false};
     RenderSuspend protocol_;
+    PanelPower panel_power_;
     RedrawFence fence_;
     std::mutex fence_mutex_;
     std::string output_name_;

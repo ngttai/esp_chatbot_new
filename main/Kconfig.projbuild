@@ -131,8 +131,8 @@ menu "Example Configuration"
         range 1000 86400000
         default 300000
         help
-            Time measured from successful entry into the Dimmed state. The
-            hardware sleep actuator is introduced in the next phase.
+            Time measured from successful entry into the Dimmed state.
+            Registered display participants coordinate render pause and panel sleep.
 
     config EXAMPLE_PWR_PREPARE_TIMEOUT_MS
         int "Suspend prepare and commit acknowledgement timeout (ms)"
@@ -151,5 +151,13 @@ menu "Example Configuration"
         int "Suspend retry backoff (ms)"
         range 100 60000
         default 5000
+
+    config EXAMPLE_PWR_MEMORY_DIAGNOSTICS
+        bool "Log Pwr heap and worker-stack diagnostics"
+        default n
+        help
+            Print SRAM/PSRAM and worker stack measurements at power state changes,
+            plus heap measurements around Pwr service startup. The shared memory
+            profiler and power warning/error logs remain enabled independently.
 
 endmenu

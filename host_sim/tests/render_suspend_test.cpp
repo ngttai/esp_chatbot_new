@@ -9,6 +9,7 @@ struct Fake final : RenderSuspend::Backend {
     bool lvgl_busy = false, gfx_busy = false, allow_open = true;
     uint32_t source = 1, armed = 0;
     unsigned pause_calls = 0, reports = 0;
+    PanelPower::Result sleep_result = PanelPower::Result::Ready, wake_result = PanelPower::Result::Ready;
     Fake() { for (uint8_t id = 1; id <= 3; ++id) CHECK(coordinator.register_participant(id)); }
     bool admission(bool enabled) override { if (enabled && !allow_open) return false; gate = enabled; return true; }
     bool pause_lvgl(bool value) override { ++pause_calls; if (lvgl_busy) return false; lvgl = value; return true; }
@@ -17,6 +18,8 @@ struct Fake final : RenderSuspend::Backend {
     uint32_t active_source() override { return source; }
     void arm_redraw(uint32_t id) override { CHECK(drained()); armed = id; full_frame = false; }
     bool redraw_complete() override { return full_frame; }
+    PanelPower::Result suspend_panel() override { return sleep_result; }
+    PanelPower::Result resume_panel() override { return wake_result; }
     void report(uint32_t session, uint8_t id, C::Report status) override
     {
         ++reports;
@@ -26,6 +29,38 @@ struct Fake final : RenderSuspend::Backend {
 };
 int main()
 {
+    {
+        Fake f; RenderSuspend a;
+        CHECK(f.coordinator.begin(0)); f.update(a);
+        CHECK(f.coordinator.poll(1, false) == C::Command::Commit);
+        f.sleep_result = PanelPower::Result::Pending; f.update(a);
+        CHECK(f.coordinator.snapshot().suspended == 3);
+        CHECK(f.coordinator.poll(2, false) == C::Command::None);
+        f.sleep_result = PanelPower::Result::Ready; f.update(a);
+        CHECK(f.coordinator.poll(3, false) == C::Command::Suspended);
+        CHECK(f.coordinator.poll(4, true) == C::Command::Resume);
+        f.wake_result = PanelPower::Result::Pending; f.update(a);
+        CHECK(!f.gate && f.lvgl && f.gfx && f.coordinator.snapshot().resumed == 0);
+        f.wake_result = PanelPower::Result::Error; f.update(a);
+        CHECK(!f.gate && f.lvgl && f.gfx);
+        f.wake_result = PanelPower::Result::Ready; f.update(a);
+        CHECK(!f.gate); // Failed resume is fenced until a new recovery session.
+        CHECK(f.coordinator.poll(104, true) == C::Command::Recovery);
+        CHECK(f.coordinator.retry_resume(105) == C::Command::Resume); f.update(a);
+        CHECK(f.gate && !f.lvgl && !f.gfx && f.coordinator.snapshot().resumed == 3);
+        f.full_frame = true; f.update(a);
+        CHECK(f.coordinator.poll(106, true) == C::Command::Resumed);
+    }
+    {
+        Fake f; RenderSuspend a;
+        CHECK(f.coordinator.begin(0)); f.update(a);
+        CHECK(f.coordinator.poll(1, false) == C::Command::Commit);
+        f.sleep_result = PanelPower::Result::Error; f.update(a);
+        CHECK(f.coordinator.poll(2, false) == C::Command::Resume);
+        f.update(a); CHECK(f.coordinator.snapshot().resumed == 3);
+        f.full_frame = true; f.update(a);
+        CHECK(f.coordinator.poll(3, true) == C::Command::Resumed);
+    }
     {
         Fake f; RenderSuspend a;
         CHECK(f.coordinator.begin(0));

@@ -28,6 +28,7 @@ int main()
     const auto outputs = display.get_outputs(); CHECK(!outputs.empty());
     const uint32_t id = outputs.front().id;
     CHECK(display.set_active_source(source.output_name(), gui::lvgl::DISPLAY_SOURCE_NAME));
+    CHECK(!display.send_panel_command(id, service::Display::PanelCommand::SleepIn));
     std::atomic_uint frames{0}, timers{0}, presses{0};
     auto connection = display.connect_frame_completed([&](auto, const auto &, const auto &) { ++frames; });
     gui::lvgl::lock_thread();
@@ -45,6 +46,8 @@ int main()
     CHECK(display.set_frame_admission(id, false));
     CHECK(await([&] { return source.try_set_render_paused(true); }));
     CHECK(await([&] { auto drained = display.is_frame_output_drained(id); return drained && *drained; }));
+    CHECK(!display.send_panel_command(id, service::Display::PanelCommand::SleepIn));
+    CHECK(*display.is_frame_output_drained(id)); // Unsupported host operation releases the command fence.
     const auto before_frames = frames.load(), before_timers = timers.load();
     CHECK(display.inject_touch(source.output_name(), 16, 16));
     CHECK(await([&] { return presses > 0 && timers >= before_timers + 5; }));

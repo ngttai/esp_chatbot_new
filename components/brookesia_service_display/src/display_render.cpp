@@ -25,6 +25,8 @@ std::expected<void, std::string> Display::set_frame_admission(uint32_t output_id
         auto it = outputs_.find(output_id);
         if (it == outputs_.end()) return std::unexpected("Display output is not available");
         auto &output = it->second;
+        if (enabled && (output.panel_power_busy || output.panel_needs_wake))
+            return std::unexpected("Panel power command is busy or wake is incomplete");
         if (output.frame_admission_enabled != enabled) ++output.admission_generation;
         output.frame_admission_enabled = enabled;
         if (!enabled && output.pending_frame) {
@@ -49,7 +51,7 @@ std::expected<bool, std::string> Display::is_frame_output_drained(uint32_t outpu
         const auto &output = it->second;
         if (output.frame_admission_enabled || output.pending_frame || output.inflight_frame_id ||
             output.outstanding_async_frames || output.outstanding_sync_frames ||
-            output.panel_completion_uncertain) return false;
+            output.panel_completion_uncertain || output.panel_power_busy) return false;
         draw_mutex = output.draw_mutex;
     }
     if (!draw_mutex) return std::unexpected("Display draw mutex is not available");
@@ -62,7 +64,7 @@ std::expected<bool, std::string> Display::is_frame_output_drained(uint32_t outpu
     const auto &output = it->second;
     return !output.frame_admission_enabled && !output.pending_frame &&
            !output.inflight_frame_id && !output.outstanding_async_frames && !output.outstanding_sync_frames &&
-           !output.panel_completion_uncertain;
+           !output.panel_completion_uncertain && !output.panel_power_busy;
 }
 
 

@@ -138,6 +138,9 @@ public:
     std::expected<void, std::string> set_frame_admission(uint32_t output_id, bool enabled);
     /** Nonblocking check; true only when admission is closed and all accepted draws are drained. */
     std::expected<bool, std::string> is_frame_output_drained(uint32_t output_id) const;
+    enum class PanelCommand : uint8_t { DisplayOff, SleepIn, SleepOut, DisplayOn };
+    /** Send a panel command only with admission closed and every draw drained. No settle delay. */
+    std::expected<void, std::string> send_panel_command(uint32_t output_id, PanelCommand command);
 
     /**
      * @brief Inject synthetic touch points for an output, overriding the hardware snapshot.
@@ -273,6 +276,8 @@ private:
         bool frame_admission_enabled = true;
         uint64_t admission_generation = 0;
         bool panel_completion_uncertain = false;
+        bool panel_power_busy = false;
+        bool panel_needs_wake = false;
         bool dynamic_output = false;
     };
 

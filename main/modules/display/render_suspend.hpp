@@ -2,6 +2,7 @@
 #pragma once
 #include <cstdint>
 #include "modules/suspend_coordinator.hpp"
+#include "panel_power.hpp"
 
 // Single-owner, allocation-free adapter. Backend operations must not wait for render locks.
 class RenderSuspend {
@@ -17,6 +18,8 @@ public:
         virtual uint32_t active_source() = 0;
         virtual void arm_redraw(uint32_t source) = 0;
         virtual bool redraw_complete() = 0;
+        virtual PanelPower::Result suspend_panel() { return PanelPower::Result::Ready; }
+        virtual PanelPower::Result resume_panel() { return PanelPower::Result::Ready; }
         virtual void report(uint32_t session, uint8_t id, SuspendCoordinator::Report status) = 0;
     };
 
@@ -47,9 +50,18 @@ public:
                 acknowledge(backend, DISPLAY_ID, Report::Ready);
             }
         } else if (phase_ == Phase::Committing) {
-            const auto status = lvgl_paused_ && gfx_paused_ && backend.drained() ?
-                                Report::Suspended : Report::Error;
-            for (uint8_t id = LVGL_ID; id <= DISPLAY_ID; ++id) acknowledge(backend, id, status);
+            if (!lvgl_paused_ || !gfx_paused_ || !backend.drained()) {
+                acknowledge(backend, DISPLAY_ID, Report::Error);
+                return;
+            }
+            acknowledge(backend, LVGL_ID, Report::Suspended);
+            acknowledge(backend, GFX_ID, Report::Suspended);
+            if (!(reported_ & (1U << (DISPLAY_ID - 1)))) {
+                const auto result = backend.suspend_panel();
+                if (result != PanelPower::Result::Pending)
+                    acknowledge(backend, DISPLAY_ID, result == PanelPower::Result::Ready ?
+                                Report::Suspended : Report::Error);
+            }
         } else if (phase_ == Phase::Resuming) {
             // Fence any partially completed Prepare, including a retry after Recovery.
             if (step_ == Step::Close) {
@@ -60,6 +72,12 @@ public:
                 if (!lvgl_paused_) lvgl_paused_ = backend.pause_lvgl(true);
                 if (!gfx_paused_) gfx_paused_ = backend.pause_gfx(true);
                 if (!lvgl_paused_ || !gfx_paused_ || !backend.drained()) return;
+                step_ = Step::PanelWake;
+            }
+            if (step_ == Step::PanelWake) {
+                const auto panel_result = backend.resume_panel();
+                if (panel_result == PanelPower::Result::Error) { step_ = Step::PanelFault; return; }
+                if (panel_result == PanelPower::Result::Pending) return;
                 source_ = backend.active_source();
                 if (!source_) return;
                 backend.arm_redraw(source_);
@@ -87,7 +105,7 @@ public:
     }
 
 private:
-    enum class Step : uint8_t { Close, Pause, Resume, Redraw };
+    enum class Step : uint8_t { Close, Pause, PanelWake, PanelFault, Resume, Redraw };
     void acknowledge(Backend &backend, uint8_t id, SuspendCoordinator::Report status)
     {
         const uint8_t bit = 1U << (id - 1);
