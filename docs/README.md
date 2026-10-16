@@ -1,5 +1,7 @@
 # Project documentation
 
+- [Power management](architecture/power-management.md): implemented state machines,
+  suspend/resume sequence, timing, wake inputs and display-sleep limits.
 - `development/display-backlight-lifecycle.md`: notes on persisted brightness,
   auto-load, and the safe display startup sequence.
 - `development/component-overrides.md`: local Brookesia overrides, their
@@ -9,5 +11,5 @@
   release regression gate.
 - `releases/`: published release notes.
 
-Generated screenshots, diffs, build reports, and other reproducible outputs
-belong in `.local-artifacts/`, which is intentionally ignored by Git.
+README preview images live in `images/`. Generated test screenshots, diffs,
+build reports, and other reproducible outputs are not tracked by Git.
