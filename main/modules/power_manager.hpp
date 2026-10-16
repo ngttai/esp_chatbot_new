@@ -12,6 +12,7 @@
 
 #include "modules/power_policy.hpp"
 #include "modules/power_service_inputs.hpp"
+#include "modules/suspend_coordinator.hpp"
 #include "brookesia/service_manager/service/base.hpp"
 
 struct PowerManagerInput {
@@ -39,6 +40,11 @@ public:
         inputs_.notify_activity();
     }
     PowerPolicyState state() const { return published_state_.load(); }
+    bool register_participant(uint8_t id);
+    bool unregister_participant(uint8_t id);
+    bool report_suspend_status(uint32_t session, uint8_t id, SuspendCoordinator::Report status);
+    bool retry_resume(uint32_t session);
+    SuspendCoordinator::Snapshot suspend_status() const;
 #if !defined(ESP_PLATFORM)
     // Host stub controls exercise the same service lifecycle and scheduler.
     void set_host_agent_idle(bool idle) { host_agent_idle_ = idle; }
@@ -56,12 +62,17 @@ private:
     bool tick(uint32_t generation);
     void update(const PowerManagerInput &input);
     void publish_state();
+    void update_suspend(const PowerManagerInput &input);
+    void dispatch_suspend_command(SuspendCoordinator::Command command);
 
     bool set_temporary_brightness(int brightness);
     bool restore_backlight();
 
     PowerServiceInputs inputs_;
-    std::mutex lifecycle_mutex_;
+    mutable std::mutex lifecycle_mutex_;
+    SuspendCoordinator suspend_;
+    uint32_t suspend_activity_revision_ = 0;
+    uint32_t retry_resume_session_ = 0;
     PowerPolicy policy_;
     std::atomic<PowerPolicyState> published_state_{PowerPolicyState::Boot};
     esp_brookesia::lib_utils::TaskSchedulerTaskId tick_task_ = 0;

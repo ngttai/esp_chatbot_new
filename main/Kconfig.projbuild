@@ -134,4 +134,22 @@ menu "Example Configuration"
             Time measured from successful entry into the Dimmed state. The
             hardware sleep actuator is introduced in the next phase.
 
+    config EXAMPLE_PWR_PREPARE_TIMEOUT_MS
+        int "Suspend prepare and commit acknowledgement timeout (ms)"
+        range 100 60000
+        default 2000
+        help
+            Deadline for each prepare or commit stage of registered participants.
+            Does not replace panel-specific command timing.
+
+    config EXAMPLE_PWR_RESUME_TIMEOUT_MS
+        int "Suspend cancellation and resume timeout (ms)"
+        range 100 60000
+        default 2000
+
+    config EXAMPLE_PWR_SUSPEND_RETRY_MS
+        int "Suspend retry backoff (ms)"
+        range 100 60000
+        default 5000
+
 endmenu

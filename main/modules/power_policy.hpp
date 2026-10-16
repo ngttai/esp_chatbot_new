@@ -122,6 +122,10 @@ public:
 
     PowerPolicyState state() const { return state_; }
 
+    // Coordination keeps the original dim timestamp while awaiting readiness.
+    void defer_hardware_sleep() { state_ = PowerPolicyState::Dimmed; }
+    void confirm_hardware_sleep() { state_ = PowerPolicyState::HardwareSleep; }
+
 private:
     static uint32_t elapsed(uint32_t now_ms, uint32_t since_ms)
     {

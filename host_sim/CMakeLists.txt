@@ -223,10 +223,30 @@ if(BUILD_TESTING)
     target_compile_definitions(power_service_test PRIVATE
         CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS=1000
         CONFIG_EXAMPLE_PWR_HW_SLEEP_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_PREPARE_TIMEOUT_MS=2000
+        CONFIG_EXAMPLE_PWR_RESUME_TIMEOUT_MS=2000
+        CONFIG_EXAMPLE_PWR_SUSPEND_RETRY_MS=5000
         CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT=10)
     target_link_libraries(power_service_test PRIVATE brookesia::service_manager brookesia::lib_utils)
     add_test(NAME power_service_lifecycle COMMAND power_service_test)
     set_tests_properties(power_service_lifecycle PROPERTIES TIMEOUT 30)
+    add_executable(suspend_coordinator_test "${HOST_SIM_DIR}/tests/suspend_coordinator_test.cpp")
+    target_include_directories(suspend_coordinator_test PRIVATE "${PROJECT_ROOT}/main/modules")
+    add_test(NAME suspend_coordinator COMMAND suspend_coordinator_test)
+    add_executable(power_suspend_service_test
+        "${HOST_SIM_DIR}/tests/power_suspend_service_test.cpp"
+        "${PROJECT_ROOT}/main/modules/power_manager.cpp")
+    target_include_directories(power_suspend_service_test PRIVATE "${PROJECT_ROOT}/main")
+    target_compile_definitions(power_suspend_service_test PRIVATE
+        CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS=100
+        CONFIG_EXAMPLE_PWR_HW_SLEEP_TIMEOUT_MS=100
+        CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT=10
+        CONFIG_EXAMPLE_PWR_PREPARE_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_RESUME_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_SUSPEND_RETRY_MS=500)
+    target_link_libraries(power_suspend_service_test PRIVATE brookesia::service_manager brookesia::lib_utils)
+    add_test(NAME power_suspend_service COMMAND power_suspend_service_test)
+    set_tests_properties(power_suspend_service PROPERTIES TIMEOUT 30)
     add_test(NAME host_sim_capabilities COMMAND esp_chatbot_host_sim --print-capabilities)
 
     set(SPEAKER_UI_SELF_TEST_OPTIONS
