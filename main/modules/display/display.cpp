@@ -17,6 +17,7 @@
 #include "modules/ai_agents.hpp"
 #include "screens/speaker_shell.hpp"
 #include "display.hpp"
+#include "render_suspend_service.hpp"
 
 using namespace esp_brookesia;
 using EmoteHelper = service::helper::ExpressionEmote;
@@ -73,6 +74,12 @@ bool Display::start(const Config &config)
     };
     auto post_delayed_ret = task_scheduler_->post_delayed(delayed_task, BACKLIGHT_ON_DELAY_MS);
     BROOKESIA_CHECK_FALSE_RETURN(post_delayed_ret, false, "Failed to post delayed task");
+
+    if (!config.developer_mode) {
+        BROOKESIA_CHECK_FALSE_RETURN(start_render_suspend_participants(
+            task_scheduler_, display_output_id_, display_output_name_, display_width_, display_height_,
+            emote_service_binding_.is_valid()), false, "Failed to start Pwr render participants");
+    }
 
     return true;
 }

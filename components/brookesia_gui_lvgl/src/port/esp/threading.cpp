@@ -33,6 +33,15 @@ void lock_thread()
 #endif
 }
 
+bool try_lock_thread()
+{
+#if BROOKESIA_GUI_LVGL_HAS_ESP_FONT_BACKEND
+    return esp_lv_adapter_lock(0) == ESP_OK;
+#else
+    return false;
+#endif
+}
+
 void unlock_thread()
 {
 #if BROOKESIA_GUI_LVGL_HAS_ESP_FONT_BACKEND

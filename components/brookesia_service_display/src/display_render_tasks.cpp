@@ -75,7 +75,9 @@ void Display::render_output(uint32_t output_id)
                 std::lock_guard lock(mutex_);
                 auto output_it = outputs_.find(output_id);
                 output_exists = output_it != outputs_.end();
-                is_active = output_exists && (output_it->second.active_source_id == frame.source_id);
+                is_active = output_exists && output_it->second.frame_admission_enabled &&
+                            output_it->second.admission_generation == frame.admission_generation &&
+                            (output_it->second.active_source_id == frame.source_id);
                 if (is_active) {
                     const auto &output = output_it->second;
                     target = OutputDrawTarget{
@@ -92,20 +94,30 @@ void Display::render_output(uint32_t output_id)
                 result = PresentResult::DroppedNotActive;
             } else {
                 result = present_frame_to_output(target, frame.frame, frame.data, frame.timeout_ms);
+                if (target.info.slot == OutputSlot::HalPanel) {
+                    std::lock_guard lock(mutex_);
+                    auto it = outputs_.find(output_id);
+                    if (it != outputs_.end()) {
+                        it->second.panel_completion_uncertain =
+                            frame.timeout_ms == 0 || result != PresentResult::Presented;
+                    }
+                }
             }
         }
 
+        if (result == PresentResult::Presented) {
+            emit_frame_presented(frame.output_name, frame.frame, frame.source_id,
+                                 target.info.slot == OutputSlot::Buffer || frame.timeout_ms != 0);
+        }
+        const auto completed_frame_id = frame.frame_id;
+        complete_async_frame(std::move(frame), result);
         {
             std::lock_guard lock(mutex_);
             auto output_it = outputs_.find(output_id);
-            if ((output_it != outputs_.end()) && (output_it->second.inflight_frame_id == frame.frame_id)) {
+            if ((output_it != outputs_.end()) && (output_it->second.inflight_frame_id == completed_frame_id)) {
                 output_it->second.inflight_frame_id = 0;
             }
         }
-        if (result == PresentResult::Presented) {
-            emit_frame_presented(frame.output_name, frame.frame);
-        }
-        complete_async_frame(std::move(frame), result);
     }
 }
 
@@ -129,6 +141,11 @@ void Display::complete_async_frame(AsyncFrame frame, PresentResult result)
 {
     if (frame.on_complete != nullptr) {
         frame.on_complete(frame.frame_id, result);
+    }
+    std::lock_guard lock(mutex_);
+    auto it = outputs_.find(frame.output_id);
+    if (it != outputs_.end() && it->second.outstanding_async_frames > 0) {
+        --it->second.outstanding_async_frames;
     }
 }
 

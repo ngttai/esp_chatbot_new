@@ -7,8 +7,13 @@
 
 #include <cstdint>
 #include <atomic>
+#include <memory>
+#include <mutex>
 
 #include "modules/power_policy.hpp"
+#include "modules/power_service_inputs.hpp"
+#include "modules/suspend_coordinator.hpp"
+#include "brookesia/service_manager/service/base.hpp"
 
 struct PowerManagerInput {
     uint32_t now_ms = 0;
@@ -18,27 +23,67 @@ struct PowerManagerInput {
     bool display_ready = false;
 };
 
-class PowerManager {
+class PowerManager : public esp_brookesia::service::ServiceBase {
 public:
     static PowerManager &get_instance();
+    static std::shared_ptr<PowerManager> get_shared_instance();
+    static constexpr const char *SERVICE_NAME = "Pwr";
+    ~PowerManager() override = default;
 
-    void start(uint32_t display_output_id);
-    void update(const PowerManagerInput &input);
+    void configure(uint32_t display_output_id) { inputs_.configure(display_output_id); }
+    void set_ui_conditions(uint32_t activity_revision, bool blocked, bool display_ready)
+    {
+        inputs_.set_ui_conditions(activity_revision, blocked, display_ready);
+    }
     void notify_user_activity()
     {
-        external_activity_revision_.fetch_add(1, std::memory_order_relaxed);
+        inputs_.notify_activity();
     }
-    PowerPolicyState state() const { return policy_.state(); }
+    PowerPolicyState state() const { return published_state_.load(); }
+    bool register_participant(uint8_t id);
+    bool unregister_participant(uint8_t id);
+    bool report_suspend_status(uint32_t session, uint8_t id, SuspendCoordinator::Report status);
+    bool retry_resume(uint32_t session);
+    SuspendCoordinator::Snapshot suspend_status() const;
+#if !defined(ESP_PLATFORM)
+    // Host stub controls exercise the same service lifecycle and scheduler.
+    void set_host_agent_idle(bool idle) { host_agent_idle_ = idle; }
+    void fail_next_host_backlight() { host_fail_next_backlight_ = true; }
+    int host_backlight_pwm() const { return host_backlight_pwm_.load(); }
+#endif
 
 private:
     PowerManager();
+    bool on_start() override;
+    void on_stop() override;
+    std::vector<esp_brookesia::service::FunctionSchema> get_function_schemas() override;
+    FunctionHandlerList get_function_handlers() override;
+    std::vector<esp_brookesia::service::EventSchema> get_event_schemas() override;
+    bool tick(uint32_t generation);
+    void update(const PowerManagerInput &input);
+    void publish_state();
+    void update_suspend(const PowerManagerInput &input);
+    void dispatch_suspend_command(SuspendCoordinator::Command command);
 
     bool set_temporary_brightness(int brightness);
+    bool restore_backlight();
 
+    PowerServiceInputs inputs_;
+    mutable std::mutex lifecycle_mutex_;
+    SuspendCoordinator suspend_;
+    uint32_t suspend_activity_revision_ = 0;
+    uint32_t retry_resume_session_ = 0;
     PowerPolicy policy_;
-    std::atomic_uint32_t external_activity_revision_{0};
+    std::atomic<PowerPolicyState> published_state_{PowerPolicyState::Boot};
+    esp_brookesia::lib_utils::TaskSchedulerTaskId tick_task_ = 0;
+    uint32_t generation_ = 0;
     uint32_t display_output_id_ = 0;
     bool restore_pending_ = false;
     uint32_t restore_retry_ms_ = 0;
-    bool started_ = false;
+    bool running_ = false;
+#if !defined(ESP_PLATFORM)
+    std::atomic_bool host_agent_idle_{true};
+    std::atomic_bool host_fail_next_backlight_{false};
+    std::atomic_int host_backlight_pwm_{100};
+#endif
 };

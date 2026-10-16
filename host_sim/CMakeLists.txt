@@ -136,8 +136,29 @@ endif()
 set(BROOKESIA_HAL_LINUX_BLE_BACKEND stub CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_POWER_BACKEND "${HOST_SIM_POWER_BACKEND}" CACHE STRING "" FORCE)
 set(BROOKESIA_HAL_LINUX_DISPLAY_BACKEND sdl2 CACHE STRING "" FORCE)
+# Exercise the firmware's local Display implementation rather than the upstream copy.
+if(NOT TARGET brookesia::hal_interface)
+    add_subdirectory(
+        "${BROOKESIA_SOURCE_DIR}/hal/brookesia_hal_interface"
+        "${CMAKE_BINARY_DIR}/brookesia_hal_interface"
+    )
+endif()
+if(NOT TARGET brookesia::service_storage)
+    add_subdirectory(
+        "${BROOKESIA_SOURCE_DIR}/service/system/brookesia_service_storage"
+        "${CMAKE_BINARY_DIR}/brookesia_service_storage"
+    )
+endif()
 add_subdirectory(
-    "${BROOKESIA_SOURCE_DIR}/gui/brookesia_gui_lvgl"
+    "${PROJECT_ROOT}/components/brookesia_service_display"
+    "${CMAKE_BINARY_DIR}/brookesia_service_display"
+)
+add_subdirectory(
+    "${BROOKESIA_SOURCE_DIR}/hal/brookesia_hal_linux"
+    "${CMAKE_BINARY_DIR}/brookesia_hal_linux"
+)
+add_subdirectory(
+    "${PROJECT_ROOT}/components/brookesia_gui_lvgl"
     "${CMAKE_BINARY_DIR}/brookesia_gui_lvgl"
 )
 add_subdirectory(
@@ -216,6 +237,52 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(panel_power_test "${HOST_SIM_DIR}/tests/panel_power_test.cpp")
+    target_include_directories(panel_power_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME panel_power COMMAND panel_power_test)
+    add_executable(render_suspend_test "${HOST_SIM_DIR}/tests/render_suspend_test.cpp")
+    target_include_directories(render_suspend_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME render_suspend COMMAND render_suspend_test)
+    add_executable(lvgl_render_pause_test "${HOST_SIM_DIR}/tests/lvgl_render_pause_test.cpp"
+        "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/base/assets/fonts/maison_neue_book/esp_brookesia_font_maison_neue_book_14.c")
+    target_link_libraries(lvgl_render_pause_test PRIVATE brookesia::gui_lvgl brookesia::hal_linux)
+    add_test(NAME lvgl_render_pause COMMAND lvgl_render_pause_test)
+    set_tests_properties(lvgl_render_pause PROPERTIES TIMEOUT 30 ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    add_executable(display_admission_test "${HOST_SIM_DIR}/tests/display_admission_test.cpp")
+    target_link_libraries(display_admission_test PRIVATE brookesia::service_display brookesia::service_manager brookesia::hal_linux)
+    add_test(NAME display_admission COMMAND display_admission_test)
+    set_tests_properties(display_admission PROPERTIES TIMEOUT 30 ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    add_executable(power_service_test
+        "${HOST_SIM_DIR}/tests/power_service_test.cpp"
+        "${PROJECT_ROOT}/main/modules/power_manager.cpp")
+    target_include_directories(power_service_test PRIVATE "${PROJECT_ROOT}/main")
+    target_compile_definitions(power_service_test PRIVATE
+        CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS=1000
+        CONFIG_EXAMPLE_PWR_HW_SLEEP_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_PREPARE_TIMEOUT_MS=2000
+        CONFIG_EXAMPLE_PWR_RESUME_TIMEOUT_MS=2000
+        CONFIG_EXAMPLE_PWR_SUSPEND_RETRY_MS=5000
+        CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT=10)
+    target_link_libraries(power_service_test PRIVATE brookesia::service_manager brookesia::lib_utils)
+    add_test(NAME power_service_lifecycle COMMAND power_service_test)
+    set_tests_properties(power_service_lifecycle PROPERTIES TIMEOUT 30)
+    add_executable(suspend_coordinator_test "${HOST_SIM_DIR}/tests/suspend_coordinator_test.cpp")
+    target_include_directories(suspend_coordinator_test PRIVATE "${PROJECT_ROOT}/main/modules")
+    add_test(NAME suspend_coordinator COMMAND suspend_coordinator_test)
+    add_executable(power_suspend_service_test
+        "${HOST_SIM_DIR}/tests/power_suspend_service_test.cpp"
+        "${PROJECT_ROOT}/main/modules/power_manager.cpp")
+    target_include_directories(power_suspend_service_test PRIVATE "${PROJECT_ROOT}/main")
+    target_compile_definitions(power_suspend_service_test PRIVATE
+        CONFIG_EXAMPLE_PWR_DIM_TIMEOUT_MS=100
+        CONFIG_EXAMPLE_PWR_HW_SLEEP_TIMEOUT_MS=100
+        CONFIG_EXAMPLE_PWR_DIM_BRIGHTNESS_PERCENT=10
+        CONFIG_EXAMPLE_PWR_PREPARE_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_RESUME_TIMEOUT_MS=500
+        CONFIG_EXAMPLE_PWR_SUSPEND_RETRY_MS=500)
+    target_link_libraries(power_suspend_service_test PRIVATE brookesia::service_manager brookesia::lib_utils)
+    add_test(NAME power_suspend_service COMMAND power_suspend_service_test)
+    set_tests_properties(power_suspend_service PROPERTIES TIMEOUT 30)
     add_test(NAME host_sim_capabilities COMMAND esp_chatbot_host_sim --print-capabilities)
 
     set(SPEAKER_UI_SELF_TEST_OPTIONS

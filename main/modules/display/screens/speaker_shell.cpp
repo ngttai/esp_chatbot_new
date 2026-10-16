@@ -227,7 +227,7 @@ bool ScreenSpeakerShell::start(
     speaker_ui_set_touch_sensor_on(touch_sensor_user_enabled_);
     ensure_control_event_subscriptions();
     refresh_control_state();
-    PowerManager::get_instance().start(display_output_id_);
+    PowerManager::get_instance().configure(display_output_id_);
     service_timer_ = lv_timer_create(service_timer_callback, SERVICE_POLL_PERIOD_MS, this);
     BROOKESIA_CHECK_NULL_RETURN(service_timer_, false, "Failed to create Speaker UI service adapter timer");
 
@@ -279,7 +279,7 @@ void ScreenSpeakerShell::poll_service_controls()
 {
     poll_idle_observability();
     poll_idle_timeout();
-    poll_power_manager();
+    publish_power_inputs();
     poll_display_mode();
     sync_service_control_ui();
     poll_brightness();
@@ -293,7 +293,7 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_factory_reset();
 }
 
-void ScreenSpeakerShell::poll_power_manager()
+void ScreenSpeakerShell::publish_power_inputs()
 {
     const speaker_ui_screen_t screen = speaker_ui_get_active_screen();
     const bool critical_operation = factory_reset_in_progress_ || self_test_running_.load() ||
@@ -301,13 +301,9 @@ void ScreenSpeakerShell::poll_power_manager()
                                     display_mode_switch_in_flight_.load();
     const bool blocked = critical_operation || (idle_screen_role(screen) == UiIdleScreenRole::Critical);
     const int brightness = service_brightness_.load();
-    PowerManager::get_instance().update({
-        .now_ms = lv_tick_get(),
-        .activity_revision = speaker_ui_get_activity_revision(),
-        .agent_idle_allowed = !AI_Agents::get_instance().blocks_power_idle(),
-        .blocked = blocked,
-        .display_ready = brightness >= 0,
-    });
+    PowerManager::get_instance().set_ui_conditions(
+        speaker_ui_get_activity_revision(), blocked, brightness >= 0
+    );
 }
 
 void ScreenSpeakerShell::poll_idle_timeout()
