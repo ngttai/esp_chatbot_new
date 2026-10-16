@@ -7,8 +7,7 @@ ported ESP Speaker UI. The same UI can run on the board or in the Linux/SDL2
 simulator.
 
 This project is based on the `example_agent_chatbot` application from the
-ESP-Brookesia `master` branch. Its Speaker UI is ported from ESP-Brookesia v0.6
-and preserved as closely as possible to the original implementation.
+ESP-Brookesia `master` branch.
 
 ## Features
 
@@ -20,6 +19,40 @@ and preserved as closely as possible to the original implementation.
 - Linux simulator with deterministic hardware mocks and self-tests
 
 Camera and BLE are not included.
+
+## UI preview
+
+### On device
+
+ESP VoCat v1.0 running the Home emote, photographed on real hardware.
+
+<p align="center">
+  <img src="docs/images/device-home.jpg" alt="ESP VoCat v1.0 showing a smiling Home emote" width="480">
+  <img src="docs/images/device-home-idle.jpg" alt="ESP VoCat v1.0 showing the resting Home emote and time" width="480">
+</p>
+
+### Simulator
+
+UI adapted from the ESP Speaker example in ESP-Brookesia v0.6, with
+project-specific changes.
+
+Screenshots from the Linux simulator. Time, weather, battery and memory values
+are simulated and do not represent live device readings.
+
+<table>
+  <tr>
+    <th>Clock</th>
+    <th>Launcher</th>
+    <th>Quick Settings</th>
+    <th>Settings</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/simulator-timer.png" alt="Clock with weather" width="200"></td>
+    <td><img src="docs/images/simulator-launcher.png" alt="Launcher with Clock and Settings apps" width="200"></td>
+    <td><img src="docs/images/simulator-quick.png" alt="Quick Settings for Wi-Fi, volume and brightness" width="200"></td>
+    <td><img src="docs/images/simulator-settings.png" alt="Settings with WLAN, Sound and Display options" width="200"></td>
+  </tr>
+</table>
 
 ## Build for ESP VoCat v1.0
 
@@ -58,11 +91,14 @@ backends and simulator limitations.
 
 ```text
 main/                       Firmware application
+main/modules/               Power manager, XiaoZhi, Wi-Fi, IMU, LED and services
 main/modules/display/       Display integration and Speaker UI
+main/compat/                Renderer pause/resume and LCD panel sleep integration
 host_sim/                   Linux/SDL2 simulator
 components/                 Local ESP-IDF components
+assets/                     UI assets and animations
 littlefs/                   Files packaged into LittleFS
-docs/                       Release notes and visual baselines
+docs/                       Release notes, README images and visual baselines
 ```
 
 The imported Speaker UI is kept under
@@ -70,3 +106,11 @@ The imported Speaker UI is kept under
 layout and assets unless intentionally updating the upstream UI baseline.
 
 Project documentation is indexed in [docs/README.md](docs/README.md).
+See [Power management](docs/architecture/power-management.md) for the implemented
+state machines and display suspend/resume sequence.
+
+## License
+
+Original project code is licensed under [Apache-2.0](LICENSE), unless otherwise
+stated in individual files. Third-party code and assets retain their respective
+licenses; see [third-party notices and asset provenance](THIRD_PARTY_NOTICES.md).
