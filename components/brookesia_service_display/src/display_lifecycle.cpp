@@ -137,6 +137,7 @@ void Display::on_deinit()
     output_registered_signal_.disconnect_all_slots();
     output_unregistered_signal_.disconnect_all_slots();
     frame_presented_signal_.disconnect_all_slots();
+    frame_completed_signal_.disconnect_all_slots();
 
     std::vector<AsyncFrame> dropped_frames;
     {

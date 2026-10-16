@@ -119,7 +119,18 @@ add_library(${COMPONENT_LIB} STATIC
     ${COMPONENT_SRCS_C}
     ${COMPONENT_SRCS_CPP}
 )
-brookesia_define_component_version(${COMPONENT_LIB} ${COMPONENT_DIR} BROOKESIA_GUI_LVGL)
+# Only the root version describes this component; dependencies can also pin exact versions.
+file(STRINGS "${COMPONENT_DIR}/idf_component.yml" gui_version_line REGEX "^version: *[0-9]+\\.[0-9]+\\.[0-9]+$")
+if(NOT gui_version_line)
+    message(FATAL_ERROR "Missing brookesia_gui_lvgl root component version")
+endif()
+string(REGEX REPLACE "^version: *([0-9]+)\\.([0-9]+)\\.([0-9]+)$" "\\1;\\2;\\3" gui_version "${gui_version_line}")
+list(GET gui_version 0 gui_major)
+list(GET gui_version 1 gui_minor)
+list(GET gui_version 2 gui_patch)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    "BROOKESIA_GUI_LVGL_VER_MAJOR=(${gui_major})" "BROOKESIA_GUI_LVGL_VER_MINOR=(${gui_minor})"
+    "BROOKESIA_GUI_LVGL_VER_PATCH=(${gui_patch})")
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_23)
 target_include_directories(${COMPONENT_LIB}

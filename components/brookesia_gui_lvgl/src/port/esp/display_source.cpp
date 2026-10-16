@@ -566,7 +566,7 @@ esp_err_t DisplaySourceImpl::submit_frame(int x_start, int y_start, int x_end, i
     auto present_result = DisplayService::get_instance().present_frame_sync(
                               source_id_, output_name_, frame,
                               service::RawBuffer(data, static_cast<size_t>(width) * height * bpp),
-                              0
+                              std::max<uint32_t>(1, config_.frame_timeout_ms)
                           );
 
     switch (present_result) {

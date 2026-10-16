@@ -5,9 +5,65 @@
  */
 #include "boost/format.hpp"
 #include "private/display_impl.hpp"
+#include "brookesia/lib_utils/function_guard.hpp"
 
 namespace esp_brookesia::service {
 
+void Display::end_sync_frame(uint32_t output_id)
+{
+    std::lock_guard lock(mutex_);
+    auto it = outputs_.find(output_id);
+    if (it != outputs_.end() && it->second.outstanding_sync_frames > 0)
+        --it->second.outstanding_sync_frames;
+}
+
+std::expected<void, std::string> Display::set_frame_admission(uint32_t output_id, bool enabled)
+{
+    std::optional<AsyncFrame> dropped;
+    {
+        std::lock_guard lock(mutex_);
+        auto it = outputs_.find(output_id);
+        if (it == outputs_.end()) return std::unexpected("Display output is not available");
+        auto &output = it->second;
+        if (output.frame_admission_enabled != enabled) ++output.admission_generation;
+        output.frame_admission_enabled = enabled;
+        if (!enabled && output.pending_frame) {
+            dropped = std::move(output.pending_frame);
+            output.pending_frame.reset();
+        }
+    }
+    // Completion may re-enter Display; never invoke it while holding the service mutex.
+    if (dropped) {
+        complete_async_frame(std::move(*dropped), PresentResult::DroppedNotActive);
+    }
+    return {};
+}
+
+std::expected<bool, std::string> Display::is_frame_output_drained(uint32_t output_id) const
+{
+    std::shared_ptr<std::mutex> draw_mutex;
+    {
+        std::lock_guard lock(mutex_);
+        auto it = outputs_.find(output_id);
+        if (it == outputs_.end()) return std::unexpected("Display output is not available");
+        const auto &output = it->second;
+        if (output.frame_admission_enabled || output.pending_frame || output.inflight_frame_id ||
+            output.outstanding_async_frames || output.outstanding_sync_frames ||
+            output.panel_completion_uncertain) return false;
+        draw_mutex = output.draw_mutex;
+    }
+    if (!draw_mutex) return std::unexpected("Display draw mutex is not available");
+    std::unique_lock draw_lock(*draw_mutex, std::try_to_lock);
+    if (!draw_lock.owns_lock()) return false;
+    std::lock_guard lock(mutex_);
+    auto it = outputs_.find(output_id);
+    if (it == outputs_.end() || it->second.draw_mutex != draw_mutex)
+        return std::unexpected("Display output changed while checking drain");
+    const auto &output = it->second;
+    return !output.frame_admission_enabled && !output.pending_frame &&
+           !output.inflight_frame_id && !output.outstanding_async_frames && !output.outstanding_sync_frames &&
+           !output.panel_completion_uncertain;
+}
 
 
 Display::PresentResult Display::present_buffer_frame_sync(
@@ -20,6 +76,7 @@ Display::PresentResult Display::present_buffer_frame_sync(
 
     std::shared_ptr<std::mutex> draw_mutex;
     uint32_t output_id = 0;
+    uint64_t admission_generation = 0;
 
     {
         std::lock_guard lock(mutex_);
@@ -35,7 +92,7 @@ Display::PresentResult Display::present_buffer_frame_sync(
         if (output.info.slot != OutputSlot::Buffer) {
             return PresentResult::Error;
         }
-        if (output.active_source_id != source_id) {
+        if (!output.frame_admission_enabled || output.active_source_id != source_id) {
             return PresentResult::DroppedNotActive;
         }
         const size_t bpp = bytes_per_pixel(frame.pixel_format);
@@ -45,7 +102,10 @@ Display::PresentResult Display::present_buffer_frame_sync(
         }
 
         draw_mutex = output.draw_mutex;
+        admission_generation = output.admission_generation;
+        ++output.outstanding_sync_frames;
     }
+    lib_utils::FunctionGuard frame_guard([this, output_id] { end_sync_frame(output_id); });
 
     if (!draw_mutex) {
         return PresentResult::Error;
@@ -59,7 +119,9 @@ Display::PresentResult Display::present_buffer_frame_sync(
         {
             std::lock_guard lock(mutex_);
             auto output_it = outputs_.find(output_id);
-            if ((output_it == outputs_.end()) || (output_it->second.active_source_id != source_id)) {
+            if ((output_it == outputs_.end()) || !output_it->second.frame_admission_enabled ||
+                output_it->second.admission_generation != admission_generation ||
+                (output_it->second.active_source_id != source_id)) {
                 return PresentResult::DroppedNotActive;
             }
             auto &output = output_it->second;
@@ -77,7 +139,7 @@ Display::PresentResult Display::present_buffer_frame_sync(
     }
 
     if (result == PresentResult::Presented) {
-        emit_frame_presented(presented_output_name, frame);
+        emit_frame_presented(presented_output_name, frame, source_id);
     }
     return result;
 }
@@ -118,7 +180,7 @@ Display::AsyncSubmitResult Display::present_frame_async(
         }
 
         auto &output = outputs_.at(parsed_output_id.value());
-        if (output.active_source_id != source_id) {
+        if (!output.frame_admission_enabled || output.active_source_id != source_id) {
             return {
                 .frame_id = 0,
                 .state = PresentSubmitState::DroppedNotActive,
@@ -139,12 +201,15 @@ Display::AsyncSubmitResult Display::present_frame_async(
         output.pending_frame = AsyncFrame{
             .frame_id = frame_id,
             .source_id = source_id,
+            .output_id = parsed_output_id.value(),
+            .admission_generation = output.admission_generation,
             .output_name = output.info.name,
             .frame = frame,
             .data = data,
             .timeout_ms = timeout_ms,
             .on_complete = std::move(on_complete),
         };
+        ++output.outstanding_async_frames;
 
         if (!schedule_render_output_locked(parsed_output_id.value())) {
             failed_frame = std::move(output.pending_frame.value());

@@ -61,6 +61,8 @@ public:
     }
 
     bool start(const DisplaySourceConfig &config = {});
+    /** Pause only display refresh. Input, LVGL tick and application timers stay running. */
+    bool try_set_render_paused(bool paused);
     void stop_timers();
     void release_display_service();
     void stop();

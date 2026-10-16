@@ -42,6 +42,17 @@ void lock_thread()
     get_lvgl_mutex().lock();
 }
 
+bool try_lock_thread()
+{
+    if (thread_lock_depth > 0) {
+        ++thread_lock_depth;
+        return true;
+    }
+    if (!get_lvgl_mutex().try_lock()) return false;
+    thread_lock_depth = 1;
+    return true;
+}
+
 void unlock_thread()
 {
     if (thread_lock_depth == 0) {

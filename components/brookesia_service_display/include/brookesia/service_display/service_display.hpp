@@ -81,6 +81,8 @@ public:
     using OutputRegisteredSignal = esp_brookesia::lib_utils::signal<void(const OutputInfo &info)>;
     using OutputUnregisteredSignal = esp_brookesia::lib_utils::signal<void(const std::string &output_name)>;
     using FramePresentedSignal = esp_brookesia::lib_utils::signal<void(const std::string &output_name, const FrameInfo &frame)>;
+    using FrameCompletedSignal = esp_brookesia::lib_utils::signal<void(
+        uint32_t source_id, const std::string &output_name, const FrameInfo &frame)>;
     using TouchUpdatedSignal = esp_brookesia::lib_utils::signal<void(
                                    const std::string &output_name, const TouchSnapshot &snapshot
                                )>;
@@ -127,6 +129,15 @@ public:
     );
     /** @brief Clear the PWM override and apply the current user backlight settings. */
     std::expected<void, std::string> restore_backlight(uint32_t output_id);
+    esp_brookesia::lib_utils::connection connect_frame_completed(const FrameCompletedSignal::slot_type &slot)
+    {
+        return frame_completed_signal_.connect(slot);
+    }
+
+    /** Close/open frame admission without changing source ownership or touch input. */
+    std::expected<void, std::string> set_frame_admission(uint32_t output_id, bool enabled);
+    /** Nonblocking check; true only when admission is closed and all accepted draws are drained. */
+    std::expected<bool, std::string> is_frame_output_drained(uint32_t output_id) const;
 
     /**
      * @brief Inject synthetic touch points for an output, overriding the hardware snapshot.
@@ -212,6 +223,8 @@ private:
     struct AsyncFrame {
         uint32_t frame_id = 0;
         uint32_t source_id = 0;
+        uint32_t output_id = 0;
+        uint64_t admission_generation = 0;
         std::string output_name;
         FrameInfo frame;
         RawBuffer data;
@@ -255,6 +268,11 @@ private:
         bool backlight_on = false;
         bool render_scheduled = false;
         uint32_t inflight_frame_id = 0;
+        uint32_t outstanding_async_frames = 0;
+        uint32_t outstanding_sync_frames = 0;
+        bool frame_admission_enabled = true;
+        uint64_t admission_generation = 0;
+        bool panel_completion_uncertain = false;
         bool dynamic_output = false;
     };
 
@@ -452,6 +470,7 @@ private:
     void render_output(uint32_t output_id);
     void drop_pending_frames_locked(std::vector<AsyncFrame> &dropped_frames);
     void complete_async_frame(AsyncFrame frame, PresentResult result);
+    void end_sync_frame(uint32_t output_id);
     void bind_default_touches_locked();
     void refresh_output_capability_locked(OutputContext &output);
     OutputTouchCapability make_output_touch_capability_locked(const TouchContext &touch) const;
@@ -470,7 +489,8 @@ private:
     void emit_touch_gesture(const TouchGestureInfo &info);
     void emit_output_registered(const OutputInfo &info);
     void emit_output_unregistered(const std::string &output_name);
-    void emit_frame_presented(const std::string &output_name, const FrameInfo &frame);
+    void emit_frame_presented(const std::string &output_name, const FrameInfo &frame,
+                              uint32_t source_id, bool completed = true);
     void emit_source_state_changed(const std::string &source_name, const std::string &output_name, SourceState state);
     void emit_active_source_changed(const std::string &output_name, const std::string &source_name);
     void bind_backlights_to_outputs_locked(std::vector<hal::InterfaceHandle<hal::display::BacklightIface>> backlights);
@@ -501,6 +521,7 @@ private:
     OutputRegisteredSignal output_registered_signal_;
     OutputUnregisteredSignal output_unregistered_signal_;
     FramePresentedSignal frame_presented_signal_;
+    FrameCompletedSignal frame_completed_signal_;
     TouchUpdatedSignal touch_updated_signal_;
     TouchGestureSignal touch_gesture_signal_;
     dataflow::ProviderRegistration dataflow_provider_registration_;

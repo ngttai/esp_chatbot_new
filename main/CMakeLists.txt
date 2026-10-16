@@ -4,6 +4,7 @@ set(SRCS
     "modules/battery_monitor.cpp"
     "modules/developer_mode.cpp"
     "modules/display/display.cpp"
+    "modules/display/render_suspend_service.cpp"
     "modules/display/screens/speaker_shell.cpp"
     "modules/general_services.cpp"
     "modules/head_led.cpp"
@@ -62,6 +63,8 @@ idf_component_register(
 )
 
 # Keep imported UI sources byte-identical while accepting their LVGL integer format.
+include("${CMAKE_CURRENT_LIST_DIR}/compat/render_power.cmake")
+
 set_source_files_properties(
     "${CMAKE_CURRENT_LIST_DIR}/modules/display/speaker_ui/src/speaker_ui.c"
     PROPERTIES COMPILE_OPTIONS "-Wno-error=format"

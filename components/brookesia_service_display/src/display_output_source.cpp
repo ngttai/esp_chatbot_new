@@ -5,6 +5,7 @@
  */
 #include "boost/format.hpp"
 #include "private/display_impl.hpp"
+#include "brookesia/lib_utils/function_guard.hpp"
 
 namespace esp_brookesia::service {
 
@@ -794,6 +795,7 @@ Display::PresentResult Display::present_frame_sync(
     OutputDrawTarget target;
     std::shared_ptr<std::mutex> draw_mutex;
     uint32_t output_id = 0;
+    uint64_t admission_generation = 0;
 
     {
         std::lock_guard lock(mutex_);
@@ -806,7 +808,7 @@ Display::PresentResult Display::present_frame_sync(
         }
         output_id = parsed_output_id.value();
         auto &output = outputs_.at(output_id);
-        if (output.active_source_id != source_id) {
+        if (!output.frame_admission_enabled || output.active_source_id != source_id) {
             return PresentResult::DroppedNotActive;
         }
         if ((data.data_ptr == nullptr) || !is_frame_valid_for_output(frame, output, data.data_size)) {
@@ -814,7 +816,10 @@ Display::PresentResult Display::present_frame_sync(
         }
 
         draw_mutex = output.draw_mutex;
+        admission_generation = output.admission_generation;
+        ++output.outstanding_sync_frames;
     }
+    lib_utils::FunctionGuard frame_guard([this, output_id] { end_sync_frame(output_id); });
 
     if (!draw_mutex) {
         return PresentResult::Error;
@@ -826,7 +831,9 @@ Display::PresentResult Display::present_frame_sync(
         {
             std::lock_guard lock(mutex_);
             auto output_it = outputs_.find(output_id);
-            if ((output_it == outputs_.end()) || (output_it->second.active_source_id != source_id)) {
+            if ((output_it == outputs_.end()) || !output_it->second.frame_admission_enabled ||
+                output_it->second.admission_generation != admission_generation ||
+                (output_it->second.active_source_id != source_id)) {
                 return PresentResult::DroppedNotActive;
             }
             const auto &output = output_it->second;
@@ -837,10 +844,19 @@ Display::PresentResult Display::present_frame_sync(
             };
         }
         result = present_frame_to_output(target, frame, data, timeout_ms);
+        if (target.info.slot == OutputSlot::HalPanel) {
+            std::lock_guard lock(mutex_);
+            auto it = outputs_.find(output_id);
+            if (it != outputs_.end()) {
+                it->second.panel_completion_uncertain =
+                    timeout_ms == 0 || result != PresentResult::Presented;
+            }
+        }
     }
 
     if (result == PresentResult::Presented) {
-        emit_frame_presented(target.info.name, frame);
+        emit_frame_presented(target.info.name, frame, source_id,
+                             target.info.slot == OutputSlot::Buffer || timeout_ms != 0);
     }
     return result;
 }

@@ -332,8 +332,10 @@ void Display::emit_output_unregistered(const std::string &output_name)
 }
 
 
-void Display::emit_frame_presented(const std::string &output_name, const FrameInfo &frame)
+void Display::emit_frame_presented(const std::string &output_name, const FrameInfo &frame,
+                                   uint32_t source_id, bool completed)
 {
+    if (completed) frame_completed_signal_(source_id, output_name, frame);
     frame_presented_signal_(output_name, frame);
 }
 

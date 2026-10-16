@@ -150,6 +150,12 @@ int run_main(int argc, char **argv)
         return output.backlight.has_value();
     });
     if (backlight_output != outputs.end()) {
+        auto load_result = DisplayHelper::call_function_sync(
+            DisplayHelper::FunctionId::LoadData,
+            static_cast<double>(backlight_output->id),
+            service::helper::Timeout(DISPLAY_SERVICE_TIMEOUT_MS)
+        );
+        if (!load_result) return fail("display backlight restore", load_result.error());
         (void)DisplayHelper::call_function_sync(
             DisplayHelper::FunctionId::SetBacklightOnOff,
             static_cast<double>(backlight_output->id),
