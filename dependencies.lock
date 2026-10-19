@@ -831,34 +831,23 @@ dependencies:
       type: service
     version: 1.8.0
   espressif/esp_xiaozhi:
-    component_hash: 8e2e8a32abee72b29fd1833990a033f07bc6e468867ece1176513da467292e3f
     dependencies:
     - name: espressif/cmake_utilities
-      registry_url: https://components.espressif.com
-      require: private
       version: 0.*
     - name: espressif/cjson
-      registry_url: https://components.espressif.com
-      require: private
       version: 1.*
     - name: espressif/esp_websocket_client
-      registry_url: https://components.espressif.com
-      require: private
       version: ^1.6.1
     - name: espressif/mcp-c-sdk
-      registry_url: https://components.espressif.com
-      require: private
+      require: public
       version: ^2.0.1
     - name: espressif/mqtt
-      registry_url: https://components.espressif.com
-      require: private
       version: 1.*
     - name: idf
-      require: private
       version: '>=5.5'
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: components/esp_xiaozhi
+      type: local
     version: 0.1.2
   espressif/freetype:
     component_hash: aa9f7657a69b2b1c1f49044017fc424081d4e0fe6e97834cb43883548d44e3ca
@@ -1288,17 +1277,22 @@ direct_dependencies:
 - espressif/brookesia_service_storage
 - espressif/brookesia_service_video
 - espressif/brookesia_service_wifi
+- espressif/cjson
+- espressif/cmake_utilities
 - espressif/esp_lcd_st77916
 - espressif/esp_lcd_touch_cst816s
 - espressif/esp_lvgl_adapter
 - espressif/esp_tinyusb
+- espressif/esp_websocket_client
 - espressif/esp_xiaozhi
 - espressif/led_indicator
+- espressif/mcp-c-sdk
+- espressif/mqtt
 - espressif/touch_sensor_lowlevel
 - espressif2022/bmi270
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 604f119da20269041be98a4d046a956ba5765b07978f0afb456780593c3f05f2
+manifest_hash: 97c818cd076049734b9075066cf239bad28c9cbfe94d37a7b2e863e09066ac1b
 target: esp32s3
 version: 3.0.0

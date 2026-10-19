@@ -61,6 +61,11 @@ dependencies:
     # armed, without changing the original Half-Duplex conversation flow.
     override_path: "../components/brookesia_agent_xiaozhi"
 
+  # Keep MCP protocol state independent from the short-lived audio session.
+  espressif/esp_xiaozhi:
+    version: "0.1.2"
+    override_path: "../components/esp_xiaozhi"
+
   # Expressions
   espressif/brookesia_expression_emote:
     version: "0.8.*"

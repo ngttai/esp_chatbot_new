@@ -25,6 +25,7 @@
 #include "brookesia/service_helper/media/bt_speaker.hpp"
 #include "private/utils.hpp"
 #include "modules/display/display.hpp"
+#include "modules/mcp_device_tools.hpp"
 #include "modules/wifi_control.hpp"
 #include "ai_agents.hpp"
 
@@ -75,7 +76,7 @@ service::ServiceBinding camera_video_encoder_binding;
 service::ServiceBinding camera_video_decoder_binding;
 service::EventRegistry::SignalConnection camera_frame_ready_connection;
 
-static bool add_camera_mcp_tool();
+[[maybe_unused]] static bool add_camera_mcp_tool();
 static service::FunctionResult camera_open_callback(service::FunctionParameterMap &&params);
 static service::FunctionResult camera_close_callback(service::FunctionParameterMap &&params);
 static service::FunctionResult camera_take_photo_callback(service::FunctionParameterMap &&params);
@@ -269,54 +270,7 @@ void AI_Agents::init_xiaozhi()
     BROOKESIA_LOGW("XiaoZhi agent is not enabled, skip initialization");
 #else
 
-    // Get device capabilities
-    auto get_device_capabilities_result = DeviceHelper::call_function_sync<boost::json::array>(
-            DeviceHelper::FunctionId::GetCapabilities
-                                          );
-    BROOKESIA_CHECK_FALSE_EXIT(
-        get_device_capabilities_result, "Failed to get device capabilities: %1%", get_device_capabilities_result.error()
-    );
-    BROOKESIA_LOGI("Device capabilities: %1%", get_device_capabilities_result.value());
-    DeviceHelper::Capabilities device_capabilities;
-    auto convert_result = BROOKESIA_DESCRIBE_FROM_JSON(get_device_capabilities_result.value(), device_capabilities);
-    BROOKESIA_CHECK_FALSE_EXIT(convert_result, "Failed to convert device capabilities");
-    auto has_capability = [&device_capabilities](std::string_view interface_name) {
-        for (const auto &device : device_capabilities) {
-            for (const auto &interface : device.interfaces) {
-                if (interface.type_name == interface_name) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
-    // Build device service tools
-    std::vector<DeviceHelper::FunctionId> device_functions{
-        DeviceHelper::FunctionId::GetCapabilities,
-        DeviceHelper::FunctionId::GetBoardInfo
-    };
-    if (has_capability(hal::power::BatteryIface::NAME)) {
-        device_functions.push_back(DeviceHelper::FunctionId::GetPowerBatteryInfo);
-        device_functions.push_back(DeviceHelper::FunctionId::GetPowerBatteryState);
-        device_functions.push_back(DeviceHelper::FunctionId::SetPowerBatteryChargingEnabled);
-    }
-    if (has_capability(hal::video::CameraIface::NAME)) {
-        device_functions.push_back(DeviceHelper::FunctionId::GetCameraDeviceInfos);
-    }
-    auto add_device_service_tools_result = XiaoZhiHelper::call_function_sync<boost::json::array>(
-            XiaoZhiHelper::FunctionId::AddMCP_ToolsWithServiceFunction,
-            std::string(DeviceHelper::get_name()),
-            BROOKESIA_DESCRIBE_TO_JSON(device_functions).as_array()
-                                           );
-    BROOKESIA_CHECK_FALSE_EXIT(
-        add_device_service_tools_result, "Failed to add device service tools: %1%",
-        add_device_service_tools_result.error()
-    );
-    BROOKESIA_LOGI("Added device service tools: %1%", add_device_service_tools_result.value());
-
-    if (!add_camera_mcp_tool()) {
-        BROOKESIA_LOGW("XiaoZhi camera MCP tool is unavailable, continue without camera");
-    }
+    BROOKESIA_CHECK_FALSE_EXIT(register_vocat_mcp_tools(), "Failed to register VoCat MCP tools");
 
     // Subscribe to activation code received event
     auto activation_code_received_slot = [this](const std::string & event_name, const std::string & code) {

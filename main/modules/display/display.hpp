@@ -40,6 +40,10 @@ public:
     {
         return display_output_name_;
     }
+    uint32_t output_id() const
+    {
+        return display_output_id_;
+    }
     uint32_t width() const
     {
         return display_width_;
