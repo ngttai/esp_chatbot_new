@@ -53,36 +53,58 @@ esp_err_t esp_xiaozhi_mcp_handle_message(esp_mcp_mgr_handle_t mgr_handle,
     uint16_t outlen = 0;
     esp_err_t ret = esp_mcp_mgr_req_handle(mgr_handle, ep_name, (const uint8_t *)payload, payload_len, &outbuf, &outlen);
     if (outbuf && outlen > 0) {
+        esp_err_t response_ret = ESP_OK;
         cJSON *response_root = cJSON_CreateObject();
         if (response_root) {
             if (session_id) {
-                cJSON_AddStringToObject(response_root, "session_id", session_id);
+                if (!cJSON_AddStringToObject(response_root, "session_id", session_id)) {
+                    response_ret = ESP_ERR_NO_MEM;
+                }
             }
-            cJSON_AddStringToObject(response_root, "type", "mcp");
-            cJSON *response_payload = cJSON_Parse((char *)outbuf);
-            if (response_payload) {
+            if ((response_ret == ESP_OK) && !cJSON_AddStringToObject(response_root, "type", "mcp")) {
+                response_ret = ESP_ERR_NO_MEM;
+            }
+            cJSON *response_payload = response_ret == ESP_OK ? cJSON_Parse((char *)outbuf) : NULL;
+            if (response_ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to populate MCP response envelope");
+            } else if (response_payload) {
                 cJSON_AddItemToObject(response_root, "payload", response_payload);
                 char *json_str = cJSON_PrintUnformatted(response_root);
                 if (json_str) {
-                    esp_xiaozhi_transport_send_text(mcp_item->transport_handle, json_str);
+                    response_ret = esp_xiaozhi_transport_send_text(mcp_item->transport_handle, json_str);
                     cJSON_free(json_str);
+                    if (response_ret != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed to send MCP response: %s", esp_err_to_name(response_ret));
+                    }
                 } else {
                     ESP_LOGE(TAG, "Failed to print MCP response");
+                    response_ret = ESP_ERR_NO_MEM;
                 }
             } else {
                 ESP_LOGE(TAG, "Failed to parse MCP response payload");
+                response_ret = ESP_ERR_INVALID_RESPONSE;
             }
         } else {
             ESP_LOGE(TAG, "Failed to create MCP response");
+            response_ret = ESP_ERR_NO_MEM;
         }
         cJSON_Delete(response_root);
         esp_mcp_mgr_req_destroy_response(mgr_handle, outbuf);
+        return response_ret;
+    }
+    if (outbuf || outlen > 0) {
+        if (outbuf) {
+            esp_mcp_mgr_req_destroy_response(mgr_handle, outbuf);
+        }
+        ESP_LOGE(TAG, "Invalid empty MCP response buffer");
+        return ESP_FAIL;
     }
     if (ret != ESP_ERR_NOT_FOUND && ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to process MCP message: %s", esp_err_to_name(ret));
     }
 
-    return ESP_OK;
+    // Successful notifications intentionally have no response body.
+    return ret;
 }
 
 esp_err_t esp_xiaozhi_mcp_get_handle(esp_mcp_mgr_handle_t mgr_handle, esp_xiaozhi_transport_handle_t *transport_handle)

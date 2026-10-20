@@ -54,6 +54,7 @@ constexpr uint32_t SPEAKER_UI_WIDTH = 360;
 constexpr uint32_t SPEAKER_UI_HEIGHT = 360;
 constexpr uint32_t SERVICE_POLL_PERIOD_MS = 20;
 constexpr uint32_t DISPLAY_SERVICE_TIMEOUT_MS = 1000;
+constexpr uint32_t NAVIGATION_TIMEOUT_MS = 1500;
 constexpr uint8_t SLIDER_STABLE_POLLS = 8;
 constexpr uint16_t WIFI_STATE_POLL_TICKS = 50;
 constexpr uint32_t BOOT_SPLASH_START_DELAY_MS = 1050;
@@ -228,8 +229,15 @@ bool ScreenSpeakerShell::start(
     ensure_control_event_subscriptions();
     refresh_control_state();
     PowerManager::get_instance().configure(display_output_id_);
+    navigation_complete_ = xSemaphoreCreateBinary();
+    BROOKESIA_CHECK_NULL_RETURN(navigation_complete_, false, "Failed to create UI navigation completion signal");
     service_timer_ = lv_timer_create(service_timer_callback, SERVICE_POLL_PERIOD_MS, this);
-    BROOKESIA_CHECK_NULL_RETURN(service_timer_, false, "Failed to create Speaker UI service adapter timer");
+    if (service_timer_ == nullptr) {
+        vSemaphoreDelete(navigation_complete_);
+        navigation_complete_ = nullptr;
+        BROOKESIA_LOGE("Failed to create Speaker UI service adapter timer");
+        return false;
+    }
 
     started_ = true;
 
@@ -239,20 +247,41 @@ bool ScreenSpeakerShell::start(
 
 bool ScreenSpeakerShell::request_show_clock()
 {
-    if (!started_.load(std::memory_order_acquire)) {
-        return false;
-    }
-    pending_navigation_.store(NavigationTarget::Clock, std::memory_order_release);
-    return true;
+    return request_navigation(NavigationTarget::Clock);
 }
 
 bool ScreenSpeakerShell::request_show_home()
 {
-    if (!started_.load(std::memory_order_acquire)) {
+    return request_navigation(NavigationTarget::Home);
+}
+
+bool ScreenSpeakerShell::request_navigation(NavigationTarget target)
+{
+    if (!started_.load(std::memory_order_acquire) || (navigation_complete_ == nullptr)) {
         return false;
     }
-    pending_navigation_.store(NavigationTarget::Home, std::memory_order_release);
-    return true;
+
+    std::lock_guard<std::mutex> lock(navigation_mutex_);
+    while (xSemaphoreTake(navigation_complete_, 0) == pdTRUE) {
+    }
+    uint32_t request_id = navigation_request_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (request_id == 0) {
+        request_id = navigation_request_counter_.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+    const uint64_t request = (static_cast<uint64_t>(request_id) << 8U) |
+                             static_cast<uint8_t>(target);
+    navigation_succeeded_.store(false, std::memory_order_relaxed);
+    pending_navigation_.store(request, std::memory_order_release);
+
+    while (xSemaphoreTake(navigation_complete_, pdMS_TO_TICKS(NAVIGATION_TIMEOUT_MS)) == pdTRUE) {
+        if (completed_navigation_request_.load(std::memory_order_acquire) == request_id) {
+            return navigation_succeeded_.load(std::memory_order_acquire);
+        }
+    }
+    uint64_t expected = request;
+    pending_navigation_.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+    BROOKESIA_LOGE("Timed out waiting for UI navigation request");
+    return false;
 }
 
 void ScreenSpeakerShell::developer_mode_clicked_callback(lv_event_t *event)
@@ -317,15 +346,16 @@ void ScreenSpeakerShell::poll_navigation_request()
     if (boot_splash_is_active()) {
         return;
     }
-    const NavigationTarget target = pending_navigation_.exchange(
-        NavigationTarget::None, std::memory_order_acq_rel
-    );
-    if (target == NavigationTarget::None) {
+    const uint64_t request = pending_navigation_.exchange(0, std::memory_order_acq_rel);
+    if (request == 0) {
         return;
     }
+    const uint32_t request_id = static_cast<uint32_t>(request >> 8U);
+    const NavigationTarget target = static_cast<NavigationTarget>(request & 0xffU);
 
     const char *screen_name = target == NavigationTarget::Clock ? "timer" : "idle";
-    if (speaker_ui_show(screen_name)) {
+    const bool succeeded = speaker_ui_show(screen_name);
+    if (succeeded) {
         BROOKESIA_LOGI(
             "UI navigation request: showing %1%",
             target == NavigationTarget::Clock ? "Clock" : "Home"
@@ -333,6 +363,9 @@ void ScreenSpeakerShell::poll_navigation_request()
     } else {
         BROOKESIA_LOGE("UI navigation request failed for screen '%1%'", screen_name);
     }
+    navigation_succeeded_.store(succeeded, std::memory_order_release);
+    completed_navigation_request_.store(request_id, std::memory_order_release);
+    xSemaphoreGive(navigation_complete_);
 }
 
 void ScreenSpeakerShell::publish_power_inputs()

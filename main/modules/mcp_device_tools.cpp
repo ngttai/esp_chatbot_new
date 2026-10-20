@@ -241,7 +241,7 @@ service::FunctionResult app_show_clock(service::FunctionParameterMap &&)
         .success = true,
         .data = boost::json::object{
             {"screen", "Clock"},
-            {"requested", true},
+            {"shown", true},
         },
     };
 }
@@ -255,7 +255,7 @@ service::FunctionResult app_show_home(service::FunctionParameterMap &&)
         .success = true,
         .data = boost::json::object{
             {"screen", "Home"},
-            {"requested", true},
+            {"shown", true},
         },
     };
 }
