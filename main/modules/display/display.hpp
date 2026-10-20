@@ -32,6 +32,8 @@ public:
     bool show_ui();
     bool show_video();
     bool show_emote();
+    bool request_show_clock();
+    bool request_show_home();
     bool emote_ready() const
     {
         return emote_ready_;
@@ -39,6 +41,10 @@ public:
     const std::string &output_name() const
     {
         return display_output_name_;
+    }
+    uint32_t output_id() const
+    {
+        return display_output_id_;
     }
     uint32_t width() const
     {

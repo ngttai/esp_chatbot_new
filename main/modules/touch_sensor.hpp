@@ -21,6 +21,7 @@ public:
 
     bool init();
     bool set_enabled(bool enabled);
+    void request_recalibration();
     bool is_enabled() const
     {
         return enabled_.load();
@@ -42,4 +43,5 @@ private:
 
     TaskHandle_t task_ = nullptr;
     std::atomic_bool enabled_{false};
+    std::atomic_bool recalibration_requested_{false};
 };

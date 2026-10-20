@@ -16,6 +16,8 @@
 #include "sdkconfig.h"
 #include "brookesia/lib_utils/task_scheduler.hpp"
 #include "brookesia/service_manager/event/registry.hpp"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "modules/ui_idle_coordinator.hpp"
 #include "modules/power_manager.hpp"
 #include "lvgl.h"
@@ -30,8 +32,16 @@ public:
         uint32_t display_output_id,
         std::shared_ptr<esp_brookesia::lib_utils::TaskScheduler> task_scheduler
     );
+    bool request_show_clock();
+    bool request_show_home();
 
 private:
+    enum class NavigationTarget : uint8_t {
+        None,
+        Home,
+        Clock,
+    };
+
     struct WifiScanEntry {
         std::string ssid;
         bool locked = false;
@@ -55,6 +65,7 @@ private:
     void poll_lift_to_wake();
     void poll_self_test();
     void poll_factory_reset();
+    void poll_navigation_request();
     void poll_display_mode();
     void poll_idle_observability();
     void poll_idle_timeout();
@@ -83,8 +94,15 @@ private:
     void update_wifi_scan_ui();
     void update_wifi_status_ui();
     void attach_memory_ui();
+    bool request_navigation(NavigationTarget target);
 
-    bool started_ = false;
+    std::atomic_bool started_{false};
+    std::atomic_uint64_t pending_navigation_{0};
+    std::atomic_uint32_t navigation_request_counter_{0};
+    std::atomic_uint32_t completed_navigation_request_{0};
+    std::atomic_bool navigation_succeeded_{false};
+    SemaphoreHandle_t navigation_complete_ = nullptr;
+    std::mutex navigation_mutex_;
     uint32_t display_output_id_ = 0;
     std::shared_ptr<esp_brookesia::lib_utils::TaskScheduler> task_scheduler_;
     lv_timer_t *service_timer_ = nullptr;
