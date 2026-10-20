@@ -88,6 +88,13 @@ bool TouchSensor::set_enabled(bool enabled)
     return true;
 }
 
+void TouchSensor::request_recalibration()
+{
+    if ((task_ != nullptr) && enabled_.load()) {
+        recalibration_requested_.store(true);
+    }
+}
+
 void TouchSensor::task_entry(void *arg)
 {
     static_cast<TouchSensor *>(arg)->run();
@@ -134,6 +141,22 @@ void TouchSensor::run()
         }
 
         const bool enabled = enabled_.load();
+        if (recalibration_requested_.exchange(false)) {
+            if (pressed) {
+                HeadLed::get_instance().set_touch_pressed(false);
+            }
+            pressed = false;
+            long_press_sent = false;
+            candidate_started = 0;
+            press_started = 0;
+            click_deadline = 0;
+            click_count = 0;
+            settle_samples = ENABLE_SETTLE_SAMPLES;
+            baseline = value;
+            ESP_LOGI(TAG, "Recalibrating touch baseline after audio mute state changed");
+            vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
+            continue;
+        }
         if (!enabled) {
             if (pressed) {
                 HeadLed::get_instance().set_touch_pressed(false);

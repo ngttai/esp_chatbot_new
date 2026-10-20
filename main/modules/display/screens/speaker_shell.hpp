@@ -30,8 +30,16 @@ public:
         uint32_t display_output_id,
         std::shared_ptr<esp_brookesia::lib_utils::TaskScheduler> task_scheduler
     );
+    bool request_show_clock();
+    bool request_show_home();
 
 private:
+    enum class NavigationTarget : uint8_t {
+        None,
+        Home,
+        Clock,
+    };
+
     struct WifiScanEntry {
         std::string ssid;
         bool locked = false;
@@ -55,6 +63,7 @@ private:
     void poll_lift_to_wake();
     void poll_self_test();
     void poll_factory_reset();
+    void poll_navigation_request();
     void poll_display_mode();
     void poll_idle_observability();
     void poll_idle_timeout();
@@ -84,7 +93,8 @@ private:
     void update_wifi_status_ui();
     void attach_memory_ui();
 
-    bool started_ = false;
+    std::atomic_bool started_{false};
+    std::atomic<NavigationTarget> pending_navigation_{NavigationTarget::None};
     uint32_t display_output_id_ = 0;
     std::shared_ptr<esp_brookesia::lib_utils::TaskScheduler> task_scheduler_;
     lv_timer_t *service_timer_ = nullptr;

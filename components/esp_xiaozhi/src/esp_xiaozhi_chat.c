@@ -381,6 +381,7 @@ static void esp_xiaozhi_chat_clear_mcp_session_state(esp_xiaozhi_chat_t *xiaozhi
     if (!xiaozhi_chat->mcp_mgr_handle) {
         return;
     }
+    (void)esp_mcp_mgr_clear_session_state(xiaozhi_chat->mcp_mgr_handle, "__default");
     if (session_id && session_id[0]) {
         (void)esp_mcp_mgr_clear_session_state(xiaozhi_chat->mcp_mgr_handle, session_id);
     }

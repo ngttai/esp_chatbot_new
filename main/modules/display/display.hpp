@@ -32,6 +32,8 @@ public:
     bool show_ui();
     bool show_video();
     bool show_emote();
+    bool request_show_clock();
+    bool request_show_home();
     bool emote_ready() const
     {
         return emote_ready_;

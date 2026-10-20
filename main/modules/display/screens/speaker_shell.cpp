@@ -237,6 +237,24 @@ bool ScreenSpeakerShell::start(
     return true;
 }
 
+bool ScreenSpeakerShell::request_show_clock()
+{
+    if (!started_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    pending_navigation_.store(NavigationTarget::Clock, std::memory_order_release);
+    return true;
+}
+
+bool ScreenSpeakerShell::request_show_home()
+{
+    if (!started_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    pending_navigation_.store(NavigationTarget::Home, std::memory_order_release);
+    return true;
+}
+
 void ScreenSpeakerShell::developer_mode_clicked_callback(lv_event_t *event)
 {
     LV_UNUSED(event);
@@ -277,6 +295,7 @@ void ScreenSpeakerShell::service_timer_callback(lv_timer_t *timer)
 
 void ScreenSpeakerShell::poll_service_controls()
 {
+    poll_navigation_request();
     poll_idle_observability();
     poll_idle_timeout();
     publish_power_inputs();
@@ -291,6 +310,29 @@ void ScreenSpeakerShell::poll_service_controls()
     poll_lift_to_wake();
     poll_self_test();
     poll_factory_reset();
+}
+
+void ScreenSpeakerShell::poll_navigation_request()
+{
+    if (boot_splash_is_active()) {
+        return;
+    }
+    const NavigationTarget target = pending_navigation_.exchange(
+        NavigationTarget::None, std::memory_order_acq_rel
+    );
+    if (target == NavigationTarget::None) {
+        return;
+    }
+
+    const char *screen_name = target == NavigationTarget::Clock ? "timer" : "idle";
+    if (speaker_ui_show(screen_name)) {
+        BROOKESIA_LOGI(
+            "UI navigation request: showing %1%",
+            target == NavigationTarget::Clock ? "Clock" : "Home"
+        );
+    } else {
+        BROOKESIA_LOGE("UI navigation request failed for screen '%1%'", screen_name);
+    }
 }
 
 void ScreenSpeakerShell::publish_power_inputs()
@@ -627,6 +669,7 @@ void ScreenSpeakerShell::ensure_control_event_subscriptions()
                                  AudioPlaybackHelper::EventId::MuteChanged,
     [this](const std::string &, bool muted) {
         service_muted_.store(muted ? 1 : 0);
+        TouchSensor::get_instance().request_recalibration();
     });
 
     control_events_subscribed_ = brightness_event_connection_.connected() &&

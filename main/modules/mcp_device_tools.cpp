@@ -232,6 +232,34 @@ service::FunctionResult audio_set_mute(service::FunctionParameterMap &&params)
     return read_audio_state();
 }
 
+service::FunctionResult app_show_clock(service::FunctionParameterMap &&)
+{
+    if (!Display::get_instance().request_show_clock()) {
+        return error_result("Clock app is unavailable");
+    }
+    return {
+        .success = true,
+        .data = boost::json::object{
+            {"screen", "Clock"},
+            {"requested", true},
+        },
+    };
+}
+
+service::FunctionResult app_show_home(service::FunctionParameterMap &&)
+{
+    if (!Display::get_instance().request_show_home()) {
+        return error_result("Home screen is unavailable");
+    }
+    return {
+        .success = true,
+        .data = boost::json::object{
+            {"screen", "Home"},
+            {"requested", true},
+        },
+    };
+}
+
 mcp_utils::CustomTool make_tool(
     std::string name, std::string description, std::vector<service::FunctionParameterSchema> parameters,
     mcp_utils::CustomToolCallback callback
@@ -253,7 +281,7 @@ mcp_utils::CustomTool make_tool(
 bool register_vocat_mcp_tools()
 {
     std::vector<mcp_utils::CustomTool> tools;
-    tools.reserve(6);
+    tools.reserve(8);
     tools.push_back(make_tool(
         "Device.GetStatus", "Get VoCat battery, Wi-Fi, power and memory status.", {}, device_get_status
     ));
@@ -277,6 +305,17 @@ bool register_vocat_mcp_tools()
         "Audio.SetMute", "Mute or unmute playback without changing the saved volume.",
         {{MUTED_PARAMETER, "True to mute or false to unmute.", service::FunctionValueType::Boolean}},
         audio_set_mute
+    ));
+    tools.push_back(make_tool(
+        "App.ShowClock",
+        "Show the Clock app on the VoCat screen. Use only when the user explicitly asks to open, show, or switch "
+        "to the Clock app. Do not use when the user only asks for the current time or date.",
+        {}, app_show_clock
+    ));
+    tools.push_back(make_tool(
+        "App.ShowHome",
+        "Show the VoCat Home face screen. Use only when the user explicitly requests navigation to Home.",
+        {}, app_show_home
     ));
 
     auto result = XiaoZhiHelper::call_function_sync<boost::json::array>(

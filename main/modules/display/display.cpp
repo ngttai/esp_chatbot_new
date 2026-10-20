@@ -157,6 +157,16 @@ bool Display::start_speaker_shell()
     return true;
 }
 
+bool Display::request_show_clock()
+{
+    return speaker_shell_ && speaker_shell_->request_show_clock();
+}
+
+bool Display::request_show_home()
+{
+    return speaker_shell_ && speaker_shell_->request_show_home();
+}
+
 bool Display::set_active_source_role(DrawSource source)
 {
     BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
