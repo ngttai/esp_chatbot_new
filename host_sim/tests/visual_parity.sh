@@ -16,12 +16,12 @@ capture_log="$output_directory/capture.log"
 
 screens=(
     idle launcher launcher-pressed quick settings settings-bottom wlan wlan-bottom
-    wlan-connect softap sound display about developer restore ai timer
+    wlan-connect softap sound display about developer restore ai 2048 timer
 )
 
 static_screens=(
     idle launcher launcher-pressed settings settings-bottom wlan wlan-bottom
-    wlan-connect softap sound display about developer ai
+    wlan-connect softap sound display about developer ai 2048
 )
 
 for screen in "${screens[@]}"; do
@@ -102,4 +102,4 @@ if (( failures != 0 || timer_failures != 0 )); then
     exit 1
 fi
 
-echo "Visual parity PASS: 14 static screens, 2 content-masked screens, and all 4 non-time Clock regions."
+echo "Visual parity PASS: 15 static screens, 2 content-masked screens, and all 4 non-time Clock regions."
