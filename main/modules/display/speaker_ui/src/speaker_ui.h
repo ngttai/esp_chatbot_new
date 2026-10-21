@@ -54,6 +54,7 @@ typedef enum {
     SPEAKER_UI_SCREEN_CRITICAL,
     SPEAKER_UI_SCREEN_AI,
     SPEAKER_UI_SCREEN_QUICK,
+    SPEAKER_UI_SCREEN_GAME,
 } speaker_ui_screen_t;
 
 void speaker_ui_create(void);

@@ -288,6 +288,7 @@ if(BUILD_TESTING)
     set(SPEAKER_UI_SELF_TEST_OPTIONS
         --self-test-home
         --self-test-launcher
+        --self-test-2048
         --self-test-idle
         --self-test-ui-observability
         --self-test-idle-coordinator

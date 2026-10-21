@@ -8,6 +8,7 @@
 #include <time.h>
 #include <math.h>
 #include "lvgl.h"
+#include "apps/game_2048/game_2048.h"
 #include "flip_clock/flip_clock.h"
 #include "flip_clock/weather_panel.h"
 
@@ -92,7 +93,7 @@ extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator1;
 extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator2;
 
 typedef struct { const char *name; const lv_image_dsc_t *image; lv_event_cb_t cb; } app_t;
-static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen;
+static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen, *game_2048_screen;
 static uint32_t activity_revision;
 static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about, *settings_self_test;
 static lv_obj_t *settings_developer, *settings_restore;
@@ -103,6 +104,7 @@ static lv_obj_t *timer_clock_widget;
 static lv_obj_t *lift_to_wake_switch;
 static lv_obj_t *settings_scroller, *settings_wlan_scroller;
 static lv_obj_t *launcher_home_bar, *quick_home_bar, *settings_home_bar, *ai_home_bar, *timer_home_bar;
+static lv_obj_t *game_2048_home_bar;
 static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar, *self_test_home_bar;
 static lv_obj_t *developer_home_bar, *factory_home_bar;
 static lv_obj_t *wlan_verify_home_bar, *softap_home_bar;
@@ -150,10 +152,12 @@ static lv_timer_t *gesture_poll_timer;
 static int page_index;
 static lv_point_t home_gesture_start;
 static lv_point_t launcher_gesture_start;
+static lv_point_t game_gesture_start;
 static uint32_t home_gesture_started_at;
 static int home_gesture_bar_width;
 static bool home_gesture_tracking;
 static bool launcher_gesture_tracking;
+static bool game_gesture_tracking;
 static bool quick_gesture_tracking;
 static bool quick_gesture_from_bottom;
 static bool quick_open;
@@ -174,6 +178,7 @@ static void quick_time_update(lv_timer_t *timer)
 
 static void show_settings(lv_event_t *e);
 static void show_timer(lv_event_t *e);
+static void show_game_2048(lv_event_t *e);
 static void show_launcher_long(lv_event_t *e);
 static void render_page(void);
 static void create_settings_subpages(void);
@@ -284,6 +289,7 @@ static void show_timer(lv_event_t *e)
      * from the reference project's clock_app_show(). */
     flip_clock_replay(timer_clock_widget);
 }
+static void show_game_2048(lv_event_t *e) { LV_UNUSED(e); load(game_2048_screen); }
 static void show_launcher_long(lv_event_t *e) { LV_UNUSED(e); load(launcher); }
 
 static void show_screen_ref(lv_event_t *e)
@@ -297,6 +303,7 @@ static const app_t apps[] = {
     // Clock and Settings do not move when the launcher grows.
     {"Clock", &img_app_timer, show_timer},
     {"Settings", &esp_brookesia_app_icon_launcher_settings_112_112, show_settings},
+    {"2048", &img_app_2048, show_game_2048},
 };
 
 static int launcher_app_count(void)
@@ -407,6 +414,7 @@ static lv_obj_t *active_home_bar(void)
     if(active == settings_softap) return softap_home_bar;
     if(active == ai) return ai_home_bar;
     if(active == timer_screen) return timer_home_bar;
+    if(active == game_2048_screen) return game_2048_home_bar;
     return NULL;
 }
 
@@ -473,6 +481,10 @@ static void input_gesture_event(lv_event_t *e)
         activity_revision++;
         launcher_gesture_tracking = lv_screen_active() == launcher;
         if(launcher_gesture_tracking) launcher_gesture_start = point;
+        game_gesture_tracking = lv_screen_active() == game_2048_screen &&
+                                point.y > QUICK_GESTURE_EDGE &&
+                                point.y < SIZE - HOME_GESTURE_RANGE;
+        if(game_gesture_tracking) game_gesture_start = point;
 
         /* Idle is a stripped-down "screensaver" overlay: only the long-press-to-Launcher
          * gesture (registered directly on its content object, see create_idle()) is live
@@ -536,6 +548,24 @@ static void input_gesture_event(lv_event_t *e)
     }
     else if(code == LV_EVENT_PRESS_LOST) {
         launcher_gesture_tracking = false;
+        game_gesture_tracking = false;
+    }
+
+    if(code == LV_EVENT_RELEASED && game_gesture_tracking) {
+        int distance_x = point.x - game_gesture_start.x;
+        int distance_y = point.y - game_gesture_start.y;
+        int distance_x_abs = distance_x < 0 ? -distance_x : distance_x;
+        int distance_y_abs = distance_y < 0 ? -distance_y : distance_y;
+        game_gesture_tracking = false;
+        if(distance_x_abs > 20 && distance_x_abs > distance_y_abs) {
+            game_2048_handle_swipe(
+                distance_x < 0 ? GAME_2048_DIRECTION_LEFT : GAME_2048_DIRECTION_RIGHT
+            );
+        } else if(distance_y_abs > 20 && distance_y_abs > distance_x_abs) {
+            game_2048_handle_swipe(
+                distance_y < 0 ? GAME_2048_DIRECTION_UP : GAME_2048_DIRECTION_DOWN
+            );
+        }
     }
 
     if((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && home_gesture_tracking) {
@@ -665,7 +695,7 @@ static void home_loaded(lv_event_t *e)
     lv_obj_t *screens[] = {
         launcher, settings, settings_wlan, settings_wlan_verify, settings_softap,
         settings_sound, settings_display, settings_about, settings_self_test,
-        settings_developer, settings_restore, ai, timer_screen
+        settings_developer, settings_restore, ai, timer_screen, game_2048_screen
     };
     for(size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); i++) {
         reset_scroll_tree(screens[i]);
@@ -683,6 +713,14 @@ static void create_idle(void)
     lv_obj_t *content = screen_content(idle, lv_color_hex(0x000000));
     lv_obj_add_flag(content, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(content, show_launcher_long, LV_EVENT_LONG_PRESSED, NULL);
+}
+
+static void create_game_2048(void)
+{
+    game_2048_screen = lv_obj_create(NULL);
+    lv_obj_t *content = screen_content(game_2048_screen, BG);
+    game_2048_create(content);
+    game_2048_home_bar = create_home_indicator(content);
 }
 
 /* Quick Settings Volume/Brightness: firmware cycles the level on a short click (icon
@@ -1876,7 +1914,7 @@ void speaker_ui_create(void)
     esp_brookesia_squareline_ui_comp_init();
     create_launcher(); create_idle(); create_quick(); create_settings(); create_settings_subpages();
     create_wlan_keyboard();
-    create_ai(); create_timer();
+    create_ai(); create_timer(); create_game_2048();
     /* Wire every WLAN-state-dependent widget (Settings switch, Quick Settings Wi-Fi
      * button/status icon, WLAN screen's connected/available/SoftAP groups) to the
      * initial state now that they all exist. */
@@ -1934,6 +1972,7 @@ bool speaker_ui_is_screen_active(const char *name)
     if(!strcmp(name, "restore")) return active == settings_restore;
     if(!strcmp(name, "ai")) return active == ai;
     if(!strcmp(name, "timer")) return active == timer_screen;
+    if(!strcmp(name, "2048")) return active == game_2048_screen;
     return false;
 }
 
@@ -1944,6 +1983,7 @@ speaker_ui_screen_t speaker_ui_get_active_screen(void)
     if(active == idle) return SPEAKER_UI_SCREEN_HOME;
     if(active == launcher) return SPEAKER_UI_SCREEN_LAUNCHER;
     if(active == timer_screen) return SPEAKER_UI_SCREEN_CLOCK;
+    if(active == game_2048_screen) return SPEAKER_UI_SCREEN_GAME;
     if(active == ai) return SPEAKER_UI_SCREEN_AI;
     if(active == settings_wlan_verify || active == settings_softap ||
        active == settings_self_test || active == settings_developer ||
@@ -1981,6 +2021,7 @@ bool speaker_ui_show(const char *name)
     sync_password_keyboard(!strcmp(name, "wlan-connect"));
     if(!strcmp(name, "idle") || !strcmp(name, "black")) lv_screen_load(idle);
     else if(!strcmp(name, "launcher")) lv_screen_load(launcher);
+    else if(!strcmp(name, "2048")) lv_screen_load(game_2048_screen);
     else if(!strcmp(name, "quick")) {
         lv_anim_delete(quick, NULL);
         lv_obj_remove_flag(quick, LV_OBJ_FLAG_HIDDEN);

@@ -11,6 +11,7 @@ enum class UiIdleScreenRole : uint8_t {
     Home,
     Navigation,
     Clock,
+    Application,
     Critical,
 };
 

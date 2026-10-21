@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
@@ -33,6 +34,7 @@
 #include "ui_idle_coordinator.hpp"
 
 extern "C" {
+#include "apps/game_2048/game_2048.h"
 #include "speaker_ui.h"
 #include "ui.h"
 }
@@ -158,7 +160,7 @@ int test_ui_observability(InputInjector &input)
         const char *name;
         speaker_ui_screen_t expected;
     };
-    static constexpr std::array<ScreenCase, 15> screen_cases{{
+    static constexpr std::array<ScreenCase, 16> screen_cases{{
         {"idle", SPEAKER_UI_SCREEN_HOME},
         {"launcher", SPEAKER_UI_SCREEN_LAUNCHER},
         {"timer", SPEAKER_UI_SCREEN_CLOCK},
@@ -174,6 +176,7 @@ int test_ui_observability(InputInjector &input)
         {"restore", SPEAKER_UI_SCREEN_CRITICAL},
         {"ai", SPEAKER_UI_SCREEN_AI},
         {"quick", SPEAKER_UI_SCREEN_QUICK},
+        {"2048", SPEAKER_UI_SCREEN_GAME},
     }};
 
     const uint32_t initial_revision = activity_revision();
@@ -281,6 +284,7 @@ int test_idle_coordinator()
     constexpr uint8_t settings_key = 2;
     constexpr uint8_t home_key = 3;
     constexpr uint8_t clock_key = 4;
+    constexpr uint8_t application_key = 5;
 
     auto initialize = [](UiIdleCoordinator &coordinator, uint8_t screen_key,
                          UiIdleScreenRole role) {
@@ -344,6 +348,14 @@ int test_idle_coordinator()
     if (clock.update(timeout_ms, 0, clock_key, UiIdleScreenRole::Clock, false) !=
             UiIdleDecision::Hold) {
         std::fprintf(stderr, "Clock unexpectedly emitted a UI navigation action\n");
+        return 108;
+    }
+
+    UiIdleCoordinator application(timeout_ms);
+    initialize(application, application_key, UiIdleScreenRole::Application);
+    if (application.update(timeout_ms, 0, application_key,
+                           UiIdleScreenRole::Application, false) != UiIdleDecision::Hold) {
+        std::fprintf(stderr, "Foreground app unexpectedly emitted a UI navigation action\n");
         return 108;
     }
 
@@ -745,18 +757,6 @@ int test_launcher(InputInjector &input)
 {
     show("launcher");
     input.pump(20);
-    if (!input_ok(input.press(100, 165), input)) return 1;
-    input.pump(5);
-    if (!input_ok(input.move(25, 165), input)) return 1;
-    input.pump(10);
-    if (!input_ok(input.release(), input)) return 1;
-    input.pump(10);
-
-    if (with_ui_lock([]() { return speaker_ui_launcher_page(); }) != 0) {
-        std::fprintf(stderr, "Single-page launcher escaped its page bounds\n");
-        return 4;
-    }
-
     if (!input_ok(input.press(260, 165), input)) return 1;
     input.pump(5);
     if (!input_ok(input.release(), input)) return 1;
@@ -766,7 +766,191 @@ int test_launcher(InputInjector &input)
         return 5;
     }
 
-    std::puts("Single-page launcher bounds and Settings icon passed");
+    show("launcher");
+    input.pump(20);
+    if (!input_ok(input.press(260, 165), input)) return 1;
+    input.pump(5);
+    for (int x = 220; x >= 100; x -= 40) {
+        if (!input_ok(input.move(x, 165), input)) return 1;
+        input.pump(5);
+    }
+    if (!input_ok(input.move(80, 165), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(10);
+
+    if (with_ui_lock([]() { return speaker_ui_launcher_page(); }) != 1) {
+        std::fprintf(stderr, "Launcher did not reach the 2048 page\n");
+        return 4;
+    }
+
+    if (!input_ok(input.press(96, 165), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(20);
+    if (!active("2048")) {
+        std::fprintf(stderr, "Launcher 2048 icon did not open the game\n");
+        return 5;
+    }
+
+    std::puts("Two-page launcher and 2048 icon passed");
+    return 0;
+}
+
+int test_game_2048(InputInjector &input)
+{
+    game_2048_model_t model{};
+    model.cells[0][0] = 2;
+    model.cells[0][2] = 2;
+    model.cells[0][3] = 2;
+    if (!game_2048_model_move(&model, GAME_2048_DIRECTION_LEFT) ||
+            model.cells[0][0] != 4 || model.cells[0][1] != 2 ||
+            model.cells[0][2] != 0 || model.cells[0][3] != 0 ||
+            model.score != 4 || model.best_score != 4) {
+        std::fprintf(stderr, "2048 left move or score calculation failed\n");
+        return 140;
+    }
+
+    game_2048_model_reset(&model);
+    model.cells[0][0] = 2;
+    model.cells[0][1] = 2;
+    model.cells[0][2] = 2;
+    model.cells[0][3] = 2;
+    if (!game_2048_model_move(&model, GAME_2048_DIRECTION_RIGHT) ||
+            model.cells[0][0] != 0 || model.cells[0][1] != 0 ||
+            model.cells[0][2] != 4 || model.cells[0][3] != 4 || model.score != 8) {
+        std::fprintf(stderr, "2048 right move merged a tile more than once\n");
+        return 141;
+    }
+
+    game_2048_model_reset(&model);
+    model.cells[0][0] = 2;
+    model.cells[2][0] = 2;
+    model.cells[3][0] = 2;
+    if (!game_2048_model_move(&model, GAME_2048_DIRECTION_UP) ||
+            model.cells[0][0] != 4 || model.cells[1][0] != 2 || model.score != 4) {
+        std::fprintf(stderr, "2048 upward move failed\n");
+        return 142;
+    }
+
+    game_2048_model_reset(&model);
+    model.cells[0][0] = 2;
+    model.cells[2][0] = 2;
+    model.cells[3][0] = 2;
+    if (!game_2048_model_move(&model, GAME_2048_DIRECTION_DOWN) ||
+            model.cells[2][0] != 2 || model.cells[3][0] != 4 || model.score != 4) {
+        std::fprintf(stderr, "2048 downward move failed\n");
+        return 143;
+    }
+
+    const uint32_t full_board[4][4] = {
+        {2, 4, 2, 4},
+        {4, 2, 4, 2},
+        {2, 4, 2, 4},
+        {4, 2, 4, 2},
+    };
+    std::memcpy(model.cells, full_board, sizeof(full_board));
+    if (!game_2048_model_is_game_over(&model)) {
+        std::fprintf(stderr, "2048 failed to detect a full game-over board\n");
+        return 144;
+    }
+    model.cells[0][0] = 0;
+    if (game_2048_model_is_game_over(&model)) {
+        std::fprintf(stderr, "2048 game-over check missed the top-left empty cell\n");
+        return 145;
+    }
+
+    if (!show("2048") || !active("2048") || active_screen() != SPEAKER_UI_SCREEN_GAME) {
+        std::fprintf(stderr, "2048 screen could not be opened\n");
+        return 146;
+    }
+    input.pump(20);
+
+    if (!input_ok(input.press(180, 5), input)) {
+        std::fprintf(stderr, "2048 Quick Settings gesture press failed\n");
+        return 1;
+    }
+    input.pump(5);
+    for (int y = 20; y <= 100; y += 20) {
+        if (!input_ok(input.move(180, y), input)) return 1;
+        input.pump(5);
+    }
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(30);
+    if (!active("quick")) {
+        std::fprintf(stderr, "2048 blocked the top-edge Quick Settings gesture\n");
+        return 147;
+    }
+    show("2048");
+    input.pump(20);
+
+    game_2048_model_t before = with_ui_lock([]() { return *game_2048_get_model(); });
+    if (!input_ok(input.press(260, 200), input)) {
+        std::fprintf(stderr, "2048 left swipe press failed\n");
+        return 1;
+    }
+    input.pump(5);
+    for (int x = 220; x >= 100; x -= 40) {
+        if (!input_ok(input.move(x, 200), input)) return 1;
+        input.pump(5);
+    }
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(50);
+    game_2048_model_t after = with_ui_lock([]() { return *game_2048_get_model(); });
+    if (std::memcmp(before.cells, after.cells, sizeof(before.cells)) == 0) {
+        if (!input_ok(input.press(100, 200), input)) {
+            std::fprintf(stderr, "2048 right swipe press failed\n");
+            return 1;
+        }
+        input.pump(5);
+        for (int x = 140; x <= 260; x += 40) {
+            if (!input_ok(input.move(x, 200), input)) return 1;
+            input.pump(5);
+        }
+        if (!input_ok(input.release(), input)) return 1;
+        input.pump(50);
+        after = with_ui_lock([]() { return *game_2048_get_model(); });
+    }
+    if (std::memcmp(before.cells, after.cells, sizeof(before.cells)) == 0) {
+        std::fprintf(stderr, "2048 swipe gesture did not move the board\n");
+        return 148;
+    }
+
+    show("launcher");
+    show("2048");
+    game_2048_model_t restored = with_ui_lock([]() { return *game_2048_get_model(); });
+    if (std::memcmp(after.cells, restored.cells, sizeof(after.cells)) != 0 ||
+            after.score != restored.score) {
+        std::fprintf(stderr, "2048 board was not preserved while leaving the app\n");
+        return 149;
+    }
+
+    if (!input_ok(input.click(180, 60), input)) return 1;
+    game_2048_model_t restarted = with_ui_lock([]() { return *game_2048_get_model(); });
+    int occupied = 0;
+    for (const auto &row : restarted.cells) {
+        for (uint32_t value : row) occupied += value != 0;
+    }
+    if (restarted.score != 0 || occupied != 2) {
+        std::fprintf(stderr, "2048 New Game did not reset to two tiles\n");
+        return 150;
+    }
+
+    if (!input_ok(input.press(180, 350), input)) {
+        std::fprintf(stderr, "2048 Home gesture press failed\n");
+        return 1;
+    }
+    input.pump(5);
+    if (!input_ok(input.move(180, 340), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 330), input) || !input_ok(input.release(), input)) return 1;
+    input.pump(30);
+    if (!with_ui_lock([]() { return speaker_ui_is_launcher_active(); })) {
+        std::fprintf(stderr, "2048 blocked the bottom-edge Home gesture\n");
+        return 151;
+    }
+
+    std::puts("2048 model, launcher, gestures and state lifecycle passed");
     return 0;
 }
 
@@ -2008,9 +2192,10 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 32> options{{
+    static constexpr std::array<std::string_view, 33> options{{
         "--self-test-home",
         "--self-test-launcher",
+        "--self-test-2048",
         "--self-test-idle",
         "--self-test-ui-observability",
         "--self-test-idle-coordinator",
@@ -2064,6 +2249,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-idle-coordinator") return test_idle_coordinator();
     if (option == "--self-test-power-policy") return test_power_policy();
     if (option == "--self-test-launcher") return test_launcher(input);
+    if (option == "--self-test-2048") return test_game_2048(input);
     if (option == "--self-test-home") return test_home(input);
     if (option == "--self-test-settings-no-scroll") return test_settings_no_scroll(input);
     if (option == "--self-test-quick-gesture") return test_quick_gesture(input);
