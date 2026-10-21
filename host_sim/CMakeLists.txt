@@ -289,6 +289,7 @@ if(BUILD_TESTING)
         --self-test-home
         --self-test-launcher
         --self-test-2048
+        --self-test-music
         --self-test-idle
         --self-test-ui-observability
         --self-test-idle-coordinator

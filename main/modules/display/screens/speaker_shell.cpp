@@ -77,6 +77,7 @@ const char *screen_name(speaker_ui_screen_t screen)
     case SPEAKER_UI_SCREEN_AI: return "AI";
     case SPEAKER_UI_SCREEN_QUICK: return "Quick";
     case SPEAKER_UI_SCREEN_GAME: return "2048";
+    case SPEAKER_UI_SCREEN_MUSIC: return "Music";
     default: return "Unknown";
     }
 }
@@ -87,6 +88,7 @@ UiIdleScreenRole idle_screen_role(speaker_ui_screen_t screen)
     case SPEAKER_UI_SCREEN_HOME: return UiIdleScreenRole::Home;
     case SPEAKER_UI_SCREEN_CLOCK: return UiIdleScreenRole::Clock;
     case SPEAKER_UI_SCREEN_GAME: return UiIdleScreenRole::Application;
+    case SPEAKER_UI_SCREEN_MUSIC: return UiIdleScreenRole::Application;
     case SPEAKER_UI_SCREEN_CRITICAL: return UiIdleScreenRole::Critical;
     case SPEAKER_UI_SCREEN_LAUNCHER:
     case SPEAKER_UI_SCREEN_SETTINGS:

@@ -55,6 +55,7 @@ typedef enum {
     SPEAKER_UI_SCREEN_AI,
     SPEAKER_UI_SCREEN_QUICK,
     SPEAKER_UI_SCREEN_GAME,
+    SPEAKER_UI_SCREEN_MUSIC,
 } speaker_ui_screen_t;
 
 void speaker_ui_create(void);
