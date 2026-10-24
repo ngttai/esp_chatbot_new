@@ -179,11 +179,16 @@ add_executable(esp_chatbot_host_sim
     host_capabilities.cpp
     keyboard_adapter.cpp
     main.cpp
+    music_fixture.cpp
     persistence_adapter.cpp
     power_adapter.cpp
     volume_adapter.cpp
     weather_adapter.cpp
     wifi_adapter.cpp
+    "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_service.cpp"
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
     tests/self_test_main.cpp
@@ -218,6 +223,7 @@ configure_file(
 target_include_directories(esp_chatbot_host_sim PRIVATE
     "${HOST_SIM_GENERATED_DIR}"
     "${HOST_SIM_DIR}/tests"
+    "${PROJECT_ROOT}/main"
     "${PROJECT_ROOT}/main/modules"
     "${SPEAKER_UI_DIR}/src"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems"
@@ -225,7 +231,9 @@ target_include_directories(esp_chatbot_host_sim PRIVATE
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/apps/brookesia_app_ai_profile/ui"
 )
+find_package(Threads REQUIRED)
 target_link_libraries(esp_chatbot_host_sim PRIVATE
+    Threads::Threads
     brookesia::gui_lvgl
     brookesia::hal_linux
     brookesia::service_display
@@ -237,6 +245,31 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(music_library_test
+        "${HOST_SIM_DIR}/tests/music_library_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_library.cpp")
+    target_include_directories(music_library_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME music_library COMMAND music_library_test)
+    add_executable(music_service_test
+        "${HOST_SIM_DIR}/tests/music_service_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_service.cpp")
+    target_include_directories(music_service_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_service_test PRIVATE Threads::Threads)
+    add_test(NAME music_service COMMAND music_service_test)
+    set_tests_properties(music_service PROPERTIES TIMEOUT 60)
+    add_executable(music_data_cover_test
+        "${HOST_SIM_DIR}/tests/music_data_cover_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_service.cpp")
+    target_include_directories(music_data_cover_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_data_cover_test PRIVATE Threads::Threads)
+    add_test(NAME music_data_cover COMMAND music_data_cover_test)
+    set_tests_properties(music_data_cover PROPERTIES TIMEOUT 30)
     add_executable(panel_power_test "${HOST_SIM_DIR}/tests/panel_power_test.cpp")
     target_include_directories(panel_power_test PRIVATE "${PROJECT_ROOT}/main")
     add_test(NAME panel_power COMMAND panel_power_test)

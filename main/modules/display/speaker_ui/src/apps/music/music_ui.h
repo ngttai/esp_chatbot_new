@@ -10,8 +10,8 @@
 extern "C" {
 #endif
 
-/* Creates the simulator-first Music UI draft inside `parent`.
- * Playback is intentionally mocked until the layout is approved. */
+/* Creates the Music UI inside `parent`.
+ * Track data comes from music_data; playback state is UI-only. */
 void music_ui_create(lv_obj_t *parent);
 void music_ui_show_now_playing(void);
 void music_ui_show_playlist(void);
