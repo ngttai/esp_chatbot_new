@@ -41,7 +41,7 @@ target_include_directories(${gfx_lib} PRIVATE "${power_compat}")
 
 file(READ "${emote_dir}/include/brookesia/expression_emote/emote.hpp" emote_header)
 render_power_replace(emote_header "    bool native_notify_flush_finished();"
-    "    bool native_notify_flush_finished();\n    /** Nonblocking render control. The service must remain bound. */\n    bool native_try_set_render_paused(bool paused);")
+    "    bool native_notify_flush_finished();\n    /** Nonblocking render control. The service must remain bound. */\n    bool native_try_set_render_paused(bool paused);\n    /** Marks the renderer paused at once; an in-flight frame may still finish. */\n    bool native_request_render_pause();")
 file(CONFIGURE OUTPUT "${power_generated}/include/brookesia/expression_emote/emote.hpp"
     CONTENT "${emote_header}" @ONLY)
 target_include_directories(${emote_lib} BEFORE PUBLIC "${power_generated}/include")

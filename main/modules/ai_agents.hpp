@@ -61,6 +61,7 @@ public:
     void handle_touch_sensor_click();
     void handle_touch_sensor_long_press();
     void set_emote_output_active(bool active);
+    void restore_emote_state();
 
 private:
     enum class EmoteState : uint8_t {
