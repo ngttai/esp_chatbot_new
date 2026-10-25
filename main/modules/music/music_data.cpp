@@ -5,11 +5,9 @@
 #include <memory>
 #include <string>
 
+#include "music_pthread.hpp"
 #include "music_service.hpp"
 
-#ifdef ESP_PLATFORM
-#include "esp_pthread.h"
-#endif
 
 namespace {
 
@@ -27,16 +25,16 @@ std::string default_root()
 #endif
 }
 
+std::unique_ptr<music::ScopedThreadConfig> worker_config;
+
 void setup_worker_thread()
 {
-#ifdef ESP_PLATFORM
-    esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
-    cfg.thread_name = "music_meta";
-    cfg.stack_size = 6144;
-    cfg.prio = 3;
-    cfg.inherit_cfg = false;
-    esp_pthread_set_cfg(&cfg);
-#endif
+    worker_config = std::make_unique<music::ScopedThreadConfig>("music_meta", 6144, 3);
+}
+
+void restore_worker_thread()
+{
+    worker_config.reset();
 }
 
 } // namespace
@@ -54,6 +52,7 @@ void music_data_start(void)
     music::Service::Config config;
     config.root = default_root();
     config.thread_setup = setup_worker_thread;
+    config.thread_restore = restore_worker_thread;
     service = std::make_unique<music::Service>(std::move(config));
     service->start();
 }
@@ -88,6 +87,15 @@ bool music_data_get(size_t index, music_data_track_t *out)
     case music::MetaState::Failed: out->state = MUSIC_DATA_FAILED; break;
     default: out->state = MUSIC_DATA_PENDING; break;
     }
+    return true;
+}
+
+bool music_data_get_path(size_t index, char *out, size_t size)
+{
+    if (!service || out == nullptr || size == 0) return false;
+    std::string path;
+    if (!service->path_of(index, path) || path.size() >= size) return false;
+    memcpy(out, path.c_str(), path.size() + 1);
     return true;
 }
 

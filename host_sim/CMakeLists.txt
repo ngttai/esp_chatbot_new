@@ -186,8 +186,11 @@ add_executable(esp_chatbot_host_sim
     weather_adapter.cpp
     wifi_adapter.cpp
     "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_audio_backend.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_player.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_playback.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_service.cpp"
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
@@ -260,6 +263,13 @@ if(BUILD_TESTING)
     target_link_libraries(music_service_test PRIVATE Threads::Threads)
     add_test(NAME music_service COMMAND music_service_test)
     set_tests_properties(music_service PROPERTIES TIMEOUT 60)
+    add_executable(music_player_test
+        "${HOST_SIM_DIR}/tests/music_player_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_player.cpp")
+    target_include_directories(music_player_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_player_test PRIVATE Threads::Threads)
+    add_test(NAME music_player COMMAND music_player_test)
+    set_tests_properties(music_player PROPERTIES TIMEOUT 30)
     add_executable(music_data_cover_test
         "${HOST_SIM_DIR}/tests/music_data_cover_test.cpp"
         "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
@@ -323,6 +333,8 @@ if(BUILD_TESTING)
         --self-test-launcher
         --self-test-2048
         --self-test-music
+        --self-test-music-playback
+        --self-test-music-autonext
         --self-test-idle
         --self-test-ui-observability
         --self-test-idle-coordinator

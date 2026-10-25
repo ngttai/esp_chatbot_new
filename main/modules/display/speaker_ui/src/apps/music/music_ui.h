@@ -17,6 +17,11 @@ void music_ui_show_now_playing(void);
 void music_ui_show_playlist(void);
 size_t music_ui_get_track_index(void);
 bool music_ui_is_playing(void);
+/* Test hooks: artist line text and a forced metadata refresh of the shown track. */
+const char *music_ui_get_artist_text(void);
+void music_ui_refresh_track(void);
+/* Progress bar value, 0..1000. */
+int32_t music_ui_get_progress(void);
 bool music_ui_is_playlist_visible(void);
 int32_t music_ui_get_playlist_scroll_y(void);
 
