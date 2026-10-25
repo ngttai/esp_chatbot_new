@@ -8,11 +8,46 @@
 #include "brookesia/service_display.hpp"
 #include "brookesia/lib_utils.hpp"
 #include "modules/power_manager.hpp"
+#include "emote_render_owner.hpp"
 #include "render_suspend.hpp"
 #include "render_suspend_service.hpp"
 
 using namespace esp_brookesia;
 namespace {
+uint32_t now_ms()
+{
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
+
+EmoteRenderOwner &emote_owner()
+{
+    static EmoteRenderOwner owner;
+    return owner;
+}
+
+struct EmoteGfxBackend final : EmoteRenderOwner::Backend {
+    bool request_pause() override
+    {
+        const bool ok = expression::Emote::get_instance().native_request_render_pause();
+        if (ok) BROOKESIA_LOGI("Emote render pause requested");
+        return ok;
+    }
+    bool set_paused(bool paused) override
+    {
+        const bool ok = expression::Emote::get_instance().native_try_set_render_paused(paused);
+        if (ok) BROOKESIA_LOGI("Emote render %1%", paused ? "paused" : "resumed");
+        return ok;
+    }
+};
+
+EmoteGfxBackend &emote_backend()
+{
+    static EmoteGfxBackend backend;
+    return backend;
+}
+
+std::atomic_bool emote_render_enabled{false};
+
 class RenderParticipants final : public RenderSuspend::Backend, private PanelPower::Backend {
 public:
     bool start(std::shared_ptr<lib_utils::TaskScheduler> scheduler, uint32_t output_id,
@@ -21,6 +56,7 @@ public:
         if (scheduler_) return false;
         output_id_ = output_id; output_name_ = output_name;
         width_ = width; height_ = height; has_emote_ = has_emote;
+        emote_render_enabled = has_emote;
         for (const auto &source : display_.get_sources()) {
             if (source.name == expression::Emote::DISPLAY_SOURCE_NAME) emote_source_ = source.id;
         }
@@ -46,6 +82,12 @@ public:
                 const auto snapshot = pwr_.suspend_status();
                 if (reconcile_requested_.exchange(false) || snapshot.phase != SuspendCoordinator::Phase::Idle)
                     protocol_.update(snapshot, *this);
+                if (has_emote_) {
+                    emote_owner().update(now_ms(), emote_backend());
+                    if (emote_owner().take_timed_out()) {
+                        BROOKESIA_LOGW("Emote activation barrier timed out; renderer resumed without it");
+                    }
+                }
                 return true;
             }, 20, &task_, "RenderSuspend")) {
             disconnect(); scheduler_.reset(); return false;
@@ -72,7 +114,7 @@ public:
     }
     bool pause_gfx(bool paused) override
     {
-        return !has_emote_ || expression::Emote::get_instance().native_try_set_render_paused(paused);
+        return !has_emote_ || emote_owner().set_power_paused(paused, now_ms(), emote_backend());
     }
     bool drained() override
     {
@@ -157,4 +199,22 @@ bool start_render_suspend_participants(std::shared_ptr<lib_utils::TaskScheduler>
 {
     static RenderParticipants participants;
     return participants.start(std::move(scheduler), output_id, output_name, width, height, has_emote);
+}
+
+void emote_render_source_lost()
+{
+    emote_owner().source_lost();
+    if (emote_render_enabled) {
+        emote_owner().update(now_ms(), emote_backend());
+    }
+}
+
+uint32_t emote_render_begin_activation()
+{
+    return emote_owner().begin_activation(now_ms());
+}
+
+void emote_render_activation_ready(uint32_t token)
+{
+    emote_owner().activation_ready(token);
 }

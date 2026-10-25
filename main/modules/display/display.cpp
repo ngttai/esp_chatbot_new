@@ -198,11 +198,15 @@ bool Display::set_active_source_role(DrawSource source)
         result.has_value(), false, "Failed to set active display source role: %1%", result.error()
     );
 
+    if (source != DrawSource::Emote) {
+        emote_render_source_lost();
+    }
     return true;
 }
 
 bool Display::show_video()
 {
+    std::lock_guard<std::mutex> lock(source_mutex_);
     auto &agents = AI_Agents::get_instance();
     if (agents.is_initialized()) {
         agents.set_emote_output_active(false);
@@ -218,6 +222,7 @@ bool Display::show_video()
 
 bool Display::show_ui()
 {
+    std::lock_guard<std::mutex> lock(source_mutex_);
     auto &agents = AI_Agents::get_instance();
     if (agents.is_initialized()) {
         agents.set_emote_output_active(false);
@@ -233,13 +238,35 @@ bool Display::show_ui()
 
 bool Display::show_emote()
 {
+    std::lock_guard<std::mutex> lock(source_mutex_);
     BROOKESIA_CHECK_FALSE_RETURN(emote_ready_, false, "Native Emote is not ready");
     BROOKESIA_CHECK_FALSE_RETURN(
         set_active_source_role(DrawSource::Emote), false, "Failed to activate native Emote source"
     );
+
+    // Keep the renderer paused until the Emote service has applied the queued state.
+    const uint32_t token = emote_render_begin_activation();
+    if (token != 0) {
+        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
+    }
     auto &agents = AI_Agents::get_instance();
     if (agents.is_initialized()) {
-        agents.set_emote_output_active(true);
+        if (token != 0) {
+            agents.restore_emote_state();
+        } else {
+            agents.set_emote_output_active(true);
+        }
+    }
+    if (token != 0) {
+        const bool queued = EmoteHelper::call_function_async(
+                                EmoteHelper::FunctionId::RefreshAll,
+                                [token](service::FunctionResult &&) {
+                                    emote_render_activation_ready(token);
+                                }
+                            );
+        if (!queued) {
+            emote_render_activation_ready(token);
+        }
     }
     return true;
 }

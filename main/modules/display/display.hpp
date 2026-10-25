@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include "brookesia/lib_utils/task_scheduler.hpp"
 #include "brookesia/service_manager.hpp"
@@ -89,4 +90,5 @@ private:
 
     std::unique_ptr<ScreenSpeakerShell> speaker_shell_;
     bool emote_ready_ = false;
+    std::mutex source_mutex_; // Serializes source switches with Emote render ownership.
 };
