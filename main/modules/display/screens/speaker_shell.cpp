@@ -28,6 +28,7 @@
 #include "modules/ai_agents.hpp"
 #include "modules/imu_gesture.hpp"
 #include "modules/wifi_control.hpp"
+#include "modules/system_stats_context.hpp"
 #include "modules/touch_sensor.hpp"
 #include "modules/weather_config.hpp"
 #include "modules/developer_mode.hpp"
@@ -409,6 +410,14 @@ void ScreenSpeakerShell::poll_idle_observability()
 {
     const uint32_t activity_revision = speaker_ui_get_activity_revision();
     const speaker_ui_screen_t screen = speaker_ui_get_active_screen();
+#if defined(CONFIG_EXAMPLE_SYSTEM_STATS)
+    {
+        const char *const name = screen_name(screen);
+        if (system_stats_ctx::screen_name.exchange(name, std::memory_order_acq_rel) != name) {
+            system_stats_ctx::screen_rev.fetch_add(1U, std::memory_order_acq_rel);
+        }
+    }
+#endif
     if (activity_revision != observed_activity_revision_) {
         observed_activity_revision_ = activity_revision;
         BROOKESIA_LOGI("UI activity revision: %1%", activity_revision);

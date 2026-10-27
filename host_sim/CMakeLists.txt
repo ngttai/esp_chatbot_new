@@ -269,6 +269,11 @@ if(BUILD_TESTING)
     add_executable(suspend_coordinator_test "${HOST_SIM_DIR}/tests/suspend_coordinator_test.cpp")
     target_include_directories(suspend_coordinator_test PRIVATE "${PROJECT_ROOT}/main/modules")
     add_test(NAME suspend_coordinator COMMAND suspend_coordinator_test)
+    add_executable(system_stats_test
+        "${HOST_SIM_DIR}/tests/system_stats_test.cpp"
+        "${PROJECT_ROOT}/main/modules/system_stats/system_stats_core.cpp")
+    target_include_directories(system_stats_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME system_stats COMMAND system_stats_test)
     add_executable(power_suspend_service_test
         "${HOST_SIM_DIR}/tests/power_suspend_service_test.cpp"
         "${PROJECT_ROOT}/main/modules/power_manager.cpp")

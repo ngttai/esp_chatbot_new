@@ -55,6 +55,29 @@ public:
         });
     }
 
+    // Coarse agent state for diagnostics; nullptr before init.
+    const char *state_name() const
+    {
+        if (!is_initialized()) {
+            return nullptr;
+        }
+        if (is_stopped_.load(std::memory_order_relaxed)) return "Stopped";
+        if (has_agent_error_.load(std::memory_order_relaxed)) return "Error";
+        if (power_starting_.load(std::memory_order_relaxed)) return "Starting";
+        if (is_speaking_.load(std::memory_order_relaxed)) return "Speaking";
+        if (is_thinking_.load(std::memory_order_relaxed)) return "Thinking";
+        if (is_listening_.load(std::memory_order_relaxed)) return "Listening";
+        if (is_sleeping_.load(std::memory_order_relaxed)) return "Sleeping";
+        if (is_slept_.load(std::memory_order_relaxed)) return "Slept";
+        if (is_suspended_.load(std::memory_order_relaxed)) return "Suspended";
+        return "Idle";
+    }
+
+    bool wifi_link_connected() const
+    {
+        return is_wifi_connected_.load(std::memory_order_relaxed);
+    }
+
     void init_coze();
     void init_openai();
     void init_xiaozhi();
