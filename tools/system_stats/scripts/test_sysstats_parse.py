@@ -6,7 +6,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import sysstats_parse as sp  # noqa: E402
 
-FIXTURE = pathlib.Path(__file__).parents[1] / "fixtures" / "synthetic_blocks.log"
+FIXTURE = pathlib.Path(__file__).parents[1] / "fixtures" / "synthetic_blocks.txt"
 
 
 class ParseTest(unittest.TestCase):
