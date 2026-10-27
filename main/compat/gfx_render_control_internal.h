@@ -2,11 +2,19 @@
 #pragma once
 #include "gfx_render_control.h"
 
-// Protected by render_mutex; the lifecycle event group lives for the engine lifetime.
+// FreeRTOS synchronizes the pause flag; timer/render changes require render_mutex.
 #define GFX_RENDER_PAUSED BIT3
 static bool gfx_render_is_paused(gfx_core_context_t *ctx)
 {
     return (xEventGroupGetBits(ctx->sync.lifecycle_events) & GFX_RENDER_PAUSED) != 0;
+}
+
+esp_err_t gfx_request_render_pause(gfx_handle_t handle)
+{
+    gfx_core_context_t *ctx = (gfx_core_context_t *)handle;
+    if (!ctx || !ctx->sync.lifecycle_events) return ESP_ERR_INVALID_STATE;
+    xEventGroupSetBits(ctx->sync.lifecycle_events, GFX_RENDER_PAUSED);
+    return ESP_OK;
 }
 
 esp_err_t gfx_try_set_render_paused(gfx_handle_t handle, bool paused)

@@ -10,6 +10,10 @@ set(SRCS
     "modules/head_led.cpp"
     "modules/imu_gesture.cpp"
     "modules/mcp_device_tools.cpp"
+    "modules/music/id3_parser.cpp"
+    "modules/music/music_data.cpp"
+    "modules/music/music_library.cpp"
+    "modules/music/music_service.cpp"
     "modules/power_manager.cpp"
     "modules/profiler.cpp"
     "modules/touch_sensor.cpp"
@@ -63,6 +67,7 @@ idf_component_register(
         esp_wifi
         espressif__i2c_bus
         fatfs
+        pthread
         nvs_flash
         spi_flash
     EMBED_TXTFILES ${EMBEDDED_FILES}

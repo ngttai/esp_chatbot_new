@@ -25,6 +25,7 @@
 #include "brightness_adapter.hpp"
 #include "host_capabilities.hpp"
 #include "keyboard_adapter.hpp"
+#include "music_fixture.hpp"
 #include "persistence_adapter.hpp"
 #include "power_adapter.hpp"
 #include "screenshot_capture.hpp"
@@ -222,6 +223,7 @@ int run_main(int argc, char **argv)
         weather_adapter.stop();
     });
 
+    host_sim::prepare_music_fixture(self_test_mode);
     gui::lvgl::lock_thread();
     speaker_ui_create();
     speaker_ui_set_input(input);
