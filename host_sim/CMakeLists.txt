@@ -179,11 +179,16 @@ add_executable(esp_chatbot_host_sim
     host_capabilities.cpp
     keyboard_adapter.cpp
     main.cpp
+    music_fixture.cpp
     persistence_adapter.cpp
     power_adapter.cpp
     volume_adapter.cpp
     weather_adapter.cpp
     wifi_adapter.cpp
+    "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_service.cpp"
     tests/input_injector.cpp
     tests/screenshot_capture.cpp
     tests/self_test_main.cpp
@@ -218,6 +223,7 @@ configure_file(
 target_include_directories(esp_chatbot_host_sim PRIVATE
     "${HOST_SIM_GENERATED_DIR}"
     "${HOST_SIM_DIR}/tests"
+    "${PROJECT_ROOT}/main"
     "${PROJECT_ROOT}/main/modules"
     "${SPEAKER_UI_DIR}/src"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems"
@@ -225,7 +231,9 @@ target_include_directories(esp_chatbot_host_sim PRIVATE
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/apps/brookesia_app_ai_profile/ui"
 )
+find_package(Threads REQUIRED)
 target_link_libraries(esp_chatbot_host_sim PRIVATE
+    Threads::Threads
     brookesia::gui_lvgl
     brookesia::hal_linux
     brookesia::service_display
@@ -237,12 +245,40 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(music_library_test
+        "${HOST_SIM_DIR}/tests/music_library_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_library.cpp")
+    target_include_directories(music_library_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME music_library COMMAND music_library_test)
+    add_executable(music_service_test
+        "${HOST_SIM_DIR}/tests/music_service_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_service.cpp")
+    target_include_directories(music_service_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_service_test PRIVATE Threads::Threads)
+    add_test(NAME music_service COMMAND music_service_test)
+    set_tests_properties(music_service PROPERTIES TIMEOUT 60)
+    add_executable(music_data_cover_test
+        "${HOST_SIM_DIR}/tests/music_data_cover_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_service.cpp")
+    target_include_directories(music_data_cover_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_data_cover_test PRIVATE Threads::Threads)
+    add_test(NAME music_data_cover COMMAND music_data_cover_test)
+    set_tests_properties(music_data_cover PROPERTIES TIMEOUT 30)
     add_executable(panel_power_test "${HOST_SIM_DIR}/tests/panel_power_test.cpp")
     target_include_directories(panel_power_test PRIVATE "${PROJECT_ROOT}/main")
     add_test(NAME panel_power COMMAND panel_power_test)
     add_executable(render_suspend_test "${HOST_SIM_DIR}/tests/render_suspend_test.cpp")
     target_include_directories(render_suspend_test PRIVATE "${PROJECT_ROOT}/main")
     add_test(NAME render_suspend COMMAND render_suspend_test)
+    add_executable(emote_render_owner_test "${HOST_SIM_DIR}/tests/emote_render_owner_test.cpp")
+    target_include_directories(emote_render_owner_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME emote_render_owner COMMAND emote_render_owner_test)
     add_executable(lvgl_render_pause_test "${HOST_SIM_DIR}/tests/lvgl_render_pause_test.cpp"
         "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/core/brookesia_core/systems/base/assets/fonts/maison_neue_book/esp_brookesia_font_maison_neue_book_14.c")
     target_link_libraries(lvgl_render_pause_test PRIVATE brookesia::gui_lvgl brookesia::hal_linux)
@@ -269,6 +305,11 @@ if(BUILD_TESTING)
     add_executable(suspend_coordinator_test "${HOST_SIM_DIR}/tests/suspend_coordinator_test.cpp")
     target_include_directories(suspend_coordinator_test PRIVATE "${PROJECT_ROOT}/main/modules")
     add_test(NAME suspend_coordinator COMMAND suspend_coordinator_test)
+    add_executable(system_stats_test
+        "${HOST_SIM_DIR}/tests/system_stats_test.cpp"
+        "${PROJECT_ROOT}/main/modules/system_stats/system_stats_core.cpp")
+    target_include_directories(system_stats_test PRIVATE "${PROJECT_ROOT}/main")
+    add_test(NAME system_stats COMMAND system_stats_test)
     add_executable(power_suspend_service_test
         "${HOST_SIM_DIR}/tests/power_suspend_service_test.cpp"
         "${PROJECT_ROOT}/main/modules/power_manager.cpp")
@@ -289,6 +330,7 @@ if(BUILD_TESTING)
         --self-test-home
         --self-test-launcher
         --self-test-2048
+        --self-test-music
         --self-test-idle
         --self-test-ui-observability
         --self-test-idle-coordinator

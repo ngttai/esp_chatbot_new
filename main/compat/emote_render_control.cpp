@@ -10,4 +10,10 @@ bool Emote::native_try_set_render_paused(bool paused)
     auto handle = static_cast<emote_handle_t>(native_handle_);
     return handle && gfx_try_set_render_paused(handle->gfx_handle, paused) == ESP_OK;
 }
+
+bool Emote::native_request_render_pause()
+{
+    auto handle = static_cast<emote_handle_t>(native_handle_);
+    return handle && gfx_request_render_pause(handle->gfx_handle) == ESP_OK;
+}
 }

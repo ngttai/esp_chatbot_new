@@ -9,6 +9,7 @@
 #include <math.h>
 #include "lvgl.h"
 #include "apps/game_2048/game_2048.h"
+#include "apps/music/music_ui.h"
 #include "flip_clock/flip_clock.h"
 #include "flip_clock/weather_panel.h"
 
@@ -55,6 +56,7 @@ LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level2_36_36);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level3_36_36);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_lock_48_48);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_launcher_ai_profile_112_112);
+LV_IMAGE_DECLARE(music_launcher_icon_112_112);
 LV_IMAGE_DECLARE(img_app_2048);
 LV_IMAGE_DECLARE(img_app_calculator);
 LV_IMAGE_DECLARE(img_app_timer);
@@ -93,7 +95,7 @@ extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator1;
 extern lv_obj_t *ui_ScreenAIProfilePanelPanelIndicator2;
 
 typedef struct { const char *name; const lv_image_dsc_t *image; lv_event_cb_t cb; } app_t;
-static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen, *game_2048_screen;
+static lv_obj_t *idle, *launcher, *quick, *settings, *ai, *timer_screen, *game_2048_screen, *music_screen;
 static uint32_t activity_revision;
 static lv_obj_t *settings_wlan, *settings_sound, *settings_display, *settings_about, *settings_self_test;
 static lv_obj_t *settings_developer, *settings_restore;
@@ -105,6 +107,7 @@ static lv_obj_t *lift_to_wake_switch;
 static lv_obj_t *settings_scroller, *settings_wlan_scroller;
 static lv_obj_t *launcher_home_bar, *quick_home_bar, *settings_home_bar, *ai_home_bar, *timer_home_bar;
 static lv_obj_t *game_2048_home_bar;
+static lv_obj_t *music_home_bar;
 static lv_obj_t *wlan_home_bar, *sound_home_bar, *display_home_bar, *about_home_bar, *self_test_home_bar;
 static lv_obj_t *developer_home_bar, *factory_home_bar;
 static lv_obj_t *wlan_verify_home_bar, *softap_home_bar;
@@ -290,6 +293,12 @@ static void show_timer(lv_event_t *e)
     flip_clock_replay(timer_clock_widget);
 }
 static void show_game_2048(lv_event_t *e) { LV_UNUSED(e); load(game_2048_screen); }
+static void show_music(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    music_ui_show_now_playing();
+    load(music_screen);
+}
 static void show_launcher_long(lv_event_t *e) { LV_UNUSED(e); load(launcher); }
 
 static void show_screen_ref(lv_event_t *e)
@@ -304,6 +313,7 @@ static const app_t apps[] = {
     {"Clock", &img_app_timer, show_timer},
     {"Settings", &esp_brookesia_app_icon_launcher_settings_112_112, show_settings},
     {"2048", &img_app_2048, show_game_2048},
+    {"Music", &music_launcher_icon_112_112, show_music},
 };
 
 static int launcher_app_count(void)
@@ -415,6 +425,7 @@ static lv_obj_t *active_home_bar(void)
     if(active == ai) return ai_home_bar;
     if(active == timer_screen) return timer_home_bar;
     if(active == game_2048_screen) return game_2048_home_bar;
+    if(active == music_screen) return music_home_bar;
     return NULL;
 }
 
@@ -695,7 +706,7 @@ static void home_loaded(lv_event_t *e)
     lv_obj_t *screens[] = {
         launcher, settings, settings_wlan, settings_wlan_verify, settings_softap,
         settings_sound, settings_display, settings_about, settings_self_test,
-        settings_developer, settings_restore, ai, timer_screen, game_2048_screen
+        settings_developer, settings_restore, ai, timer_screen, game_2048_screen, music_screen
     };
     for(size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); i++) {
         reset_scroll_tree(screens[i]);
@@ -721,6 +732,14 @@ static void create_game_2048(void)
     lv_obj_t *content = screen_content(game_2048_screen, BG);
     game_2048_create(content);
     game_2048_home_bar = create_home_indicator(content);
+}
+
+static void create_music(void)
+{
+    music_screen = lv_obj_create(NULL);
+    lv_obj_t *content = screen_content(music_screen, lv_color_hex(0x14161D));
+    music_ui_create(content);
+    music_home_bar = create_home_indicator(content);
 }
 
 /* Quick Settings Volume/Brightness: firmware cycles the level on a short click (icon
@@ -1914,7 +1933,7 @@ void speaker_ui_create(void)
     esp_brookesia_squareline_ui_comp_init();
     create_launcher(); create_idle(); create_quick(); create_settings(); create_settings_subpages();
     create_wlan_keyboard();
-    create_ai(); create_timer(); create_game_2048();
+    create_ai(); create_timer(); create_game_2048(); create_music();
     /* Wire every WLAN-state-dependent widget (Settings switch, Quick Settings Wi-Fi
      * button/status icon, WLAN screen's connected/available/SoftAP groups) to the
      * initial state now that they all exist. */
@@ -1960,6 +1979,7 @@ bool speaker_ui_is_screen_active(const char *name)
 {
     lv_obj_t *active = lv_screen_active();
     if(!strcmp(name, "quick")) return quick_open;
+    if(!strcmp(name, "launcher-page-2")) return active == launcher && page_index == 1;
     if(!strcmp(name, "settings")) return active == settings;
     if(!strcmp(name, "wlan")) return active == settings_wlan;
     if(!strcmp(name, "wlan-connect")) return active == settings_wlan_verify;
@@ -1973,6 +1993,8 @@ bool speaker_ui_is_screen_active(const char *name)
     if(!strcmp(name, "ai")) return active == ai;
     if(!strcmp(name, "timer")) return active == timer_screen;
     if(!strcmp(name, "2048")) return active == game_2048_screen;
+    if(!strcmp(name, "music")) return active == music_screen;
+    if(!strcmp(name, "music-playlist")) return active == music_screen && music_ui_is_playlist_visible();
     return false;
 }
 
@@ -1984,6 +2006,7 @@ speaker_ui_screen_t speaker_ui_get_active_screen(void)
     if(active == launcher) return SPEAKER_UI_SCREEN_LAUNCHER;
     if(active == timer_screen) return SPEAKER_UI_SCREEN_CLOCK;
     if(active == game_2048_screen) return SPEAKER_UI_SCREEN_GAME;
+    if(active == music_screen) return SPEAKER_UI_SCREEN_MUSIC;
     if(active == ai) return SPEAKER_UI_SCREEN_AI;
     if(active == settings_wlan_verify || active == settings_softap ||
        active == settings_self_test || active == settings_developer ||
@@ -2021,7 +2044,20 @@ bool speaker_ui_show(const char *name)
     sync_password_keyboard(!strcmp(name, "wlan-connect"));
     if(!strcmp(name, "idle") || !strcmp(name, "black")) lv_screen_load(idle);
     else if(!strcmp(name, "launcher")) lv_screen_load(launcher);
+    else if(!strcmp(name, "launcher-page-2")) {
+        page_index = 1;
+        render_page();
+        lv_screen_load(launcher);
+    }
     else if(!strcmp(name, "2048")) lv_screen_load(game_2048_screen);
+    else if(!strcmp(name, "music")) {
+        music_ui_show_now_playing();
+        lv_screen_load(music_screen);
+    }
+    else if(!strcmp(name, "music-playlist")) {
+        music_ui_show_playlist();
+        lv_screen_load(music_screen);
+    }
     else if(!strcmp(name, "quick")) {
         lv_anim_delete(quick, NULL);
         lv_obj_remove_flag(quick, LV_OBJ_FLAG_HIDDEN);

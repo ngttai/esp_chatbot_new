@@ -10,6 +10,10 @@ set(SRCS
     "modules/head_led.cpp"
     "modules/imu_gesture.cpp"
     "modules/mcp_device_tools.cpp"
+    "modules/music/id3_parser.cpp"
+    "modules/music/music_data.cpp"
+    "modules/music/music_library.cpp"
+    "modules/music/music_service.cpp"
     "modules/power_manager.cpp"
     "modules/profiler.cpp"
     "modules/touch_sensor.cpp"
@@ -19,6 +23,10 @@ set(SRCS
     "modules/wifi_provisioning.cpp"
     "modules/wifi_control.cpp"
 )
+
+if (CONFIG_EXAMPLE_SYSTEM_STATS)
+    list(APPEND SRCS "modules/system_stats/system_stats_core.cpp")
+endif()
 
 # Limit imported source discovery to the active Speaker UI tree. This
 # prevents archived or experimental files elsewhere under main/ from silently
@@ -52,16 +60,64 @@ idf_component_register(
         bq27220
         esp_board_manager
         esp_app_format
+        esp_driver_usb_serial_jtag
         esp_event
         esp_hw_support
         esp_lvgl_adapter
         esp_wifi
         espressif__i2c_bus
         fatfs
+        pthread
         nvs_flash
         spi_flash
     EMBED_TXTFILES ${EMBEDDED_FILES}
 )
+
+if (CONFIG_EXAMPLE_SYSTEM_STATS)
+    # Source identity is read when CMake configures; the log reports it as such.
+    set(SYSTEM_STATS_GIT_REV "N/A")
+    set(SYSTEM_STATS_GIT_DIRTY "N/A")
+    find_package(Git QUIET)
+    if (GIT_FOUND)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} rev-parse --short=12 HEAD
+            WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+            OUTPUT_VARIABLE SYSTEM_STATS_REV_OUT
+            RESULT_VARIABLE SYSTEM_STATS_REV_RESULT
+            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if (SYSTEM_STATS_REV_RESULT EQUAL 0 AND SYSTEM_STATS_REV_OUT)
+            set(SYSTEM_STATS_GIT_REV "${SYSTEM_STATS_REV_OUT}")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} status --porcelain
+                WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+                OUTPUT_VARIABLE SYSTEM_STATS_DIRTY_OUT
+                RESULT_VARIABLE SYSTEM_STATS_DIRTY_RESULT
+                OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            if (SYSTEM_STATS_DIRTY_RESULT EQUAL 0)
+                if (SYSTEM_STATS_DIRTY_OUT)
+                    set(SYSTEM_STATS_GIT_DIRTY "Y")
+                else()
+                    set(SYSTEM_STATS_GIT_DIRTY "N")
+                endif()
+            endif()
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} rev-parse --git-path logs/HEAD
+                WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+                OUTPUT_VARIABLE SYSTEM_STATS_HEAD_LOG
+                RESULT_VARIABLE SYSTEM_STATS_HEAD_LOG_RESULT
+                OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            if (SYSTEM_STATS_HEAD_LOG_RESULT EQUAL 0 AND SYSTEM_STATS_HEAD_LOG)
+                get_filename_component(SYSTEM_STATS_HEAD_LOG_ABS "${SYSTEM_STATS_HEAD_LOG}"
+                    ABSOLUTE BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SYSTEM_STATS_HEAD_LOG_ABS}")
+            endif()
+        endif()
+    endif()
+    set_source_files_properties(
+        "${CMAKE_CURRENT_LIST_DIR}/modules/profiler.cpp"
+        PROPERTIES COMPILE_DEFINITIONS
+        "SYSTEM_STATS_GIT_REV=\"${SYSTEM_STATS_GIT_REV}\";SYSTEM_STATS_GIT_DIRTY=\"${SYSTEM_STATS_GIT_DIRTY}\"")
+endif()
 
 # Keep imported UI sources byte-identical while accepting their LVGL integer format.
 include("${CMAKE_CURRENT_LIST_DIR}/compat/render_power.cmake")

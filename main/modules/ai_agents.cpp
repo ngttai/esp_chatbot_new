@@ -691,17 +691,23 @@ void AI_Agents::set_emote_output_active(bool active)
     }
 
     if (!active) {
-        // The Display service drops inactive-source frames, but the native
-        // animation renderer still consumes CPU unless its objects are hidden.
-        // Queue StopAnimation first because it makes the base emoji visible.
-        EmoteHelper::call_function_async(EmoteHelper::FunctionId::StopAnimation);
-        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideQrcode);
-        EmoteHelper::call_function_async(EmoteHelper::FunctionId::HideEmoji);
+        // The renderer is paused by Display while another source owns the screen;
+        // state changes are cached here and re-applied on activation.
         return;
     }
 
     // State changes are cached while LVGL owns the display. Force one refresh
     // when the native Emote source becomes active again.
+    emote_state_.store(EmoteState::Max, std::memory_order_relaxed);
+    refresh_emote_state();
+}
+
+void AI_Agents::restore_emote_state()
+{
+    emote_output_active_.store(true, std::memory_order_relaxed);
+    if (!EmoteHelper::is_available()) {
+        return;
+    }
     emote_state_.store(EmoteState::Max, std::memory_order_relaxed);
     refresh_emote_state();
 }

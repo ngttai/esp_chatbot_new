@@ -35,6 +35,7 @@
 
 extern "C" {
 #include "apps/game_2048/game_2048.h"
+#include "apps/music/music_ui.h"
 #include "speaker_ui.h"
 #include "ui.h"
 }
@@ -160,7 +161,7 @@ int test_ui_observability(InputInjector &input)
         const char *name;
         speaker_ui_screen_t expected;
     };
-    static constexpr std::array<ScreenCase, 16> screen_cases{{
+    static constexpr std::array<ScreenCase, 17> screen_cases{{
         {"idle", SPEAKER_UI_SCREEN_HOME},
         {"launcher", SPEAKER_UI_SCREEN_LAUNCHER},
         {"timer", SPEAKER_UI_SCREEN_CLOCK},
@@ -177,6 +178,7 @@ int test_ui_observability(InputInjector &input)
         {"ai", SPEAKER_UI_SCREEN_AI},
         {"quick", SPEAKER_UI_SCREEN_QUICK},
         {"2048", SPEAKER_UI_SCREEN_GAME},
+        {"music", SPEAKER_UI_SCREEN_MUSIC},
     }};
 
     const uint32_t initial_revision = activity_revision();
@@ -951,6 +953,73 @@ int test_game_2048(InputInjector &input)
     }
 
     std::puts("2048 model, launcher, gestures and state lifecycle passed");
+    return 0;
+}
+
+int test_music_ui(InputInjector &input)
+{
+    if (!show("music") || !active("music") || active_screen() != SPEAKER_UI_SCREEN_MUSIC) {
+        std::fprintf(stderr, "Music screen could not be opened\n");
+        return 152;
+    }
+    input.pump(20);
+
+    if (with_ui_lock([]() { return music_ui_is_playing(); })) {
+        std::fprintf(stderr, "Music unexpectedly started in the playing state\n");
+        return 153;
+    }
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    if (!with_ui_lock([]() { return music_ui_is_playing(); })) {
+        std::fprintf(stderr, "Music Play button did not update UI state\n");
+        return 154;
+    }
+
+    const size_t first_track = with_ui_lock([]() { return music_ui_get_track_index(); });
+    if (!input_ok(input.click(250, 257), input)) return 1;
+    if (with_ui_lock([]() { return music_ui_get_track_index(); }) == first_track) {
+        std::fprintf(stderr, "Music Next button did not change tracks\n");
+        return 155;
+    }
+
+    if (!input_ok(input.click(180, 308), input)) return 1;
+    if (!with_ui_lock([]() { return music_ui_is_playlist_visible(); })) {
+        std::fprintf(stderr, "Music Playlist button did not open the track list\n");
+        return 156;
+    }
+
+    if (!input_ok(input.click(180, 107), input)) return 1;
+    if (with_ui_lock([]() { return music_ui_is_playlist_visible(); }) ||
+            with_ui_lock([]() { return music_ui_get_track_index(); }) != 0) {
+        std::fprintf(stderr, "Music track selection did not return to Now Playing\n");
+        return 157;
+    }
+
+    if (!input_ok(input.click(180, 308), input)) return 1;
+    if (!input_ok(input.press(180, 270), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 245), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 220), input) || !input_ok(input.release(), input)) return 1;
+    input.pump(120);
+    const int32_t playlist_scroll_y = with_ui_lock([]() { return music_ui_get_playlist_scroll_y(); });
+    if (playlist_scroll_y <= 0 || (playlist_scroll_y - 28) % 57 != 0) {
+        std::fprintf(stderr, "Music Playlist did not settle on a half-row snap point: y=%d\n",
+                     static_cast<int>(playlist_scroll_y));
+        return 159;
+    }
+
+    if (!input_ok(input.press(180, 350), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 340), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 330), input) || !input_ok(input.release(), input)) return 1;
+    input.pump(30);
+    if (!with_ui_lock([]() { return speaker_ui_is_launcher_active(); })) {
+        std::fprintf(stderr, "Music blocked the bottom-edge Home gesture\n");
+        return 158;
+    }
+
+    std::puts("Music controls, playlist and Home gesture passed");
     return 0;
 }
 
@@ -2192,10 +2261,11 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 33> options{{
+    static constexpr std::array<std::string_view, 34> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-2048",
+        "--self-test-music",
         "--self-test-idle",
         "--self-test-ui-observability",
         "--self-test-idle-coordinator",
@@ -2250,6 +2320,7 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-power-policy") return test_power_policy();
     if (option == "--self-test-launcher") return test_launcher(input);
     if (option == "--self-test-2048") return test_game_2048(input);
+    if (option == "--self-test-music") return test_music_ui(input);
     if (option == "--self-test-home") return test_home(input);
     if (option == "--self-test-settings-no-scroll") return test_settings_no_scroll(input);
     if (option == "--self-test-quick-gesture") return test_quick_gesture(input);

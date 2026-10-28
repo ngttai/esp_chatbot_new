@@ -1,0 +1,111 @@
+I (9000) SysStats: SYSTEM STATS enabled period_ms=10000 max_tasks=64 store=PSRAM store_bytes=8808 elf_sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+I (9500) wifi: unrelated line from another module
+I (23000) SysStats: SYSTEM STATS begin seq=1 up=00:00:13 up_ms=13000 period_ms=10000
+I (23000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (23000) SysStats: ctx screen=Home power=Active wifi=Off agent=Idle chg_screen=0 chg_power=0 wa_check=endpoints mixed=no
+I (23000) SysStats: cpu core0_busy=31.52% core1_busy=68.10% unit=pct_of_one_core basis=100-IDLE idle0_us=6848000 idle1_us=3190000 window_us=10000000 mono_us=10000040
+I (23000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (23000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (23000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (23000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (23000) SysStats: tasks total=4 shown=4 sample=OK trunc=N new=0 gone=0 bad=0
+I (23000) SysStats: tcol Name             Hdl      Core Pri   CPU%    dRun_us Stack  HWM_B State     Note
+I (23000) SysStats: task IDLE0            3fc90000 0      5  68.48    6848000 PSRAM   1234 Blocked   -
+I (23000) SysStats: task IDLE1            3fc90100 1      5  31.90    3190000 PSRAM   1234 Blocked   -
+I (23000) SysStats: task gfx_render       3fc90200 Any    5  12.34    1234000 PSRAM   1234 Blocked   -
+I (23000) SysStats: task Tmr Svc          3fc90300 Any    5   0.02       2000 PSRAM   1234 Blocked   -
+I (23000) SysStats: self prev_sample_us=N/A prev_mem_us=N/A prev_emit_us=N/A
+I (23000) SysStats: SYSTEM STATS end seq=1
+W (33000) SysStats: SYSTEM STATS WARN core0 busy=99.50% >= 99% window_us=10000000 (full task table follows)
+I (33000) SysStats: SYSTEM STATS begin seq=2 up=00:00:23 up_ms=23000 period_ms=10000
+I (33000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (33000) SysStats: ctx screen=Home power=Active wifi=Off agent=Idle chg_screen=0 chg_power=0 wa_check=endpoints mixed=no
+I (33000) SysStats: cpu core0_busy=99.50% core1_busy=68.10% unit=pct_of_one_core basis=100-IDLE idle0_us=50000 idle1_us=3190000 window_us=10000000 mono_us=10000040
+I (33000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (33000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (33000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (33000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (33000) SysStats: tasks total=4 shown=4 sample=OK trunc=N new=0 gone=0 bad=0
+I (33000) SysStats: tcol Name             Hdl      Core Pri   CPU%    dRun_us Stack  HWM_B State     Note
+I (33000) SysStats: task IDLE0            3fc90000 0      5   0.50      50000 PSRAM   1234 Blocked   -
+I (33000) SysStats: task IDLE1            3fc90100 1      5  31.90    3190000 PSRAM   1234 Blocked   -
+I (33000) SysStats: task gfx_render       3fc90200 Any    5  12.34    1234000 PSRAM   1234 Blocked   -
+I (33000) SysStats: task Tmr Svc          3fc90300 Any    5   0.02       2000 PSRAM   1234 Blocked   -
+I (33000) SysStats: self prev_sample_us=150 prev_mem_us=90 prev_emit_us=52000
+I (33000) SysStats: SYSTEM STATS end seq=2
+W (43000) SysStats: SYSTEM STATS WARN cpu window not usable: SAMPLE_ERROR
+I (43000) SysStats: SYSTEM STATS begin seq=3 up=00:00:33 up_ms=33000 period_ms=10000
+I (43000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (43000) SysStats: ctx screen=Home power=Active wifi=Off agent=Idle chg_screen=0 chg_power=0 wa_check=endpoints mixed=no
+I (43000) SysStats: cpu core0_busy=N/A% core1_busy=N/A% unit=pct_of_one_core basis=100-IDLE idle0_us=N/A idle1_us=N/A window_us=N/A mono_us=N/A
+I (43000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (43000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (43000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (43000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (43000) SysStats: tasks total=N/A shown=0 sample=SAMPLE_ERROR trunc=N new=0 gone=0 bad=0
+I (43000) SysStats: self prev_sample_us=150 prev_mem_us=90 prev_emit_us=52000
+I (43000) SysStats: SYSTEM STATS end seq=3
+I (53000) SysStats: SYSTEM STATS begin seq=4 up=00:00:43 up_ms=43000 period_ms=10000
+I (53000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (53000) SysStats: ctx screen=Home power=Dimmed power_start=Active wifi=Off agent=Idle chg_screen=0 chg_power=1 wa_check=endpoints mixed=yes:power
+I (53000) SysStats: cpu core0_busy=31.52% core1_busy=68.10% unit=pct_of_one_core basis=100-IDLE idle0_us=6848000 idle1_us=3190000 window_us=10000000 mono_us=10000040
+I (53000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (53000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (53000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (53000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (53000) SysStats: tasks total=4 shown=4 sample=OK trunc=N new=0 gone=0 bad=0
+I (53000) SysStats: tcol Name             Hdl      Core Pri   CPU%    dRun_us Stack  HWM_B State     Note
+I (53000) SysStats: task IDLE0            3fc90000 0      5  68.48    6848000 PSRAM   1234 Blocked   -
+I (53000) SysStats: task IDLE1            3fc90100 1      5  31.90    3190000 PSRAM   1234 Blocked   -
+I (53000) SysStats: task gfx_render       3fc90200 Any    5  12.34    1234000 PSRAM   1234 Blocked   -
+I (53000) SysStats: task Tmr Svc          3fc90300 Any    5   0.02       2000 PSRAM   1234 Blocked   -
+I (53000) SysStats: self prev_sample_us=150 prev_mem_us=90 prev_emit_us=52000
+I (53000) SysStats: SYSTEM STATS end seq=4
+I (63000) SysStats: SYSTEM STATS begin seq=5 up=00:00:53 up_ms=53000 period_ms=10000
+I (63000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (63000) SysStats: ctx screen=Home power=Active wifi=Off agent=Idle chg_screen=2 chg_power=0 wa_check=endpoints mixed=yes:screen
+I (63000) SysStats: cpu core0_busy=31.52% core1_busy=68.10% unit=pct_of_one_core basis=100-IDLE idle0_us=6848000 idle1_us=3190000 window_us=10000000 mono_us=10000040
+I (63000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (63000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (63000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (63000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (63000) SysStats: tasks total=4 shown=4 sample=OK trunc=N new=0 gone=0 bad=0
+I (63000) SysStats: tcol Name             Hdl      Core Pri   CPU%    dRun_us Stack  HWM_B State     Note
+I (63000) SysStats: task IDLE0            3fc90000 0      5  68.48    6848000 PSRAM   1234 Blocked   -
+I (63000) SysStats: task IDLE1            3fc90100 1      5  31.90    3190000 PSRAM   1234 Blocked   -
+I (63000) SysStats: task gfx_render       3fc90200 Any    5  12.34    1234000 PSRAM   1234 Blocked   -
+I (63000) SysStats: task Tmr Svc          3fc90300 Any    5   0.02       2000 PSRAM   1234 Blocked   -
+I (63000) SysStats: self prev_sample_us=150 prev_mem_us=90 prev_emit_us=52000
+I (63000) SysStats: SYSTEM STATS end seq=5
+I (73000) SysStats: SYSTEM STATS begin seq=6 up=00:01:03 up_ms=63000 period_ms=10000
+I (73000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (73000) SysStats: ctx screen=Home power=Active wifi=Off agent=Listening agent_start=Idle chg_screen=0 chg_power=0 wa_check=endpoints mixed=yes:agent
+I (73000) SysStats: cpu core0_busy=31.52% core1_busy=68.10% unit=pct_of_one_core basis=100-IDLE idle0_us=6848000 idle1_us=3190000 window_us=10000000 mono_us=10000040
+I (73000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (73000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (73000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (73000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (73000) SysStats: tasks total=4 shown=4 sample=OK trunc=N new=0 gone=0 bad=0
+I (73000) SysStats: tcol Name             Hdl      Core Pri   CPU%    dRun_us Stack  HWM_B State     Note
+I (73000) SysStats: task IDLE0            3fc90000 0      5  68.48    6848000 PSRAM   1234 Blocked   -
+I (73000) SysStats: task IDLE1            3fc90100 1      5  31.90    3190000 PSRAM   1234 Blocked   -
+I (73000) SysStats: task gfx_render       3fc90200 Any    5  12.34    1234000 PSRAM   1234 Blocked   -
+I (73000) SysStats: task Tmr Svc          3fc90300 Any    5   0.02       2000 PSRAM   1234 Blocked   -
+I (73000) SysStats: self prev_sample_us=150 prev_mem_us=90 prev_emit_us=52000
+I (73000) SysStats: SYSTEM STATS end seq=6
+I (83000) SysStats: SYSTEM STATS begin seq=7 up=00:01:13 up_ms=73000 period_ms=10000
+I (83000) SysStats: build profile=PERF-O2 assert=ENABLE idf=v6.1 app=1.2.0 commit=5e0f4e9ab123 dirty=N elf=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef store=PSRAM store_bytes=8808
+I (83000) SysStats: ctx screen=Home power=Active wifi=Off agent=Idle chg_screen=0 chg_power=0 wa_check=endpoints mixed=no
+I (83000) SysStats: cpu core0_busy=31.52% core1_busy=68.10% unit=pct_of_one_core basis=100-IDLE idle0_us=6848000 idle1_us=3190000 window_us=10000000 mono_us=10000040
+I (83000) SysStats: mem region      total_B       free_B   min_boot_B   seen_min_B    largest_B
+I (83000) SysStats: mem SRAM         330000       140000        89456       140000        65536
+I (83000) SysStats: mem PSRAM       8386608      8113580      8000000      8113580      8000000
+I (83000) SysStats: dma largest_B=65536 free_B=130000 caps=INTERNAL|DMA|8BIT (inside SRAM, not added)
+I (83000) SysStats: tasks total=4 shown=4 sample=OK trunc=N new=0 gone=0 bad=0
+I (83000) SysStats: tcol Name             Hdl      Core Pri   CPU%    dRun_us Stack  HWM_B State     Note
+I (83000) SysStats: task IDLE0            3fc90000 0      5  68.48    6848000 PSRAM   1234 Blocked   -
+I (83000) SysStats: task IDLE1            3fc90100 1      5  31.90    3190000 PSRAM   1234 Blocked   -
+I (83000) SysStats: task gfx_render       3fc90200 Any    5  12.34    1234000 PSRAM   1234 Blocked   -
+I (83000) SysStats: task Tmr Svc          3fc90300 Any    5   0.02       2000 PSRAM   1234 Blocked   -
+I (83000) SysStats: self prev_sample_us=150 prev_mem_us=90 prev_emit_us=52000
+I (83000) SysStats: SYSTEM STATS end seq=7
