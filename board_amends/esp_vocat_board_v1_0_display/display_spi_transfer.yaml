@@ -1,0 +1,8 @@
+version: 1.0.0
+peripherals:
+  - name: spi_display
+    config:
+      spi_bus_config:
+        # Hardware-validated with full-frame double buffers in PSRAM,
+        # psram_dma_direct=false and the default 40 MHz LCD clock.
+        max_transfer_sz: 3600

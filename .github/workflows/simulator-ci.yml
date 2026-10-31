@@ -101,7 +101,8 @@ jobs:
         run: |
           source /opt/esp/idf/export.sh
           cp dependencies.lock /tmp/dependencies.lock
-          idf.py gen-bmgr-config -b esp_vocat_board_v1_0
+          idf.py gen-bmgr-config -b esp_vocat_board_v1_0 \
+            -a board_amends/esp_vocat_board_v1_0_display
           cp /tmp/dependencies.lock dependencies.lock
 
       - name: Build firmware

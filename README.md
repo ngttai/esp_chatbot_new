@@ -58,7 +58,8 @@ are simulated and do not represent live device readings.
 
 ```sh
 source ~/.espressif/v6.1/esp-idf/export.sh
-idf.py bmgr -b esp_vocat_board_v1_0
+idf.py bmgr -b esp_vocat_board_v1_0 \
+  -a board_amends/esp_vocat_board_v1_0_display
 idf.py build
 ```
 

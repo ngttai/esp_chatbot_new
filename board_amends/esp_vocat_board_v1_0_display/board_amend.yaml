@@ -1,0 +1,5 @@
+version: "1.0"
+description: "ESP-VoCat v1.0 display transfer size validated on hardware"
+
+apply:
+  - display_spi_transfer.yaml
