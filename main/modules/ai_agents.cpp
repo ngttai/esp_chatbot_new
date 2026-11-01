@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "modules/memory_diagnostics.h"
 #include "boost/format.hpp"
 #include "sdkconfig.h"
 #include "esp_log.h"
@@ -476,6 +477,7 @@ void AI_Agents::handle_touch_sensor_click()
     // word instead of being discarded by the generic running-state guard.
     if (is_sleeping()) {
         BROOKESIA_LOGI("Touch single click: wake sleeping Xiaozhi");
+        memory_diag_checkpoint("agent_wake_requested");
         is_boot_idle_ = false;
         AgentHelper::call_function_async(
             AgentHelper::FunctionId::TriggerGeneralAction,
@@ -952,6 +954,7 @@ void AI_Agents::process_emote_when_general_event_happened()
             is_sleeping_ = true;
             is_slept_ = true;
             refresh_emote_state();
+            memory_diag_checkpoint_full("agent_session_closed");
             break;
         }
         case AgentHelper::GeneralEvent::Awake: {
@@ -967,6 +970,7 @@ void AI_Agents::process_emote_when_general_event_happened()
             has_agent_error_ = false;
             emote_state_ = EmoteState::Max;
             refresh_emote_state();
+            memory_diag_checkpoint_full("agent_session_ready");
             break;
         }
         case AgentHelper::GeneralEvent::Stopped: {
@@ -1045,6 +1049,7 @@ void AI_Agents::process_emote_when_speaking_status_changed()
         if (is_speaking) {
             is_thinking_ = false;
         }
+        memory_diag_checkpoint_full(is_speaking ? "agent_speaking" : "agent_speaking_end");
 
         if (is_inactive()) {
             BROOKESIA_LOGD("Agent is inactive, skip");
@@ -1088,6 +1093,7 @@ void AI_Agents::process_emote_when_listening_status_changed()
         is_listening_ = is_listening;
         if (is_listening) {
             is_thinking_ = false;
+            memory_diag_checkpoint("agent_listening");
         }
 
         if (is_inactive()) {

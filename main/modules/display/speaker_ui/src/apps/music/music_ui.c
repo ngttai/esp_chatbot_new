@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "modules/memory_diagnostics.h"
 #include "modules/music/music_data.h"
 
 #define MUSIC_WHITE  lv_color_hex(0xF5F7FA)
@@ -383,10 +384,12 @@ static void show_now_playing_cb(lv_event_t *event)
 
 void music_ui_show_now_playing(void)
 {
+    memory_diag_checkpoint("music_now_playing_before");
     lv_obj_add_flag(playlist_page, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(now_playing_page, LV_OBJ_FLAG_HIDDEN);
     set_data_idle(true);
     music_data_set_wanted(NULL, 0);
+    memory_diag_checkpoint_full("music_now_playing_ready");
 }
 
 static void show_playlist_cb(lv_event_t *event)
@@ -397,12 +400,15 @@ static void show_playlist_cb(lv_event_t *event)
 
 void music_ui_show_playlist(void)
 {
+    memory_diag_checkpoint("music_playlist_before");
     lv_obj_add_flag(now_playing_page, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(playlist_page, LV_OBJ_FLAG_HIDDEN);
     sync_total();
     sync_rows();
     set_data_idle(true);
     update_wanted();
+    memory_diag_checkpoint_full("music_playlist_ready");
+    memory_diag_checkpoint_after("music_playlist_settled", 3000);
 }
 
 static void select_track_cb(lv_event_t *event)

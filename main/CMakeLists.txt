@@ -10,6 +10,7 @@ set(SRCS
     "modules/head_led.cpp"
     "modules/imu_gesture.cpp"
     "modules/mcp_device_tools.cpp"
+    "modules/memory_diagnostics.cpp"
     "modules/music/id3_parser.cpp"
     "modules/music/music_data.cpp"
     "modules/music/music_library.cpp"

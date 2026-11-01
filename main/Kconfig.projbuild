@@ -172,3 +172,42 @@ menu "Example Configuration"
             production images.
 
 endmenu
+
+menu "Memory Diagnostics"
+
+    config EXAMPLE_MEMORY_DIAGNOSTICS
+        bool "Log internal RAM, PSRAM, task stack and CPU statistics"
+        default n
+        help
+            Logs MEMDIAG lines for internal and PSRAM heap, per-task stack high-water
+            marks and CPU usage at fixed checkpoints and periodically. A low-priority
+            worker with a PSRAM stack does all measuring and logging; callers only
+            enqueue a small request. Intended for measurement builds only.
+
+    config EXAMPLE_MEMORY_DIAGNOSTICS_PERIOD_MS
+        int "Periodic full snapshot interval (ms), 0 disables"
+        depends on EXAMPLE_MEMORY_DIAGNOSTICS
+        range 0 600000
+        default 15000
+
+    config EXAMPLE_MEMORY_DIAGNOSTICS_TASKS
+        bool "Include per-task stack high-water marks"
+        depends on EXAMPLE_MEMORY_DIAGNOSTICS
+        select FREERTOS_USE_TRACE_FACILITY
+        select FREERTOS_VTASKLIST_INCLUDE_COREID
+        default y
+        help
+            Adds one line per task with affinity, priority, stack region and stack
+            high-water mark in bytes to every full snapshot.
+
+    config EXAMPLE_MEMORY_DIAGNOSTICS_CPU
+        bool "Include per-task and per-core CPU usage"
+        depends on EXAMPLE_MEMORY_DIAGNOSTICS && EXAMPLE_MEMORY_DIAGNOSTICS_TASKS
+        select FREERTOS_GENERATE_RUN_TIME_STATS
+        default y
+        help
+            Reports CPU usage as the delta between two consecutive full snapshots,
+            using the FreeRTOS run time counter that ESP-IDF already drives from the
+            ESP timer. Per-core busy time is derived from the IDLE0/IDLE1 tasks.
+
+endmenu

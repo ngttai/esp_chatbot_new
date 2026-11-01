@@ -9,6 +9,7 @@
 #include "brookesia/service_helper/network/wifi.hpp"
 #include "wifi_provisioning.hpp"
 #include "wifi_control.hpp"
+#include "modules/memory_diagnostics.h"
 
 /* The following WiFi credentials are used for CI test. Please ignore them if you are not running CI test. */
 #if defined(CI_TEST_WIFI_2_4G_AP1_SSID) && defined(CI_TEST_WIFI_2_4G_AP1_PSW)
@@ -90,8 +91,11 @@ void WifiProvisioning::start_sta_connect_flow()
     auto on_sta_general_event = [this](
     const std::string &, const std::string & event, bool is_unexpected) {
         if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Connected)) {
+            const bool reconnected = has_connected_once_.load();
             has_connected_once_ = true;
             BROOKESIA_LOGI("WiFi connected");
+            memory_diag_checkpoint(reconnected ? "wifi_reconnected" : "wifi_connected");
+            memory_diag_checkpoint_after(reconnected ? "wifi_reconnect_settled" : "wifi_connected_settled", 10000);
         } else if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Disconnected)) {
             if (!is_unexpected) {
                 BROOKESIA_LOGI("WiFi disconnected by requested action");
@@ -104,6 +108,8 @@ void WifiProvisioning::start_sta_connect_flow()
                 );
                 return;
             }
+
+            memory_diag_checkpoint("wifi_link_lost");
 
             // Do not issue another Connect here. ServiceWifi retries the
             // current AP, marks it unavailable after the configured limit,
@@ -169,6 +175,7 @@ void WifiProvisioning::start_softap_provision_flow()
     const std::string &, const std::string & event, bool) {
         if (event == BROOKESIA_DESCRIBE_TO_STR(WifiHelper::GeneralEvent::Connected)) {
             BROOKESIA_LOGI("WiFi connected via SoftAP provisioning");
+            memory_diag_checkpoint("wifi_connected_softap");
             config_.task_scheduler->post(post_stop_softap_provision);
         }
     };

@@ -20,6 +20,7 @@
 #include "modules/touch_sensor.hpp"
 #include "modules/weather_config.hpp"
 #include "modules/weather_service.hpp"
+#include "modules/memory_diagnostics.h"
 #include "modules/profiler.hpp"
 #include "modules/developer_mode.hpp"
 #include "modules/display/display.hpp"
@@ -30,6 +31,7 @@ using namespace esp_brookesia;
 
 extern "C" void app_main(void)
 {
+    memory_diag_start();
     BROOKESIA_LOGI("\n\n=== Agent Chatbot Example ===\n");
 
     // Set log level to warning for some components to reduce log output
@@ -84,6 +86,7 @@ extern "C" void app_main(void)
         auto &service_manager = service::ServiceManager::get_instance();
         BROOKESIA_CHECK_FALSE_EXIT(service_manager.start(), "Failed to start ServiceManager");
 
+        memory_diag_checkpoint("service_manager_started");
         GeneralServices::get_instance().start_device();
         WifiControl::get_instance().init();
 
@@ -106,6 +109,7 @@ extern "C" void app_main(void)
 
         GeneralServices::get_instance().init_audio();
         GeneralServices::get_instance().start_bt_speaker();
+        memory_diag_checkpoint("audio_init");
 
         if (!HeadLed::get_instance().init()) {
             BROOKESIA_LOGW("VoCat head LED is unavailable; continue without Wi-Fi/touch LED feedback");
@@ -122,6 +126,7 @@ extern "C" void app_main(void)
         AI_Agents::get_instance().init_coze();
         AI_Agents::get_instance().init_openai();
         AI_Agents::get_instance().init_xiaozhi();
+        memory_diag_checkpoint("agents_init");
 
 #if defined(CONFIG_EXAMPLE_PWR_MEMORY_DIAGNOSTICS)
         const size_t pwr_internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -147,6 +152,7 @@ extern "C" void app_main(void)
         Display::get_instance().start({
             .task_scheduler = backend_scheduler,
         });
+        memory_diag_checkpoint_full("display_started");
 
         if (!ImuGesture::get_instance().init()) {
             BROOKESIA_LOGW("BMI270 motion gesture is unavailable; continue without motion-triggered emotes");
@@ -179,6 +185,7 @@ extern "C" void app_main(void)
 #if defined(CONFIG_EXAMPLE_SYSTEM_STATS)
         Profiler::get_instance().start_system_stats();
 #endif
+        memory_diag_checkpoint_full("setup_done");
     };
     auto post_result = backend_scheduler->post(std::move(setup_task));
     BROOKESIA_CHECK_FALSE_EXIT(post_result, "Failed to post setup task");
