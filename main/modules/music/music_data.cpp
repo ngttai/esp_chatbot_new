@@ -8,6 +8,8 @@
 #include "music_service.hpp"
 
 #ifdef ESP_PLATFORM
+#include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_pthread.h"
 #endif
 
@@ -33,9 +35,10 @@ void setup_worker_thread()
     esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
     cfg.thread_name = "music_meta";
     cfg.stack_size = 6144;
+    cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
     cfg.prio = 3;
     cfg.inherit_cfg = false;
-    esp_pthread_set_cfg(&cfg);
+    ESP_ERROR_CHECK(esp_pthread_set_cfg(&cfg));
 #endif
 }
 
