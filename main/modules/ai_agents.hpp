@@ -85,6 +85,7 @@ public:
     void handle_touch_sensor_long_press();
     void set_emote_output_active(bool active);
     void restore_emote_state();
+    void set_music_app_active(bool active);
 
 private:
     enum class EmoteState : uint8_t {
@@ -105,6 +106,7 @@ private:
 
     bool start_agent(uint32_t wifi_request_revision);
     void stop_agent();
+    std::atomic_bool music_app_active_{false};
 
     void process_agent_general_events();
     void process_agent_general_unexpected_events();

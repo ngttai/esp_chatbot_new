@@ -23,6 +23,7 @@ endif()
 
 project(esp_chatbot)
 include("${CMAKE_CURRENT_LIST_DIR}/main/compat/panel_power.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/main/compat/audio_ownership.cmake")
 
 # Temporary workaround for `espressif__mcp-c-sdk` stringop-truncation warning
 idf_build_set_property(COMPILE_OPTIONS -Wno-error=stringop-truncation APPEND)

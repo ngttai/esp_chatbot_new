@@ -376,6 +376,8 @@ void ScreenSpeakerShell::poll_navigation_request()
 void ScreenSpeakerShell::publish_power_inputs()
 {
     const speaker_ui_screen_t screen = speaker_ui_get_active_screen();
+    // Audio follows the underlying app while Quick Settings covers it.
+    AI_Agents::get_instance().set_music_app_active(speaker_ui_is_screen_active("music"));
     const bool critical_operation = factory_reset_in_progress_ || self_test_running_.load() ||
                                     wifi_connect_in_flight_.load() ||
                                     display_mode_switch_in_flight_.load();
