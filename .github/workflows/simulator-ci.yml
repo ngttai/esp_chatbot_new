@@ -51,6 +51,9 @@ jobs:
             ninja-build \
             pkg-config
 
+      - name: Test system stats log parser
+        run: python3 -m unittest discover -s tools/system_stats/scripts -p "test_*.py"
+
       - name: Configure simulator
         run: |
           cmake -S host_sim -B build-host-ci -G Ninja \

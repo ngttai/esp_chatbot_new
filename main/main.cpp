@@ -176,6 +176,9 @@ extern "C" void app_main(void)
          * during focused diagnostics, but its periodic full task snapshots
          * add CPU, stack and serial-log pressure to the normal UI workload. */
         Profiler::get_instance().start_memory_profiler(false);
+#if defined(CONFIG_EXAMPLE_SYSTEM_STATS)
+        Profiler::get_instance().start_system_stats();
+#endif
     };
     auto post_result = backend_scheduler->post(std::move(setup_task));
     BROOKESIA_CHECK_FALSE_EXIT(post_result, "Failed to post setup task");

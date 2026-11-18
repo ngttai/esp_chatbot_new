@@ -131,3 +131,11 @@ These exclusions are recorded, not substitutions. Their hashes remain available 
 - The hardware-only boot splash is tracked by Git but remains outside the
   original 74-file import manifest.
 - Total release integrity manifest: 74/74.
+
+## Music integration integrity baseline
+
+- Vendor/import files remain unchanged in this integration.
+- Refresh the two integration-surface hashes, `src/speaker_ui.c` and
+  `src/speaker_ui.h`, for the accepted Music screen, launcher entry and navigation.
+- The existing 74-file integrity check remains enabled. Music app sources/assets
+  are tracked separately by Git, like the previously added 2048 app.

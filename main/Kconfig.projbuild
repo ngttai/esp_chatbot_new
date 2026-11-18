@@ -160,4 +160,15 @@ menu "Example Configuration"
             plus heap measurements around Pwr service startup. The shared memory
             profiler and power warning/error logs remain enabled independently.
 
+    config EXAMPLE_SYSTEM_STATS
+        bool "Log periodic SYSTEM STATS block"
+        depends on FREERTOS_USE_TRACE_FACILITY && FREERTOS_GENERATE_RUN_TIME_STATS
+        default n
+        help
+            Print one SYSTEM STATS block every 10 seconds: per-core busy time,
+            per-task CPU, stack high-water marks and SRAM/PSRAM/DMA heap figures.
+            It replaces the thread and memory profiler tables. The UI memory bars
+            keep using the memory profiler. Diagnostic only; leave off for
+            production images.
+
 endmenu

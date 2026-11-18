@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "protocol": "system-stats-v1",
+  "status": "prepared-not-measured",
+  "run_id": null,
+  "release": null,
+  "source_sha": null,
+  "merge_sha": null,
+  "dirty_source": null,
+  "binary_kind": "diagnostic",
+  "firmware_sha256": null,
+  "elf_sha256": null,
+  "idf_version": null,
+  "toolchain_version": null,
+  "sdkconfig_sha256": null,
+  "resolved_lock_sha256": null,
+  "board_profile": {
+    "board": "ESP-VoCat ESP32-S3",
+    "display_px": [
+      360,
+      360
+    ],
+    "cpu_mhz": 240,
+    "psram_mhz": 80,
+    "lcd_clock_hz": null,
+    "brightness": null
+  },
+  "probe": {
+    "version": null,
+    "patch_sha256": null,
+    "cpu_window_ms": 10000,
+    "heap_period_ms": 10000,
+    "storage_psram_bytes": null,
+    "internal_cost_bytes": null
+  },
+  "environment": {
+    "sd_fingerprint": null,
+    "sd_track_count": null,
+    "assets_sha256": null,
+    "model_sha256": null,
+    "network_label": null,
+    "credentials_stored": false
+  },
+  "scenario": {
+    "id": null,
+    "wifi_boot_state": null,
+    "wifi_current_state": null,
+    "agent_state": null,
+    "screen": null,
+    "power_state": "Active",
+    "warmup_s": 10,
+    "duration_s": 30,
+    "touch_during_window": false
+  },
+  "evidence": {
+    "raw_log": null,
+    "samples": null,
+    "summary": null,
+    "sha256sums": null
+  },
+  "notes": []
+}

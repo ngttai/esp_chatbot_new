@@ -43,6 +43,9 @@ public:
     void start_thread_profiler(bool enable_auto_logging = false);
     void start_memory_profiler(bool enable_auto_logging = false);
 
+    // Starts the periodic SYSTEM STATS block; returns false when disabled or not startable.
+    bool start_system_stats();
+
 private:
     Profiler() = default;
     ~Profiler() = default;

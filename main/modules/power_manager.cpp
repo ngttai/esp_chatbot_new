@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #endif
 #include "modules/power_manager.hpp"
+#include "modules/system_stats_context.hpp"
 #include "brookesia/lib_utils.hpp"
 
 using namespace esp_brookesia;
@@ -267,6 +268,9 @@ void PowerManager::publish_state()
     const auto current = policy_.state();
     const auto previous = published_state_.exchange(current);
     if (current == previous) return;
+#if defined(CONFIG_EXAMPLE_SYSTEM_STATS)
+    system_stats_ctx::power_rev.fetch_add(1U, std::memory_order_acq_rel);
+#endif
 #if defined(ESP_PLATFORM)
     HeadLed::get_instance().set_power_state(current);
 #endif

@@ -55,6 +55,29 @@ public:
         });
     }
 
+    // Coarse agent state for diagnostics; nullptr before init.
+    const char *state_name() const
+    {
+        if (!is_initialized()) {
+            return nullptr;
+        }
+        if (is_stopped_.load(std::memory_order_relaxed)) return "Stopped";
+        if (has_agent_error_.load(std::memory_order_relaxed)) return "Error";
+        if (power_starting_.load(std::memory_order_relaxed)) return "Starting";
+        if (is_speaking_.load(std::memory_order_relaxed)) return "Speaking";
+        if (is_thinking_.load(std::memory_order_relaxed)) return "Thinking";
+        if (is_listening_.load(std::memory_order_relaxed)) return "Listening";
+        if (is_sleeping_.load(std::memory_order_relaxed)) return "Sleeping";
+        if (is_slept_.load(std::memory_order_relaxed)) return "Slept";
+        if (is_suspended_.load(std::memory_order_relaxed)) return "Suspended";
+        return "Idle";
+    }
+
+    bool wifi_link_connected() const
+    {
+        return is_wifi_connected_.load(std::memory_order_relaxed);
+    }
+
     void init_coze();
     void init_openai();
     void init_xiaozhi();
@@ -62,6 +85,7 @@ public:
     void handle_touch_sensor_long_press();
     void set_emote_output_active(bool active);
     void restore_emote_state();
+    void set_music_app_active(bool active);
 
 private:
     enum class EmoteState : uint8_t {
@@ -82,6 +106,7 @@ private:
 
     bool start_agent(uint32_t wifi_request_revision);
     void stop_agent();
+    std::atomic_bool music_app_active_{false};
 
     void process_agent_general_events();
     void process_agent_general_unexpected_events();
