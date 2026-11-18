@@ -396,6 +396,7 @@ static void show_error(const music_playback_info_t *info)
 /* A real Ended only: Stop, refusals and open failures never reach here. */
 static void auto_next(const music_playback_info_t *info)
 {
+    if(now_playing_page == NULL || lv_obj_get_screen(now_playing_page) != lv_screen_active()) return;
     const bool quick = !playing_tick_valid || lv_tick_elaps(playing_tick) < MUSIC_QUICK_END_MS;
     playing_tick_valid = false;
     quick_ends = quick ? quick_ends + 1 : 0;
@@ -834,6 +835,14 @@ static void build_now_playing_page(lv_obj_t *parent)
     lv_obj_center(playlist_label);
 }
 
+static void screen_unload_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    music_playback_stop();
+    playing_tick_valid = false;
+    quick_ends = 0;
+}
+
 void music_ui_create(lv_obj_t *parent)
 {
     track_index = 0;
@@ -863,6 +872,8 @@ void music_ui_create(lv_obj_t *parent)
     lv_obj_add_flag(playlist_page, LV_OBJ_FLAG_HIDDEN);
     update_spacer();
     refresh_track();
+    // Quick Settings is an overlay and does not unload the underlying screen.
+    lv_obj_add_event_cb(lv_obj_get_screen(parent), screen_unload_cb, LV_EVENT_SCREEN_UNLOAD_START, NULL);
     sync_timer = lv_timer_create(sync_timer_cb, MUSIC_SYNC_PERIOD, NULL);
 }
 

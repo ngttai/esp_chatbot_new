@@ -1083,7 +1083,17 @@ int test_music_playback(InputInjector &input)
         std::fprintf(stderr, "Playlist selection did not play track 0\n");
         return 165;
     }
-    std::puts("Music playback drives the audio service");
+    if (!show("quick")) return 166;
+    input.pump(30);
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0)) return 167;
+    if (!show("launcher") || !wait_state(MUSIC_PLAYBACK_STOPPED, 0)) return 168;
+    input.pump(100);
+    if (!show("music")) return 169;
+    input.pump(30);
+    music_playback_info_t after_return;
+    with_ui_lock([&]() { music_playback_get_info(&after_return); return 0; });
+    if (after_return.state != MUSIC_PLAYBACK_STOPPED) return 170;
+    std::puts("Music playback stops on app exit; Quick overlay preserves playback; reentry stays stopped");
     return 0;
 }
 
