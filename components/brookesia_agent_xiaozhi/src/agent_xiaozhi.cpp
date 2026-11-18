@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <expected>
+#include <chrono>
 #include <string_view>
 
 #include "boost/format.hpp"
@@ -481,6 +482,11 @@ bool XiaoZhi::on_activate()
 
 bool XiaoZhi::on_startup()
 {
+    music_policy_applied_.store(!are_audio_resources_enabled());
+    music_session_closed_.store(false);
+    music_sleep_requested_.store(false);
+    music_sleep_revision_.fetch_add(1);
+    shutting_down_.store(false, std::memory_order_release);
     BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
 
     esp_mcp_t *mcp_engine = nullptr;
@@ -550,6 +556,14 @@ bool XiaoZhi::on_startup()
 
 void XiaoZhi::on_shutdown()
 {
+    music_policy_applied_ = false;
+    music_session_closed_.store(false);
+    music_sleep_requested_.store(false);
+    music_sleep_revision_.fetch_add(1);
+    audio_resources_blocked_.store(music_audio_owned_.load());
+    audio_policy_epoch_.fetch_add(1);
+    shutting_down_.store(true, std::memory_order_release);
+    is_xiaozhi_audio_channel_opened_ = false;
     BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
 
     auto task_scheduler = get_task_scheduler();
@@ -643,6 +657,108 @@ bool XiaoZhi::on_manual_stop_listening()
     return true;
 }
 
+void XiaoZhi::set_music_audio_owned(bool owned)
+{
+    if (music_audio_owned_.exchange(owned) != owned) {
+        audio_policy_epoch_.fetch_add(1);
+        music_retry_after_ms_.store(0);
+        if (owned) audio_resources_blocked_.store(true);
+    }
+    if (music_policy_applied_.load() == owned && audio_resources_blocked_.load() == owned &&
+            (!owned || music_session_closed_.load())) return;
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now_ms < music_retry_after_ms_.load()) return;
+    if (music_sleep_requested_.load()) return;
+    auto scheduler = get_task_scheduler();
+    if (!scheduler || music_policy_pending_.exchange(true)) return;
+    auto result = scheduler->post([this]() {
+        lib_utils::FunctionGuard clear_pending([this]() { music_policy_pending_.store(false); });
+        if (!is_xiaozhi_started() || shutting_down_.load() || !can_change_audio_resources()) return;
+        // Pipeline release is safe during a pending WakeUp: the normal manager
+        // queues Sleep, and AUDIO_CHANNEL_OPENED settles WakeUp without listening.
+        if (is_general_action_running(GeneralAction::Max) &&
+                !(music_audio_owned_.load() &&
+                  (is_general_action_running(GeneralAction::Sleep) || is_general_action_running(GeneralAction::WakeUp)))) return;
+        if (!apply_music_audio_policy()) {
+            const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            music_retry_after_ms_.store(now_ms + 1000);
+            BROOKESIA_LOGE("Music audio ownership transition failed; audio remains blocked");
+        }
+    }, nullptr, get_state_task_group());
+    if (!result) music_policy_pending_.store(false);
+}
+
+bool XiaoZhi::apply_music_audio_policy()
+{
+    const bool owned = music_audio_owned_.load();
+    if (!owned && !music_policy_applied_.load()) {
+        audio_resources_blocked_.store(owned);
+        return true;
+    }
+    if (owned) {
+        audio_resources_blocked_.store(true);
+        if (!music_policy_applied_.load()) {
+            // Complete borrowed writes before Sleep closes its transport channel.
+            BROOKESIA_CHECK_FALSE_RETURN(set_audio_resources_enabled(false), false, "Failed to release audio");
+            music_policy_applied_ = true;
+        }
+        BROOKESIA_CHECK_FALSE_RETURN(request_music_session_sleep(), false, "Failed to request Music Sleep");
+    } else {
+        // A rapid exit still waits for the old session to finish its normal Sleep.
+        if (!music_session_closed_.load()) {
+            return request_music_session_sleep();
+        }
+        // Restore local wakeword detection without opening an audio channel.
+        BROOKESIA_CHECK_FALSE_RETURN(set_audio_resources_enabled(true), false, "Failed to restore audio");
+        music_policy_applied_ = false;
+        music_session_closed_.store(false);
+        audio_resources_blocked_.store(music_audio_owned_.load());
+        BROOKESIA_LOGD("Music released audio: waiting for wakeword");
+    }
+    return true;
+}
+
+bool XiaoZhi::request_music_session_sleep()
+{
+    if (is_session_asleep() && !is_xiaozhi_audio_channel_opened() &&
+            !is_general_action_running(GeneralAction::WakeUp)) {
+        complete_music_session_sleep();
+        return true;
+    }
+    if (music_sleep_requested_.load()) return true;
+    // Use the manager state machine; calling on_sleep()/emitting Slept directly
+    // would skip Sleeping and force the unexpected-event recovery path.
+    music_sleep_requested_.store(true);
+    const auto revision = music_sleep_revision_.fetch_add(1) + 1;
+    auto result = service::helper::AgentManager::call_function_async(
+        service::helper::AgentManager::FunctionId::TriggerGeneralAction, std::string("Sleep"),
+        [this, revision](service::FunctionResult &&result) {
+            if (revision != music_sleep_revision_.load()) return;
+            if (!result.success) {
+                music_sleep_requested_.store(false);
+                const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                music_retry_after_ms_.store(now_ms + 1000);
+                BROOKESIA_LOGE("Music Sleep rejected: %1%", result.error_message);
+            }
+        }
+    );
+    if (!result) music_sleep_requested_.store(false);
+    BROOKESIA_CHECK_FALSE_RETURN(result, false, "Failed to queue Music Sleep");
+    return true;
+}
+
+void XiaoZhi::complete_music_session_sleep()
+{
+    music_sleep_requested_.store(false);
+    if (!music_policy_applied_.load()) return;
+    if (!music_session_closed_.exchange(true) && music_audio_owned_.load()) {
+        BROOKESIA_LOGD("Music owns audio: capture/AFE and decoder stopped; transport retained");
+    }
+}
+
 bool XiaoZhi::on_sleep()
 {
     BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
@@ -660,6 +776,7 @@ bool XiaoZhi::on_sleep()
 
     if (!is_xiaozhi_audio_channel_opened()) {
         trigger_general_event(GeneralEvent::Slept);
+        complete_music_session_sleep();
         return true;
     }
 
@@ -671,6 +788,9 @@ bool XiaoZhi::on_sleep()
 
 bool XiaoZhi::on_wakeup()
 {
+    // An already queued WakeUp must finish its transport handshake so the
+    // manager can run queued Sleep. The opened callback never starts listening
+    // while Music owns audio, and the local pipelines remain stopped.
     BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
 
     auto ret = esp_xiaozhi_chat_open_audio_channel(chat_handle_, nullptr, nullptr, 0);
@@ -681,6 +801,7 @@ bool XiaoZhi::on_wakeup()
 
 bool XiaoZhi::on_encoder_data_ready(const uint8_t *data, size_t data_size)
 {
+    if (is_audio_resources_blocked()) return true;
     // BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
 
     // BROOKESIA_LOGD("Params: data(%1%), data_size(%2%)", data, data_size);
@@ -705,13 +826,22 @@ bool XiaoZhi::on_agent_event(int32_t event_id)
     std::function<void(void)> task_func;
 
     // Will be executed when the function exits
-    lib_utils::FunctionGuard post_task_guard([this, &task_func]() {
+    lib_utils::FunctionGuard post_task_guard([this, event_id, epoch = audio_policy_epoch_.load(), &task_func]() {
         BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
         if (task_func) {
             auto scheduler = get_task_scheduler();
             BROOKESIA_CHECK_NULL_EXIT(scheduler, "Scheduler is not available");
             auto group = get_state_task_group();
-            auto result = scheduler->post(task_func, nullptr, group);
+            auto result = scheduler->post([this, event_id, epoch, task = std::move(task_func)]() {
+                const bool control_event = event_id == ESP_XIAOZHI_CHAT_EVENT_CONNECTED ||
+                                           event_id == ESP_XIAOZHI_CHAT_EVENT_DISCONNECTED ||
+                                           event_id == ESP_XIAOZHI_CHAT_EVENT_AUDIO_CHANNEL_OPENED ||
+                                           (event_id == ESP_XIAOZHI_CHAT_EVENT_AUDIO_CHANNEL_CLOSED &&
+                                            music_sleep_requested_.load());
+                if (!control_event && epoch != audio_policy_epoch_.load()) return;
+                if (shutting_down_.load()) return;
+                task();
+            }, nullptr, group);
             BROOKESIA_CHECK_FALSE_EXIT(result, "Failed to post task function");
         }
     });
@@ -749,6 +879,7 @@ bool XiaoZhi::on_agent_event(int32_t event_id)
                 }
 
                 open_audio_channel_task_ = 0;
+                if (is_audio_resources_blocked()) return;
 
                 auto get_format_str = [](AudioHelper::CodecFormat format) {
                     switch (format) {
@@ -796,60 +927,42 @@ bool XiaoZhi::on_agent_event(int32_t event_id)
         };
         break;
     case ESP_XIAOZHI_CHAT_EVENT_AUDIO_CHANNEL_OPENED: {
-        BROOKESIA_LOGI("audio channel opened");
-        is_xiaozhi_audio_channel_opened_.store(true);
-        task_func = [this]() {
-            BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+        task_func = [this, epoch = audio_policy_epoch_.load()]() {
+            const bool gated = is_audio_resources_blocked() || epoch != audio_policy_epoch_.load();
+            // A stray late open after Sleep is transport cleanup, not a new
+            // session transition. Avoid waking a state machine already asleep.
+            if (gated && is_session_asleep() && !is_general_action_running(GeneralAction::WakeUp)) {
+                if (is_xiaozhi_started()) esp_xiaozhi_chat_close_audio_channel(chat_handle_);
+                is_xiaozhi_audio_channel_opened_.store(false);
+                complete_music_session_sleep();
+                return;
+            }
+            BROOKESIA_LOGI("audio channel opened");
+            is_xiaozhi_audio_channel_opened_.store(true);
             trigger_general_event(GeneralEvent::Awake);
-        };
-        int mode = -1;
-        switch (get_chat_mode()) {
-        case ChatMode::HalfDuplex:
-            mode = ESP_XIAOZHI_CHAT_LISTENING_MODE_REALTIME;
-            break;
-        case ChatMode::RealTime:
-            mode = ESP_XIAOZHI_CHAT_LISTENING_MODE_REALTIME;
-            break;
-        default:
-            break;
-        }
-        if (mode != -1) {
-            auto ret = esp_xiaozhi_chat_send_start_listening(chat_handle_, mode);
-            BROOKESIA_CHECK_ESP_ERR_EXECUTE(ret, {
-                task_func = [this]()
-                {
-                    BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+            if (gated) {
+                BROOKESIA_CHECK_FALSE_EXIT(request_music_session_sleep(), "Failed to queue Sleep after gated WakeUp");
+                return;
+            }
+            if (get_chat_mode() == ChatMode::HalfDuplex || get_chat_mode() == ChatMode::RealTime) {
+                auto ret = esp_xiaozhi_chat_send_start_listening(chat_handle_, ESP_XIAOZHI_CHAT_LISTENING_MODE_REALTIME);
+                BROOKESIA_CHECK_ESP_ERR_EXECUTE(ret, {
                     trigger_general_event(GeneralEvent::Stopped);
-                };
-                return false;
-            }, {
-                BROOKESIA_LOGE("Failed to start listening");
-            });
-        }
-        // std::string wake_word = BROOKESIA_AGENT_XIAOZHI_WAKE_WORD;
-        // if (wake_word.empty()) {
-        //     auto wake_words = get_wake_words();
-        //     if (!wake_words.empty()) {
-        //         wake_word = wake_words[0];
-        //     }
-        // }
-        // if (!wake_word.empty()) {
-        //     auto ret = esp_xiaozhi_chat_send_wake_word(chat_handle_, wake_word.c_str());
-        //     BROOKESIA_CHECK_ESP_ERR_EXECUTE(ret, {}, {
-        //         BROOKESIA_LOGE("Failed to send wake word");
-        //     });
-        // }
+                }, { BROOKESIA_LOGE("Failed to start listening"); });
+            }
+        };
         break;
     }
     case ESP_XIAOZHI_CHAT_EVENT_AUDIO_CHANNEL_CLOSED:
         BROOKESIA_LOGI("audio channel closed");
         task_func = [this]() {
             BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+            is_xiaozhi_audio_channel_opened_.store(false);
             if (is_general_action_running(GeneralAction::Sleep)) {
                 trigger_general_event(GeneralEvent::Slept);
             }
+            if (is_session_asleep()) complete_music_session_sleep();
         };
-        is_xiaozhi_audio_channel_opened_.store(false);
         break;
     case ESP_XIAOZHI_CHAT_EVENT_AUDIO_DATA_INCOMING:
         BROOKESIA_LOGI("audio data incoming");
@@ -858,6 +971,9 @@ bool XiaoZhi::on_agent_event(int32_t event_id)
         BROOKESIA_LOGI("server goodbye");
         task_func = [this]() {
             BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
+            // Music has an explicit Sleep queued/running. Its local CLOSED event
+            // owns completion; a server reply must not bypass that action.
+            if (music_sleep_requested_.load()) return;
             trigger_general_event(GeneralEvent::Slept);
         };
         break;
@@ -871,6 +987,7 @@ bool XiaoZhi::on_agent_event(int32_t event_id)
 
 bool XiaoZhi::on_chat_data(const uint8_t *data, size_t len)
 {
+    if (shutting_down_.load(std::memory_order_acquire) || is_audio_resources_blocked()) return true;
     // BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
 
     // BROOKESIA_LOGD("Params: data(%1%), len(%2%)", data, len);
@@ -887,6 +1004,7 @@ bool XiaoZhi::on_chat_data(const uint8_t *data, size_t len)
 
 bool XiaoZhi::on_chat_event(uint8_t event, void *event_data)
 {
+    if (shutting_down_.load(std::memory_order_acquire) || is_audio_resources_blocked()) return true;
     BROOKESIA_LOG_TRACE_GUARD_WITH_THIS();
 
     BROOKESIA_LOGD("Params: event(%1%), event_data(%2%)", event, event_data);
@@ -956,7 +1074,11 @@ bool XiaoZhi::on_chat_event(uint8_t event, void *event_data)
     if (task_func) {
         auto scheduler = get_task_scheduler();
         BROOKESIA_CHECK_NULL_RETURN(scheduler, false, "Scheduler is not available");
-        auto result = scheduler->post(std::move(task_func), nullptr, get_event_task_group());
+        const auto epoch = audio_policy_epoch_.load();
+        auto result = scheduler->post([this, epoch, task = std::move(task_func)]() {
+            if (epoch != audio_policy_epoch_.load() || shutting_down_.load() || is_audio_resources_blocked()) return;
+            task();
+        }, nullptr, get_state_task_group());
         BROOKESIA_CHECK_FALSE_RETURN(result, false, "Failed to post task function");
     }
 

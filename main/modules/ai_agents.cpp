@@ -28,6 +28,9 @@
 #include "modules/mcp_device_tools.hpp"
 #include "modules/wifi_control.hpp"
 #include "ai_agents.hpp"
+#if CONFIG_EXAMPLE_AGENTS_ENABLE_XIAOZHI
+#include "brookesia/agent_xiaozhi.hpp"
+#endif
 
 using namespace esp_brookesia;
 
@@ -462,6 +465,19 @@ bool AI_Agents::start_agent(uint32_t wifi_request_revision)
     return true;
 }
 
+void AI_Agents::set_music_app_active(bool active)
+{
+    if (music_app_active_.exchange(active, std::memory_order_acq_rel) != active && active) {
+        power_session_requested_ = false;
+        is_thinking_ = false;
+        is_boot_idle_ = true;
+    }
+    // The agent owns coalescing, scheduler dispatch, and startup reconciliation.
+#if CONFIG_EXAMPLE_AGENTS_ENABLE_XIAOZHI
+    esp_brookesia::agent::XiaoZhi::get_instance().set_music_audio_owned(active);
+#endif
+}
+
 void AI_Agents::stop_agent()
 {
     AgentHelper::call_function_async(
@@ -471,6 +487,7 @@ void AI_Agents::stop_agent()
 
 void AI_Agents::handle_touch_sensor_click()
 {
+    if (music_app_active_.load(std::memory_order_acquire)) return;
     // A sleeping agent is intentionally not reported as running by the
     // service helper. Handle this state first so touch behaves like a wake
     // word instead of being discarded by the generic running-state guard.
@@ -503,6 +520,7 @@ void AI_Agents::handle_touch_sensor_click()
 
 void AI_Agents::handle_touch_sensor_long_press()
 {
+    if (music_app_active_.load(std::memory_order_acquire)) return;
     if (is_sleeping()) {
         BROOKESIA_LOGD("Xiaozhi is already sleeping, ignore touch long press");
         return;

@@ -95,7 +95,27 @@ public:
         bool has_websocket_config = false; ///< Whether WebSocket transport information is available.
     };
 
+    // UI-safe request. Pipeline transitions run on the agent state strand.
+    void set_music_audio_owned(bool owned);
+
 private:
+    bool apply_music_audio_policy();
+    bool request_music_session_sleep();
+    void complete_music_session_sleep();
+    bool is_audio_resources_blocked() const override
+    {
+        return music_audio_owned_.load() || audio_resources_blocked_.load();
+    }
+    std::atomic<bool> music_audio_owned_{false};
+    std::atomic<bool> audio_resources_blocked_{false};
+    std::atomic<bool> music_policy_pending_{false};
+    std::atomic<uint32_t> audio_policy_epoch_{0};
+    std::atomic<bool> music_policy_applied_{false};
+    std::atomic<bool> music_session_closed_{false};
+    std::atomic<bool> music_sleep_requested_{false};
+    std::atomic<uint32_t> music_sleep_revision_{0};
+    std::atomic<int64_t> music_retry_after_ms_{0};
+
     using Helper = service::helper::XiaoZhi;
 
     static std::string get_component_version();
@@ -227,6 +247,7 @@ private:
     bool is_xiaozhi_initialized_ = false;
     bool is_xiaozhi_started_ = false;
     std::atomic<bool> is_xiaozhi_audio_channel_opened_ = false;
+    std::atomic<bool> shutting_down_{true};
 
     uint32_t chat_handle_ = 0;
     esp_event_handler_instance_t agent_event_instance_ = nullptr;
