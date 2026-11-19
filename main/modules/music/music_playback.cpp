@@ -32,6 +32,7 @@ struct Context {
     std::unique_ptr<music::PlayerBackend> backend;
     std::unique_ptr<music::Player> player;
     uint32_t logged_version = 0;
+    bool stop_requested = false;
 };
 
 std::unique_ptr<Context> ctx;
@@ -112,6 +113,7 @@ bool music_playback_play(size_t index)
     if (!music_data_get(index, &track) || !music_data_get_path(index, path, sizeof(path))) return false;
     const uint32_t duration = track.state == MUSIC_DATA_READY ? track.duration_ms : 0;
     const bool ok = ctx->player->play(index, path, duration);
+    if (ok) ctx->stop_requested = false;
     log_state();
     return ok;
 }
@@ -135,7 +137,9 @@ bool music_playback_resume(void)
 bool music_playback_stop(void)
 {
     if (!ctx) return false;
+    ctx->stop_requested = true;
     const bool ok = ctx->player->stop();
+    if (ok) ctx->stop_requested = false;
     log_state();
     return ok;
 }
@@ -159,6 +163,8 @@ void music_playback_pump(void)
         }
         log_state();
     }
+    // A full command queue must not lose an app-exit stop request.
+    if (ctx->stop_requested && ctx->player->stop()) ctx->stop_requested = false;
     ctx->player->tick();
     // Metadata may arrive after Play started (lazy loading).
     const music::PlayerSnapshot snap = ctx->player->snapshot();
@@ -173,12 +179,15 @@ void music_playback_pump(void)
     log_state();
 }
 
+#ifndef ESP_PLATFORM
 void music_playback_test_report_open_failure(void)
 {
     if (!ctx) return;
     std::lock_guard<std::mutex> lock(ctx->queue_mutex);
     ctx->queue.push_front({false, music::BackendState::Idle, music::BackendCommand::Play, 0});
 }
+
+#endif
 
 void music_playback_get_info(music_playback_info_t *out)
 {

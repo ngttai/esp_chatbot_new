@@ -34,14 +34,17 @@ void music_playback_start(void);
 bool music_playback_play(size_t index);
 bool music_playback_pause(void);
 bool music_playback_resume(void);
+/* A rejected Stop remains pending and is retried by music_playback_pump(). */
 bool music_playback_stop(void);
 
 /* Applies queued audio events and timeouts. Call from the UI thread periodically. */
 void music_playback_pump(void);
 
+#ifndef ESP_PLATFORM
 /* Test hook: the backend reports Idle before the pending start produced any
  * sound, as when the file cannot be opened. Queued ahead of all other events. */
 void music_playback_test_report_open_failure(void);
+#endif
 
 void music_playback_get_info(music_playback_info_t *out);
 

@@ -67,7 +67,7 @@ private:
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (quit_ || queue_.size() >= kMaxQueuedCommands) {
-                MUSIC_LOG("cmd queue full");
+                MUSIC_WARN("cmd queue full");
                 return false;
             }
             if (!worker_.joinable()) start_worker();
@@ -129,7 +129,7 @@ private:
     static bool check(const char *name, const Result &result)
     {
         if (result) return true;
-        MUSIC_LOG("cmd %s refused: %s", name, result.error().c_str());
+        MUSIC_WARN("cmd %s refused: %s", name, result.error().c_str());
         return false;
     }
 

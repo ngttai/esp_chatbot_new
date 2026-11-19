@@ -270,6 +270,13 @@ if(BUILD_TESTING)
     target_link_libraries(music_player_test PRIVATE Threads::Threads)
     add_test(NAME music_player COMMAND music_player_test)
     set_tests_properties(music_player PROPERTIES TIMEOUT 30)
+    add_executable(music_playback_stop_retry_test
+        "${HOST_SIM_DIR}/tests/music_playback_stop_retry_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_playback.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_player.cpp")
+    target_include_directories(music_playback_stop_retry_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_playback_stop_retry_test PRIVATE Threads::Threads)
+    add_test(NAME music_playback_stop_retry COMMAND music_playback_stop_retry_test)
     add_executable(music_data_cover_test
         "${HOST_SIM_DIR}/tests/music_data_cover_test.cpp"
         "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
