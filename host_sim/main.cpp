@@ -102,7 +102,9 @@ int run_main(int argc, char **argv)
     const bool persistence_runtime_enabled = !screenshot_mode &&
         (!self_test_mode || option == "--self-test-factory-reset");
     const bool audio_service_enabled = volume_runtime_enabled || persistence_test_mode ||
-        audio_test_mode;
+        audio_test_mode || option == "--self-test-music" ||
+        option == "--self-test-music-playback" ||
+        option == "--self-test-music-autonext";
 
     auto &display_device = hal::DisplayLinuxDevice::get_instance();
     if (!display_device.configure({

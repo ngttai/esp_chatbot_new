@@ -66,6 +66,12 @@ dependencies:
     version: "0.1.2"
     override_path: "../components/esp_xiaozhi"
 
+  # Audio: the Simple Player resampler uses the low-INRAM profile (MEMORY).
+  # The default SPEED profile holds ~31 KB of internal RAM while a track plays.
+  espressif/esp_audio_simple_player:
+    version: "0.9.6~1"
+    override_path: "../components/esp_audio_simple_player"
+
   # Expressions
   espressif/brookesia_expression_emote:
     version: "0.8.*"

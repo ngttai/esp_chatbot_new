@@ -35,6 +35,7 @@ void Service::start()
     running_ = true;
     if (config_.thread_setup) config_.thread_setup();
     thread_ = std::thread([this] { run(); });
+    if (config_.thread_restore) config_.thread_restore();
 }
 
 void Service::stop()
@@ -104,6 +105,15 @@ bool Service::snapshot(size_t index, TrackView &out) const
         copy_truncated(out.album, sizeof(out.album), track->meta.album);
         out.duration_ms = track->meta.duration_ms;
     }
+    return true;
+}
+
+bool Service::path_of(size_t index, std::string &out) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    const Track *track = library_.track(index);
+    if (track == nullptr) return false;
+    out = track->path;
     return true;
 }
 

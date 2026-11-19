@@ -485,19 +485,16 @@ dependencies:
       type: service
     version: 0.8.1
   espressif/esp_audio_simple_player:
-    component_hash: 84d3f8a4e7a41ad33a2ed33e640cf20313422a25f697f8d4e13c1af9699735a2
     dependencies:
     - name: espressif/gmf_audio
-      registry_url: https://components.espressif.com
-      require: private
+      require: public
       version: ^0.8
     - name: espressif/gmf_io
-      registry_url: https://components.espressif.com
-      require: private
+      require: public
       version: ^0.8
     source:
-      registry_url: https://components.espressif.com
-      type: service
+      path: components/esp_audio_simple_player
+      type: local
     version: 0.9.6~1
   espressif/esp_board_manager:
     component_hash: cd823baf12c50fb94703b5b2ee36aa7bd5a256f16744fcc63eaf3cf995e6fe3e
@@ -1279,12 +1276,15 @@ direct_dependencies:
 - espressif/brookesia_service_wifi
 - espressif/cjson
 - espressif/cmake_utilities
+- espressif/esp_audio_simple_player
 - espressif/esp_lcd_st77916
 - espressif/esp_lcd_touch_cst816s
 - espressif/esp_lvgl_adapter
 - espressif/esp_tinyusb
 - espressif/esp_websocket_client
 - espressif/esp_xiaozhi
+- espressif/gmf_audio
+- espressif/gmf_io
 - espressif/led_indicator
 - espressif/mcp-c-sdk
 - espressif/mqtt
@@ -1293,6 +1293,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 97c818cd076049734b9075066cf239bad28c9cbfe94d37a7b2e863e09066ac1b
+manifest_hash: 2763f32df12cb46e94e772a42675a72d8de30b032ea9e17cb5769d7e8b53c919
 target: esp32s3
 version: 3.0.0

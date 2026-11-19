@@ -61,3 +61,11 @@ additional rights to the underlying assets.
 
 This file is an attribution and scope summary, not a complete third-party
 license inventory or confirmation that every release asset has been cleared.
+
+## Local audio player override
+
+`components/esp_audio_simple_player` derives from Espressif
+`esp_audio_simple_player` version `0.9.6~1`. Its per-file notices and
+LicenseRef-Espressif-Modified-MIT license text are retained in that directory.
+The project selects the MEMORY resampler profile; see
+`docs/development/component-overrides.md`.

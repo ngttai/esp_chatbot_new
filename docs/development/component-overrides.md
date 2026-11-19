@@ -13,9 +13,27 @@ generated `managed_components/` directory.
 | `brookesia_service_display` | 0.8.2 | `include/brookesia/service_display/macro_configs.h` | Default backlight auto-load to disabled when the false Kconfig bool is absent from `sdkconfig.h`. The application restores the persisted state after the display pipeline is ready. |
 | `brookesia_agent_xiaozhi` | 0.8.2 | `src/agent_xiaozhi.cpp` | Cancel a pending delayed audio-channel open when XiaoZhi enters sleep, preventing an unexpected return to Listening. |
 | `brookesia_gui_lvgl` | 0.8.5 | `include/brookesia/gui_lvgl/display_source.hpp`, `src/port/esp/display_source.cpp` | Allow the LVGL display source framebuffer to be allocated in PSRAM. |
+| `esp_audio_simple_player` | 0.9.6~1 | `src/audio_simple_player_pool.c` | Create the resampler with `ESP_AE_RATE_CVT_PERF_TYPE_MEMORY` instead of the GMF default `SPEED`. The default profile allocates ~31 KB (25,600 + 2 x 2,708 B) of internal-only RAM (`audio_effects_calloc_inner`) while a track is open, held through Pause; MEMORY removes those blocks at the cost of more CPU. Sample rate, channels, bits, buffers and the pipeline lifecycle are unchanged. |
 
 `components/bq27220` and `components/gen_bmgr_codes` are project components;
 they are not Registry component overrides.
+
+## esp_audio_simple_player resampler profile
+
+`esp_audio_simple_player` 0.9.6~1 registers its `aud_rate_cvt` element with
+`DEFAULT_ESP_GMF_RATE_CVT_CONFIG()`, whose `perf_type` is `SPEED`. The version
+has no Kconfig option, element setter or application-reachable handle for
+`perf_type` (the av_processor player handle is opaque), so the project patch is
+a single field in `src/audio_simple_player_pool.c`. The player is shared by
+Music and the XiaoZhi prompts, so both use the MEMORY profile. Boot log line to
+confirm the build: `ASP_POOL: Dest rate:16000 perf_type:0`.
+
+Measured on the board (Wi-Fi off, one 10-minute track): internal free while
+playing 100,051 B (SPEED) vs 131,711 B (MEMORY); DMA largest block 31,744 B vs
+47,104 B. CPU is higher with MEMORY (core 0 about 47% busy while playing); a
+strict A/B figure was not taken. Music and the goodbye prompt were checked by ear on the board. Re-evaluate when upgrading `esp_audio_simple_player`,
+`gmf_audio` or `esp_audio_effects`: newer versions name the profiles
+differently (SPEED/QUALITY in the online docs).
 
 ## v1.1.1 review
 
@@ -46,7 +64,7 @@ rg -n "override_path" main/idf_component.yml
 Confirm the resolved version and local source in the dependency lock file:
 
 ```bash
-rg -n "brookesia_(service_wifi|service_display|agent_xiaozhi|gui_lvgl)" \
+rg -n "brookesia_(service_wifi|service_display|agent_xiaozhi|gui_lvgl)|esp_audio_simple_player" \
   dependencies.lock -A 12
 ```
 

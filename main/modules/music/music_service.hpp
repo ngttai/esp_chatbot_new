@@ -38,6 +38,8 @@ public:
         ParseFn parse;
         // Runs on the caller's thread right before the worker thread is created.
         std::function<void()> thread_setup;
+        // Runs after the worker thread was created.
+        std::function<void()> thread_restore;
     };
 
     explicit Service(Config config);
@@ -63,6 +65,7 @@ public:
     // Increases whenever the list or any track data changes.
     uint32_t version() const { return version_.load(); }
     bool snapshot(size_t index, TrackView &out) const;
+    bool path_of(size_t index, std::string &out) const;
 
 private:
     void run();

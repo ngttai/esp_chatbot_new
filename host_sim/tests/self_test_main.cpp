@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -36,6 +37,8 @@
 extern "C" {
 #include "apps/game_2048/game_2048.h"
 #include "apps/music/music_ui.h"
+#include "modules/music/music_data.h"
+#include "modules/music/music_playback.h"
 #include "speaker_ui.h"
 #include "ui.h"
 }
@@ -1020,6 +1023,240 @@ int test_music_ui(InputInjector &input)
     }
 
     std::puts("Music controls, playlist and Home gesture passed");
+    return 0;
+}
+
+int test_music_playback(InputInjector &input)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    std::mutex events_mutex;
+    std::vector<std::string> events;
+    auto connection = AudioPlaybackHelper::subscribe_event(
+        AudioPlaybackHelper::EventId::PlayStateChanged,
+        [&](const std::string &, const std::string &state) {
+            std::lock_guard<std::mutex> lock(events_mutex);
+            events.push_back(state);
+        });
+    auto count = [&](const char *name) {
+        std::lock_guard<std::mutex> lock(events_mutex);
+        return static_cast<int>(std::count(events.begin(), events.end(), std::string(name)));
+    };
+    auto last_event = [&]() {
+        std::lock_guard<std::mutex> lock(events_mutex);
+        return events.empty() ? std::string() : events.back();
+    };
+    auto wait_state = [&](music_playback_state_t state, size_t index) {
+        for (int i = 0; i < 200; i++) {
+            input.pump(5);
+            music_playback_info_t info;
+            with_ui_lock([&]() { music_playback_get_info(&info); return 0; });
+            if (info.state == state && info.index == index) return true;
+        }
+        return false;
+    };
+
+    if (!show("music") || !active("music")) return 160;
+    input.pump(20);
+
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0) || count("Playing") != 1) {
+        std::fprintf(stderr, "Play did not start audio on track 0\n");
+        return 161;
+    }
+    if (!input_ok(input.click(250, 257), input)) return 1;
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 1) || count("Playing") != 2 || count("Idle") < 1) {
+        std::fprintf(stderr, "Next did not stop track 0 and start track 1\n");
+        return 162;
+    }
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    if (!wait_state(MUSIC_PLAYBACK_PAUSED, 1) || last_event() != "Paused") {
+        std::fprintf(stderr, "Pause did not pause the audio\n");
+        return 163;
+    }
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 1) || last_event() != "Playing") {
+        std::fprintf(stderr, "Resume did not resume the audio\n");
+        return 164;
+    }
+    if (!input_ok(input.click(180, 308), input) || !input_ok(input.click(180, 107), input)) return 1;
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0) || count("Playing") != 4) {
+        std::fprintf(stderr, "Playlist selection did not play track 0\n");
+        return 165;
+    }
+    if (!show("quick")) return 166;
+    input.pump(30);
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0)) return 167;
+    if (!show("launcher") || !wait_state(MUSIC_PLAYBACK_STOPPED, 0)) return 168;
+    input.pump(100);
+    if (!show("music")) return 169;
+    input.pump(30);
+    music_playback_info_t after_return;
+    with_ui_lock([&]() { music_playback_get_info(&after_return); return 0; });
+    if (after_return.state != MUSIC_PLAYBACK_STOPPED) return 170;
+    std::puts("Music playback stops on app exit; Quick overlay preserves playback; reentry stays stopped");
+    return 0;
+}
+
+int test_music_autonext(InputInjector &input)
+{
+    using AudioPlaybackHelper = esp_brookesia::service::helper::AudioPlayback;
+    auto info_now = [&]() {
+        music_playback_info_t info;
+        with_ui_lock([&]() { music_playback_get_info(&info); return 0; });
+        return info;
+    };
+    auto wait_state = [&](music_playback_state_t state, size_t index, int steps = 200) {
+        for (int i = 0; i < steps; i++) {
+            input.pump(5);
+            const music_playback_info_t info = info_now();
+            if (info.state == state && info.index == index) return true;
+        }
+        return false;
+    };
+    // Same effect as a track finishing: the service goes Idle without a Music stop.
+    auto finish_track = [&]() {
+        input.pump(260);
+        const auto result = AudioPlaybackHelper::call_function_sync(
+            AudioPlaybackHelper::FunctionId::Stop, esp_brookesia::service::helper::Timeout(500));
+        return static_cast<bool>(result);
+    };
+    // Stays in `state` on `index` for about 600 ms (nothing started by itself).
+    auto stays = [&](music_playback_state_t state, size_t index) {
+        for (int i = 0; i < 30; i++) {
+            input.pump(4);
+            const music_playback_info_t info = info_now();
+            if (info.state != state || info.index != index) return false;
+        }
+        return true;
+    };
+    const size_t total = with_ui_lock([]() { return music_data_count(); });
+    if (total < 2) {
+        std::fprintf(stderr, "Auto-next needs at least two tracks\n");
+        return 170;
+    }
+
+    if (!show("music") || !active("music")) return 171;
+    input.pump(20);
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0)) return 172;
+
+    // Progress runs with Player time, holds on Pause, continues on Resume.
+    input.pump(240);
+    const music_playback_info_t running = info_now();
+    if (running.elapsed_ms < 700) {
+        std::fprintf(stderr, "Player time did not advance: %u ms\n", running.elapsed_ms);
+        return 173;
+    }
+    if (!input_ok(input.click(180, 257), input) || !wait_state(MUSIC_PLAYBACK_PAUSED, 0)) return 174;
+    const music_playback_info_t paused = info_now();
+    const int32_t paused_progress = with_ui_lock([]() { return music_ui_get_progress(); });
+    input.pump(150);
+    if (info_now().elapsed_ms != paused.elapsed_ms ||
+            with_ui_lock([]() { return music_ui_get_progress(); }) != paused_progress) {
+        std::fprintf(stderr, "Progress moved while paused\n");
+        return 175;
+    }
+    if (!input_ok(input.click(180, 257), input) || !wait_state(MUSIC_PLAYBACK_PLAYING, 0)) return 176;
+    input.pump(120);
+    if (info_now().elapsed_ms <= paused.elapsed_ms) {
+        std::fprintf(stderr, "Progress did not continue after Resume\n");
+        return 177;
+    }
+
+    // A new track resets the time.
+    if (!input_ok(input.click(250, 257), input) || !wait_state(MUSIC_PLAYBACK_PLAYING, 1)) return 178;
+    if (info_now().elapsed_ms > 500) {
+        std::fprintf(stderr, "Elapsed time was not reset by the track change\n");
+        return 179;
+    }
+
+    // Ended -> next track; Now Playing follows the Player.
+    if (!finish_track() || !wait_state(MUSIC_PLAYBACK_PLAYING, total > 2 ? 2 : 0)) {
+        std::fprintf(stderr, "Ended did not start the next track\n");
+        return 180;
+    }
+    input.pump(10);
+    if (with_ui_lock([]() { return music_ui_get_track_index(); }) != info_now().index) {
+        std::fprintf(stderr, "Now Playing did not follow the auto-next track\n");
+        return 181;
+    }
+
+    // User stop never advances.
+    with_ui_lock([]() { music_playback_stop(); return 0; });
+    if (!wait_state(MUSIC_PLAYBACK_STOPPED, info_now().index) || !stays(MUSIC_PLAYBACK_STOPPED, info_now().index)) {
+        std::fprintf(stderr, "Stop advanced to another track\n");
+        return 182;
+    }
+
+    // Last track, Repeat off: stay Ended on the last track.
+    const size_t last = total - 1;
+    with_ui_lock([&]() { music_playback_play(last); return 0; });
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, last)) return 183;
+    if (!finish_track() || !wait_state(MUSIC_PLAYBACK_ENDED, last) || !stays(MUSIC_PLAYBACK_ENDED, last)) {
+        std::fprintf(stderr, "End of list with Repeat off did not stay Ended\n");
+        return 184;
+    }
+
+    // Repeat on: the end of the list wraps to the first track.
+    if (!input_ok(input.click(61, 257), input)) return 1;
+    with_ui_lock([&]() { music_playback_play(last); return 0; });
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, last)) return 185;
+    if (!finish_track() || !wait_state(MUSIC_PLAYBACK_PLAYING, 0)) {
+        std::fprintf(stderr, "Repeat did not wrap to the first track\n");
+        return 186;
+    }
+    // Repeat on, but every track ends right after it starts: stop after 3 hops.
+    auto stop_now = [&]() {
+        return static_cast<bool>(AudioPlaybackHelper::call_function_sync(
+            AudioPlaybackHelper::FunctionId::Stop, esp_brookesia::service::helper::Timeout(500)));
+    };
+    with_ui_lock([]() { music_playback_play(0); return 0; });
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0)) return 187;
+    for (size_t hop = 1; hop <= 2; hop++) {
+        if (!stop_now() || !wait_state(MUSIC_PLAYBACK_PLAYING, hop)) {
+            std::fprintf(stderr, "Quick end %zu did not advance\n", hop);
+            return 188;
+        }
+    }
+    if (!stop_now() || !wait_state(MUSIC_PLAYBACK_ENDED, 2) || !stays(MUSIC_PLAYBACK_ENDED, 2)) {
+        std::fprintf(stderr, "Failing tracks were chained without limit\n");
+        return 189;
+    }
+    // A metadata refresh while the Player is in Error keeps the error text.
+    with_ui_lock([]() {
+        music_playback_play(3);
+        music_playback_test_report_open_failure();
+        return 0;
+    });
+    if (!wait_state(MUSIC_PLAYBACK_ERROR, 3, 600)) {
+        std::fprintf(stderr, "Open failure did not end in Error\n");
+        return 192;
+    }
+    input.pump(30);
+    auto artist = [&]() { return std::string(with_ui_lock([]() { return std::string(music_ui_get_artist_text()); })); };
+    const std::string error_text = "Can't play this file";
+    if (artist() != error_text) {
+        std::fprintf(stderr, "Error text missing: '%s'\n", artist().c_str());
+        return 193;
+    }
+    with_ui_lock([]() { music_ui_refresh_track(); return 0; });
+    input.pump(30);
+    if (artist() != error_text) {
+        std::fprintf(stderr, "Metadata refresh hid the error\n");
+        return 194;
+    }
+    // Another track plays: the artist line comes back.
+    with_ui_lock([]() { music_playback_play(0); return 0; });
+    if (!wait_state(MUSIC_PLAYBACK_PLAYING, 0)) return 195;
+    input.pump(30);
+    music_data_track_t first;
+    with_ui_lock([&]() { return music_data_get(0, &first); });
+    const std::string expected = first.state == MUSIC_DATA_READY ? first.artist : "";
+    if (artist() == error_text || artist() != expected) {
+        std::fprintf(stderr, "Artist not restored: '%s'\n", artist().c_str());
+        return 196;
+    }
+    std::puts("Music progress, auto-next and repeat passed");
     return 0;
 }
 
@@ -2261,11 +2498,13 @@ int test_sntp_real()
 
 bool is_self_test_option(std::string_view option)
 {
-    static constexpr std::array<std::string_view, 34> options{{
+    static constexpr std::array<std::string_view, 36> options{{
         "--self-test-home",
         "--self-test-launcher",
         "--self-test-2048",
         "--self-test-music",
+        "--self-test-music-playback",
+        "--self-test-music-autonext",
         "--self-test-idle",
         "--self-test-ui-observability",
         "--self-test-idle-coordinator",
@@ -2321,6 +2560,8 @@ int run_self_test(std::string_view option, const std::string &output_name,
     if (option == "--self-test-launcher") return test_launcher(input);
     if (option == "--self-test-2048") return test_game_2048(input);
     if (option == "--self-test-music") return test_music_ui(input);
+    if (option == "--self-test-music-playback") return test_music_playback(input);
+    if (option == "--self-test-music-autonext") return test_music_autonext(input);
     if (option == "--self-test-home") return test_home(input);
     if (option == "--self-test-settings-no-scroll") return test_settings_no_scroll(input);
     if (option == "--self-test-quick-gesture") return test_quick_gesture(input);

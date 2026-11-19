@@ -8,11 +8,17 @@
 #include <string.h>
 
 #include "modules/music/music_data.h"
+#include "modules/music/music_playback.h"
 
 #define MUSIC_WHITE  lv_color_hex(0xF5F7FA)
 #define MUSIC_MUTED  lv_color_hex(0x9BA3B3)
 #define MUSIC_CARD   lv_color_hex(0x242936)
 #define MUSIC_ACCENT lv_color_hex(0x5AAFF0)
+
+#define MUSIC_PROGRESS_MAX 1000
+/* Tracks ending sooner than this after Playing count as failed starts. */
+#define MUSIC_QUICK_END_MS 1000
+#define MUSIC_QUICK_END_LIMIT 3
 
 #define MUSIC_ROW_POOL      7
 #define MUSIC_MAX_TRACKS    5000
@@ -69,6 +75,7 @@ static lv_obj_t *track_row_numbers[MUSIC_ROW_POOL];
 static lv_obj_t *track_row_equalizers[MUSIC_ROW_POOL];
 static size_t row_index[MUSIC_ROW_POOL];
 static bool row_selected[MUSIC_ROW_POOL];
+static bool row_active[MUSIC_ROW_POOL];
 static music_data_track_t row_data[MUSIC_ROW_POOL];
 static music_data_track_t shown_track;
 static bool shown_valid;
@@ -76,8 +83,15 @@ static lv_timer_t *sync_timer;
 static uint32_t seen_version;
 static size_t track_total;
 static size_t track_index;
-static bool playing;
+static bool audible;
+static uint32_t seen_playback_version;
 static bool repeat_enabled;
+static bool error_shown;
+static uint32_t shown_elapsed_s;
+static int32_t shown_progress;
+static uint32_t playing_tick;
+static bool playing_tick_valid;
+static uint8_t quick_ends;
 static bool data_idle = true;
 static uint8_t liked[(MUSIC_MAX_TRACKS + 7) / 8];
 
@@ -172,7 +186,7 @@ static void hide_row(size_t slot)
     row_index[slot] = MUSIC_NO_INDEX;
 }
 
-static void style_row(size_t slot, bool selected)
+static void style_row(size_t slot, bool selected, bool active)
 {
     lv_obj_set_style_bg_color(track_rows[slot], selected ? MUSIC_ACCENT : MUSIC_CARD, 0);
     lv_obj_set_style_bg_opa(track_rows[slot], selected ? LV_OPA_30 : LV_OPA_COVER, 0);
@@ -181,7 +195,7 @@ static void style_row(size_t slot, bool selected)
     lv_obj_set_style_text_color(track_row_artists[slot], selected ? lv_color_hex(0xB9DCFA) : MUSIC_MUTED, 0);
     lv_obj_set_style_text_color(track_row_durations[slot], selected ? MUSIC_ACCENT : MUSIC_MUTED, 0);
     lv_obj_set_style_text_color(track_row_numbers[slot], selected ? MUSIC_ACCENT : MUSIC_MUTED, 0);
-    if(selected) {
+    if(active) {
         lv_obj_add_flag(track_row_numbers[slot], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(track_row_equalizers[slot], LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -198,8 +212,10 @@ static void bind_row(size_t slot, size_t index)
         return;
     }
     const bool selected = index == track_index;
+    const bool active = selected && audible;
     const bool same_index = row_index[slot] == index;
-    if(same_index && row_selected[slot] == selected && memcmp(&row_data[slot], &data, sizeof(data)) == 0) return;
+    if(same_index && row_selected[slot] == selected && row_active[slot] == active &&
+       memcmp(&row_data[slot], &data, sizeof(data)) == 0) return;
 
     char text[16];
     if(!same_index) {
@@ -217,10 +233,11 @@ static void bind_row(size_t slot, size_t index)
         if(data.state == MUSIC_DATA_READY && data.duration_ms > 0) format_duration(text, sizeof(text), data.duration_ms);
         lv_label_set_text(track_row_durations[slot], text);
     }
-    if(!same_index || row_selected[slot] != selected) style_row(slot, selected);
+    if(!same_index || row_selected[slot] != selected || row_active[slot] != active) style_row(slot, selected, active);
 
     row_index[slot] = index;
     row_selected[slot] = selected;
+    row_active[slot] = active;
     row_data[slot] = data;
 }
 
@@ -266,6 +283,8 @@ static void refresh_cover(size_t index)
     lv_obj_add_flag(album_mark, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void show_error(const music_playback_info_t *info);
+
 static void refresh_track(void)
 {
     char text[16];
@@ -296,6 +315,15 @@ static void refresh_track(void)
     refresh_cover(have ? track_index : MUSIC_NO_INDEX);
     lv_label_set_text(elapsed_label, "0:00");
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+    shown_elapsed_s = 0;
+    shown_progress = 0;
+    error_shown = false;
+    if(have) {
+        /* A metadata refresh must not hide the error of a track that failed to open. */
+        music_playback_info_t info;
+        music_playback_get_info(&info);
+        show_error(&info);
+    }
     lv_obj_set_style_text_color(repeat_label, repeat_enabled ? MUSIC_ACCENT : MUSIC_WHITE, 0);
     lv_obj_set_style_image_recolor(favorite_icon, is_liked(track_index) ? MUSIC_ACCENT : MUSIC_WHITE, 0);
     if(playlist_page != NULL && !lv_obj_has_flag(playlist_page, LV_OBJ_FLAG_HIDDEN)) sync_rows();
@@ -317,9 +345,106 @@ static void sync_total(void)
     update_spacer();
 }
 
+static void update_play_icon(void)
+{
+    lv_label_set_text(play_label, audible ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+}
+
+static void sync_playback(void);
+
+static bool session_state(music_playback_state_t state)
+{
+    return state == MUSIC_PLAYBACK_PREPARING || state == MUSIC_PLAYBACK_PLAYING || state == MUSIC_PLAYBACK_PAUSED;
+}
+
+/* Elapsed time and bar come from the Player snapshot; the UI keeps no clock. */
+static void sync_progress(const music_playback_info_t *info)
+{
+    if(lv_obj_has_flag(now_playing_page, LV_OBJ_FLAG_HIDDEN)) return;
+    const bool mine = info->index == track_index && (session_state(info->state) || info->state == MUSIC_PLAYBACK_ENDED);
+    const uint32_t elapsed = mine ? info->elapsed_ms : 0;
+    int32_t progress = 0;
+    if(mine && info->duration_ms > 0) {
+        const uint64_t scaled = (uint64_t)elapsed * MUSIC_PROGRESS_MAX / info->duration_ms;
+        progress = scaled > MUSIC_PROGRESS_MAX ? MUSIC_PROGRESS_MAX : (int32_t)scaled;
+    }
+    if(elapsed / 1000 != shown_elapsed_s) {
+        char text[16];
+        shown_elapsed_s = elapsed / 1000;
+        format_duration(text, sizeof(text), elapsed);
+        lv_label_set_text(elapsed_label, text);
+    }
+    if(progress != shown_progress) {
+        shown_progress = progress;
+        lv_bar_set_value(progress_bar, progress, LV_ANIM_OFF);
+    }
+}
+
+static void show_error(const music_playback_info_t *info)
+{
+    if(info->state == MUSIC_PLAYBACK_ERROR && info->index == track_index) {
+        lv_label_set_text(artist_label, "Can't play this file");
+        error_shown = true;
+    } else if(error_shown) {
+        music_data_track_t data;
+        const bool ready = track_total > 0 && music_data_get(track_index, &data) && data.state == MUSIC_DATA_READY;
+        lv_label_set_text(artist_label, ready ? data.artist : "");
+        error_shown = false;
+    }
+}
+
+/* A real Ended only: Stop, refusals and open failures never reach here. */
+static void auto_next(const music_playback_info_t *info)
+{
+    if(now_playing_page == NULL || lv_obj_get_screen(now_playing_page) != lv_screen_active()) return;
+    const bool quick = !playing_tick_valid || lv_tick_elaps(playing_tick) < MUSIC_QUICK_END_MS;
+    playing_tick_valid = false;
+    quick_ends = quick ? quick_ends + 1 : 0;
+    if(quick_ends >= MUSIC_QUICK_END_LIMIT) {
+        quick_ends = 0;
+        return;
+    }
+    if(track_total == 0 || info->index >= track_total) return;
+    size_t next = info->index + 1;
+    if(next >= track_total) {
+        if(!repeat_enabled) return;
+        next = 0;
+    }
+    if(music_playback_play(next)) sync_playback();
+}
+
+static void sync_playback(void)
+{
+    music_playback_info_t info;
+    music_playback_get_info(&info);
+    if(info.version != seen_playback_version) {
+        seen_playback_version = info.version;
+        const bool follow = session_state(info.state) || info.state == MUSIC_PLAYBACK_ENDED ||
+                              info.state == MUSIC_PLAYBACK_ERROR;
+        if(follow && info.index < track_total && info.index != track_index) select_index(info.index);
+        audible = info.state == MUSIC_PLAYBACK_PREPARING || info.state == MUSIC_PLAYBACK_PLAYING;
+        update_play_icon();
+        show_error(&info);
+        if(playlist_page != NULL && !lv_obj_has_flag(playlist_page, LV_OBJ_FLAG_HIDDEN)) sync_rows();
+        if(info.state == MUSIC_PLAYBACK_PLAYING) {
+            playing_tick = lv_tick_get();
+            playing_tick_valid = true;
+        }
+        if(info.state == MUSIC_PLAYBACK_ENDED) {
+            sync_progress(&info);
+            auto_next(&info);
+            return;
+        }
+    }
+    sync_progress(&info);
+}
+
 static void sync_timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
+
+    music_playback_pump();
+    sync_playback();
 
     /* Safety net: never leave the loader blocked when a scroll ended unnoticed. */
     if(!data_idle && !lv_obj_is_scrolling(playlist_track_view) &&
@@ -342,22 +467,50 @@ static void sync_timer_cb(lv_timer_t *timer)
 static void play_pause_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
-    playing = !playing;
-    lv_label_set_text(play_label, playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+    quick_ends = 0;
+    music_playback_info_t info;
+    music_playback_get_info(&info);
+    switch(info.state) {
+    case MUSIC_PLAYBACK_PLAYING:
+        music_playback_pause();
+        break;
+    case MUSIC_PLAYBACK_PAUSED:
+        music_playback_resume();
+        break;
+    case MUSIC_PLAYBACK_PREPARING:
+        break;
+    default:
+        if(track_total > 0) music_playback_play(track_index);
+        break;
+    }
+    sync_playback();
+}
+
+static void switch_track(size_t index)
+{
+    quick_ends = 0;
+    music_playback_info_t info;
+    music_playback_get_info(&info);
+    if(info.state != MUSIC_PLAYBACK_STOPPED && !music_playback_play(index)) {
+        sync_playback();
+        return;
+    }
+    select_index(index);
+    sync_playback();
 }
 
 static void previous_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
     if(track_total == 0) return;
-    select_index(track_index == 0 ? track_total - 1 : track_index - 1);
+    switch_track(track_index == 0 ? track_total - 1 : track_index - 1);
 }
 
 static void next_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
     if(track_total == 0) return;
-    select_index((track_index + 1) % track_total);
+    switch_track((track_index + 1) % track_total);
 }
 
 static void repeat_cb(lv_event_t *event)
@@ -385,6 +538,9 @@ void music_ui_show_now_playing(void)
 {
     lv_obj_add_flag(playlist_page, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(now_playing_page, LV_OBJ_FLAG_HIDDEN);
+    shown_elapsed_s = UINT32_MAX;
+    shown_progress = -1;
+    sync_playback();
     set_data_idle(true);
     music_data_set_wanted(NULL, 0);
 }
@@ -409,7 +565,15 @@ static void select_track_cb(lv_event_t *event)
 {
     const size_t slot = (size_t)(uintptr_t)lv_event_get_user_data(event);
     const size_t selected = slot < MUSIC_ROW_POOL ? row_index[slot] : MUSIC_NO_INDEX;
-    if(selected < track_total) select_index(selected);
+    quick_ends = 0;
+    if(selected < track_total) {
+        music_playback_info_t info;
+        music_playback_get_info(&info);
+        const bool in_session = info.state == MUSIC_PLAYBACK_PREPARING || info.state == MUSIC_PLAYBACK_PLAYING ||
+                                info.state == MUSIC_PLAYBACK_PAUSED;
+        if((in_session && info.index == selected) || music_playback_play(selected)) select_index(selected);
+        sync_playback();
+    }
     show_now_playing_cb(event);
 }
 
@@ -611,7 +775,7 @@ static void build_now_playing_page(lv_obj_t *parent)
     progress_bar = lv_bar_create(parent);
     lv_obj_set_size(progress_bar, MUSIC_UI_PROGRESS_WIDTH, MUSIC_UI_PROGRESS_HEIGHT);
     lv_obj_set_pos(progress_bar, MUSIC_UI_PROGRESS_X, MUSIC_UI_PROGRESS_Y);
-    lv_bar_set_range(progress_bar, 0, 100);
+    lv_bar_set_range(progress_bar, 0, MUSIC_PROGRESS_MAX);
     lv_obj_set_style_radius(progress_bar, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_radius(progress_bar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(progress_bar, MUSIC_CARD, LV_PART_MAIN);
@@ -671,17 +835,33 @@ static void build_now_playing_page(lv_obj_t *parent)
     lv_obj_center(playlist_label);
 }
 
+static void screen_unload_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    music_playback_stop();
+    playing_tick_valid = false;
+    quick_ends = 0;
+}
+
 void music_ui_create(lv_obj_t *parent)
 {
     track_index = 0;
-    playing = false;
+    audible = false;
+    seen_playback_version = 0;
     repeat_enabled = false;
+    error_shown = false;
+    shown_elapsed_s = 0;
+    shown_progress = 0;
+    playing_tick_valid = false;
+    quick_ends = 0;
     data_idle = true;
     memset(liked, 0, sizeof(liked));
     memset(row_data, 0, sizeof(row_data));
     memset(row_selected, 0, sizeof(row_selected));
+    memset(row_active, 0, sizeof(row_active));
 
     music_data_start();
+    music_playback_start();
     track_total = music_data_count();
     seen_version = music_data_version();
 
@@ -692,6 +872,8 @@ void music_ui_create(lv_obj_t *parent)
     lv_obj_add_flag(playlist_page, LV_OBJ_FLAG_HIDDEN);
     update_spacer();
     refresh_track();
+    // Quick Settings is an overlay and does not unload the underlying screen.
+    lv_obj_add_event_cb(lv_obj_get_screen(parent), screen_unload_cb, LV_EVENT_SCREEN_UNLOAD_START, NULL);
     sync_timer = lv_timer_create(sync_timer_cb, MUSIC_SYNC_PERIOD, NULL);
 }
 
@@ -702,7 +884,24 @@ size_t music_ui_get_track_index(void)
 
 bool music_ui_is_playing(void)
 {
-    return playing;
+    music_playback_info_t info;
+    music_playback_get_info(&info);
+    return info.state == MUSIC_PLAYBACK_PREPARING || info.state == MUSIC_PLAYBACK_PLAYING;
+}
+
+const char *music_ui_get_artist_text(void)
+{
+    return artist_label != NULL ? lv_label_get_text(artist_label) : "";
+}
+
+void music_ui_refresh_track(void)
+{
+    refresh_track();
+}
+
+int32_t music_ui_get_progress(void)
+{
+    return shown_progress;
 }
 
 bool music_ui_is_playlist_visible(void)

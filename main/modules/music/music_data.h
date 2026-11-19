@@ -36,6 +36,8 @@ size_t music_data_count(void);
 bool music_data_scan_done(void);
 uint32_t music_data_version(void);
 bool music_data_get(size_t index, music_data_track_t *out);
+/* Copies the file path of a track; false when it does not fit or does not exist. */
+bool music_data_get_path(size_t index, char *out, size_t size);
 music_data_cover_t music_data_get_cover(size_t index);
 
 void music_data_set_ui_idle(bool idle);
