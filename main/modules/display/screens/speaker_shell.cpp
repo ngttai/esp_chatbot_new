@@ -591,6 +591,7 @@ void ScreenSpeakerShell::poll_display_mode()
 
 void ScreenSpeakerShell::poll_battery()
 {
+    if (speaker_ui_is_quick_transitioning()) return;
     const auto snapshot = BatteryMonitor::get_instance().get_snapshot();
     if (!snapshot.valid || (snapshot.revision == battery_revision_)) {
         return;
@@ -790,6 +791,7 @@ void ScreenSpeakerShell::refresh_control_state()
 
 void ScreenSpeakerShell::sync_service_control_ui()
 {
+    if (speaker_ui_is_quick_transitioning()) return;
     const int brightness = service_brightness_.load();
     if ((brightness >= 0) && (brightness != synced_service_brightness_)) {
         const int quick_level = nearest_level(brightness, QUICK_BRIGHTNESS_PERCENT);
@@ -934,6 +936,11 @@ void ScreenSpeakerShell::attach_memory_ui()
 
 void ScreenSpeakerShell::poll_memory()
 {
+    if (speaker_ui_is_quick_transitioning()) {
+        memory_poll_count_ = MEMORY_POLL_TICKS;
+        return;
+    }
+
     if (++memory_poll_count_ < MEMORY_POLL_TICKS) {
         return;
     }

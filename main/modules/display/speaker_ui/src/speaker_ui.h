@@ -65,6 +65,8 @@ void speaker_ui_set_wifi_connected(bool connected);
 void speaker_ui_set_wlan_enabled(bool enabled);
 /* Quick status: 0 = WLAN off, 1 = disconnected, 2 = connected. */
 int speaker_ui_get_quick_wifi_status(void);
+/* Content updates are deferred while dragging or settling Quick Settings. */
+bool speaker_ui_is_quick_transitioning(void);
 bool speaker_ui_is_launcher_active(void);
 bool speaker_ui_is_idle_active(void);
 bool speaker_ui_is_screen_active(const char *screen_name);
