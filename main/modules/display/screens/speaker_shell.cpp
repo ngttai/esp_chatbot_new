@@ -934,6 +934,36 @@ void ScreenSpeakerShell::attach_memory_ui()
     }
 }
 
+void ScreenSpeakerShell::poll_cpu()
+{
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+    if (!speaker_ui_is_screen_active("quick")) {
+        cpu_baseline_valid_ = false;
+        return;
+    }
+    // Read only idle counters: no task enumeration, stack scan or heap allocation.
+    const auto now = static_cast<configRUN_TIME_COUNTER_TYPE>(portGET_RUN_TIME_COUNTER_VALUE());
+    uint64_t idle_delta = 0;
+    for (int core = 0; core < portNUM_PROCESSORS; ++core) {
+        const auto idle = ulTaskGetIdleRunTimeCounterForCore(core);
+        idle_delta += static_cast<configRUN_TIME_COUNTER_TYPE>(idle - cpu_previous_idle_[core]);
+        cpu_previous_idle_[core] = idle;
+    }
+    const auto elapsed = static_cast<configRUN_TIME_COUNTER_TYPE>(now - cpu_previous_time_);
+    cpu_previous_time_ = now;
+    if (cpu_baseline_valid_ && elapsed > 0) {
+        const uint64_t capacity = static_cast<uint64_t>(elapsed) * portNUM_PROCESSORS;
+        const uint64_t idle = std::min(idle_delta, capacity);
+        speaker_ui_set_cpu_usage(static_cast<int>((capacity - idle) * 100 / capacity));
+    } else {
+        speaker_ui_set_cpu_usage(-1);
+    }
+    cpu_baseline_valid_ = true;
+#else
+    speaker_ui_set_cpu_usage(-1);
+#endif
+}
+
 void ScreenSpeakerShell::poll_memory()
 {
     if (speaker_ui_is_quick_transitioning()) {
@@ -945,6 +975,7 @@ void ScreenSpeakerShell::poll_memory()
         return;
     }
     memory_poll_count_ = 0;
+    poll_cpu();
 
     if ((memory_internal_bar_ == nullptr) || (memory_external_bar_ == nullptr)) {
         attach_memory_ui();

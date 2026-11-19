@@ -1386,6 +1386,7 @@ int test_quick_status_freeze(InputInjector &input)
     input.pump(20);
     with_ui_lock([]() {
         speaker_ui_set_battery_state(false, 55);
+        speaker_ui_set_cpu_usage(0);
         speaker_ui_set_quick_volume_level(0);
         speaker_ui_set_quick_brightness_level(0);
         speaker_ui_set_wlan_enabled(true);
@@ -1401,6 +1402,8 @@ int test_quick_status_freeze(InputInjector &input)
     if(!with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); })) return 73;
     const std::string frozen = content();
     with_ui_lock([]() {
+        speaker_ui_set_cpu_usage(100);
+        speaker_ui_set_cpu_usage(37);
         speaker_ui_set_battery_state(true, 19);
         speaker_ui_set_battery_state(false, 22);
         speaker_ui_set_quick_volume_level(2);
@@ -1417,6 +1420,7 @@ int test_quick_status_freeze(InputInjector &input)
     input.pump(50);
     if(with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); })) return 76;
     if(!with_ui_lock([&]() { return find_label(panel, "22%") != nullptr; }) || content() == frozen) return 77;
+    if(!with_ui_lock([&]() { return find_label(panel, "37%") != nullptr; })) return 81;
     // Navigation that cancels a drag must not leave status updates frozen.
     if(!input_ok(input.press(180, 355), input)) { std::fprintf(stderr, "freeze: closing press failed\n"); return 1; }
     input.pump(5);

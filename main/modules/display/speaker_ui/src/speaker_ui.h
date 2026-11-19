@@ -67,6 +67,8 @@ void speaker_ui_set_wlan_enabled(bool enabled);
 int speaker_ui_get_quick_wifi_status(void);
 /* Content updates are deferred while dragging or settling Quick Settings. */
 bool speaker_ui_is_quick_transitioning(void);
+/* Mean CPU busy across all cores, 0..100; -1 means no valid sample yet. */
+void speaker_ui_set_cpu_usage(int percent);
 bool speaker_ui_is_launcher_active(void);
 bool speaker_ui_is_idle_active(void);
 bool speaker_ui_is_screen_active(const char *screen_name);

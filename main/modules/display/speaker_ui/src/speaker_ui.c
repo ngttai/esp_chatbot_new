@@ -163,6 +163,8 @@ static bool launcher_gesture_tracking;
 static bool game_gesture_tracking;
 static bool quick_gesture_tracking;
 static bool quick_gesture_from_bottom;
+static lv_obj_t *quick_cpu_bar, *quick_cpu_label;
+static int quick_cpu_percent = -1;
 static bool quick_open;
 static bool quick_animation_running;
 static bool quick_battery_valid;
@@ -873,6 +875,22 @@ static void create_quick(void)
     lv_obj_t *memory_internal = lv_obj_get_child(memory, 0);
     lv_bar_set_value(lv_obj_get_child(lv_obj_get_child(memory_internal, 0), 1), 43, LV_ANIM_OFF);
     lv_bar_set_value(lv_obj_get_child(lv_obj_get_child(memory_internal, 1), 1), 61, LV_ANIM_OFF);
+    /* Match the memory rows; leave room for a numeric CPU percentage. */
+    lv_obj_set_style_pad_top(memory, 30, 0);
+    lv_obj_t *cpu_row = lv_obj_create(memory_internal);
+    bare(cpu_row);
+    lv_obj_move_to_index(cpu_row, 0);
+    lv_obj_set_style_margin_bottom(cpu_row, 10, 0);
+    lv_obj_set_size(cpu_row, lv_pct(100), 20);
+    lv_obj_t *cpu_title = text(cpu_row, "   CPU:", &esp_brookesia_font_maison_neue_book_16, WHITE);
+    lv_obj_align(cpu_title, LV_ALIGN_LEFT_MID, 4, 0);
+    quick_cpu_bar = lv_bar_create(cpu_row);
+    lv_obj_set_size(quick_cpu_bar, 109, 10);
+    lv_obj_align(quick_cpu_bar, LV_ALIGN_RIGHT_MID, -42, 0);
+    lv_obj_remove_flag(quick_cpu_bar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(quick_cpu_bar, lv_color_hex(0x00FF00), LV_PART_INDICATOR);
+    quick_cpu_label = text(cpu_row, "--%", &esp_brookesia_font_maison_neue_book_16, WHITE);
+    lv_obj_align(quick_cpu_label, LV_ALIGN_RIGHT_MID, 0, 0);
     quick_home_bar = create_home_indicator(content);
 
     lv_obj_set_size(quick, SIZE, SIZE);
@@ -2258,6 +2276,16 @@ bool speaker_ui_set_battery_state(bool charging, int percentage)
     return true;
 }
 
+void speaker_ui_set_cpu_usage(int percent)
+{
+    if(percent < -1 || percent > 100) return;
+    quick_cpu_percent = percent;
+    if(speaker_ui_is_quick_transitioning() || quick_cpu_bar == NULL) return;
+    lv_bar_set_value(quick_cpu_bar, percent < 0 ? 0 : percent, LV_ANIM_OFF);
+    if(percent < 0) lv_label_set_text(quick_cpu_label, "--%");
+    else lv_label_set_text_fmt(quick_cpu_label, "%d%%", percent);
+}
+
 static void quick_settings_refresh_status(void)
 {
     if(speaker_ui_is_quick_transitioning()) return;
@@ -2269,6 +2297,7 @@ static void quick_settings_refresh_status(void)
         else lv_obj_remove_state(quick_wifi_button, LV_STATE_CHECKED);
     }
     speaker_ui_set_wifi_connected(quick_wifi_connected);
+    speaker_ui_set_cpu_usage(quick_cpu_percent);
     if(quick_battery_valid) speaker_ui_set_battery_state(quick_battery_charging, quick_battery_percentage);
 }
 
