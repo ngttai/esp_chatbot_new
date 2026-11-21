@@ -60,6 +60,7 @@ private:
     void poll_volume();
     void poll_wifi();
     void poll_memory();
+    void poll_cpu();
     void poll_battery();
     void poll_touch_sensor();
     void poll_lift_to_wake();
@@ -126,6 +127,9 @@ private:
     lv_obj_t *memory_external_bar_ = nullptr;
     uint16_t memory_poll_count_ = 0;
     bool memory_snapshot_logged_ = false;
+    bool cpu_baseline_valid_ = false;
+    uint64_t cpu_previous_time_ = 0;
+    std::array<uint64_t, CONFIG_SOC_CPU_CORES_NUM> cpu_previous_idle_{};
     uint32_t battery_revision_ = 0;
     bool touch_sensor_user_enabled_ = true;
     bool touch_sensor_effective_enabled_ = true;

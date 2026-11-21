@@ -11,6 +11,7 @@ Install the Brookesia Linux dependencies (once):
 ```sh
 cd /path/to/esp-brookesia/hal/brookesia_hal_linux
 ./scripts/install_linux_deps.sh --minimal --display
+sudo apt-get install libjpeg-dev
 ```
 
 Resolve this project's IDF components once so `managed_components/lvgl__lvgl` is
@@ -106,6 +107,46 @@ two requested WLAN password keyboard refinements: Number and Special have no
 hide-key button, the Number `1 2 3 Backspace` row is centered, and Special uses
 the function-key order `123 , Space . Backspace`. Lowercase and uppercase retain
 their existing hide-key behavior.
+
+## Music album artwork
+
+Music loads JPEG artwork embedded in ID3v2.2/2.3/2.4 tags, preferring the front
+cover. If no usable embedded JPEG exists, it looks for `cover.jpg` and then
+`folder.jpg` in the MP3's directory. PNG and progressive JPEG are not supported;
+unsupported or missing images keep the existing fallback artwork.
+
+The metadata worker loads only the selected track's cover after the UI settles.
+Encoded images are limited to 512 KiB and 1024 pixels per dimension. Covers are
+center-cropped to 128×128 RGB565 (32 KiB); on ESP, encoded and pixel buffers use
+PSRAM without falling back to internal RAM. Decoding can temporarily use up to
+2 MiB of PSRAM for the source pixels, in addition to encoded data and thumbnails.
+The UI retains its displayed thumbnail until replacement, so changing tracks
+cannot invalidate an image still referenced by LVGL. Host decoding uses libjpeg;
+firmware uses the existing ESP JPEG decoder.
+
+## Music spectrum
+
+Tap the album to switch between cover art and a 16-band spectrum. The firmware
+observes the selected file's PCM after the simple-player converters (currently
+16 kHz stereo 32-bit), downmixes a bounded window, and computes a 512-point
+Hann-window FFT at up to 15 FPS. Capture uses a try-lock and drops samples rather
+than waiting on the UI. FFT and drawing run outside the audio callback.
+
+Mute or volume zero shows a centered mute badge on both album art and spectrum,
+and lets spectrum bars decay to rest. The slashed-speaker icon breathes in opacity
+over 2.4 seconds using the existing UI timer, stopping under overlays/gestures and
+outside Now Playing. Unmuting hides the badge and resumes capture;
+tapping the frame still switches album/spectrum without changing mute.
+
+Capture/computation stop while muted, at volume zero, paused, in Playlist, under Quick Settings
+(including its gesture), or outside Music. Bars decay to rest when paused or
+when fresh samples stop arriving. The spectrum uses a single allocation in
+PSRAM, reused after disabling; it adds no task. Only the URI of the selected
+Music file is accepted, so prompt PCM cannot drive the display.
+
+The host simulator exercises the UI and the DSP tests inject known PCM tones;
+the Linux audio backend does not currently feed the spectrum. Hardware CPU and
+audio continuity must be checked on the ESP board before claiming performance.
 
 ## Simulated brightness
 

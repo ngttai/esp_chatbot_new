@@ -163,12 +163,23 @@ static bool launcher_gesture_tracking;
 static bool game_gesture_tracking;
 static bool quick_gesture_tracking;
 static bool quick_gesture_from_bottom;
+static lv_obj_t *quick_cpu_bar, *quick_cpu_label;
+static int quick_cpu_percent = -1;
 static bool quick_open;
+static bool quick_animation_running;
+static bool quick_battery_valid;
+static bool quick_battery_charging;
+static int quick_battery_percentage;
+
+bool speaker_ui_is_quick_transitioning(void)
+{
+    return quick_gesture_tracking || quick_animation_running;
+}
 
 static void quick_time_update(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
-    if(quick_time_label == NULL) return;
+    if(quick_time_label == NULL || speaker_ui_is_quick_transitioning()) return;
 
     time_t now = time(NULL);
     struct tm local;
@@ -187,6 +198,7 @@ static void render_page(void);
 static void create_settings_subpages(void);
 static lv_obj_t *scaled_image(lv_obj_t *parent, const lv_image_dsc_t *source, int32_t size);
 static void quick_settings_set_y(int32_t y);
+static void quick_settings_refresh_status(void);
 static void animate_quick_settings(int32_t target_y, bool opening);
 static void close_quick_settings_immediate(void);
 static void set_wlan_enabled(bool enabled, lv_obj_t *source);
@@ -517,6 +529,7 @@ static void input_gesture_event(lv_event_t *e)
         if(!idle_active && !quick_open && point.y <= QUICK_GESTURE_EDGE) {
             quick_gesture_tracking = true;
             quick_gesture_from_bottom = false;
+            quick_animation_running = false;
             lv_anim_delete(quick, NULL);
             lv_obj_remove_flag(quick, LV_OBJ_FLAG_HIDDEN);
             quick_settings_set_y(point.y - SIZE);
@@ -530,6 +543,7 @@ static void input_gesture_event(lv_event_t *e)
         else if(quick_open && point.y >= SIZE - HOME_GESTURE_RANGE) {
             quick_gesture_tracking = true;
             quick_gesture_from_bottom = true;
+            quick_animation_running = false;
             lv_anim_delete(quick, NULL);
             quick_settings_set_y(point.y - SIZE);
         }
@@ -628,7 +642,9 @@ static void quick_settings_anim_set_y(void *obj, int32_t y) { lv_obj_set_pos(obj
 static void quick_settings_anim_ready(lv_anim_t *a)
 {
     LV_UNUSED(a);
+    quick_animation_running = false;
     if(lv_obj_get_y(quick) <= -SIZE) lv_obj_add_flag(quick, LV_OBJ_FLAG_HIDDEN);
+    quick_settings_refresh_status();
 }
 
 /* Quick Settings lives on the LVGL top layer (drawn above whatever screen is active)
@@ -640,6 +656,7 @@ static void quick_settings_anim_ready(lv_anim_t *a)
  * screen swap to a separate placeholder. */
 static void animate_quick_settings(int32_t target_y, bool opening)
 {
+    quick_animation_running = true;
     lv_obj_remove_flag(quick, LV_OBJ_FLAG_HIDDEN);
     lv_anim_delete(quick, NULL);
 
@@ -651,8 +668,13 @@ static void animate_quick_settings(int32_t target_y, bool opening)
     lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
     lv_anim_set_exec_cb(&animation, quick_settings_anim_set_y);
     lv_anim_set_ready_cb(&animation, quick_settings_anim_ready);
-    lv_anim_start(&animation);
     quick_open = opening;
+    if(lv_anim_start(&animation) == NULL) {
+        quick_settings_set_y(target_y);
+        quick_animation_running = false;
+        if(target_y <= -SIZE) lv_obj_add_flag(quick, LV_OBJ_FLAG_HIDDEN);
+        quick_settings_refresh_status();
+    }
 }
 
 static lv_obj_t *create_home_indicator(lv_obj_t *content)
@@ -748,7 +770,7 @@ static void create_music(void)
  * Manager::processQuickSettingsEventSignal()/system.cpp's quick-settings signal handler. */
 static void quick_update_volume_icon(void)
 {
-    if(quick_volume_button == NULL) return;
+    if(quick_volume_button == NULL || speaker_ui_is_quick_transitioning()) return;
     const lv_image_dsc_t *src = &speaker_image_middle_quick_settings_volume_high_48_48;
     if(quick_volume_level <= -1) src = &speaker_image_middle_quick_settings_volume_off_48_48;
     else if(quick_volume_level == 0) src = &speaker_image_middle_quick_settings_volume_low_48_48;
@@ -758,7 +780,7 @@ static void quick_update_volume_icon(void)
 
 static void quick_update_brightness_icon(void)
 {
-    if(quick_brightness_button == NULL) return;
+    if(quick_brightness_button == NULL || speaker_ui_is_quick_transitioning()) return;
     const lv_image_dsc_t *src = &speaker_image_middle_quick_settings_brightness_high_48_48;
     if(quick_brightness_level == 0) src = &speaker_image_middle_quick_settings_brightness_low_48_48;
     else if(quick_brightness_level == 1) src = &speaker_image_middle_quick_settings_brightness_medium_48_48;
@@ -853,6 +875,27 @@ static void create_quick(void)
     lv_obj_t *memory_internal = lv_obj_get_child(memory, 0);
     lv_bar_set_value(lv_obj_get_child(lv_obj_get_child(memory_internal, 0), 1), 43, LV_ANIM_OFF);
     lv_bar_set_value(lv_obj_get_child(lv_obj_get_child(memory_internal, 1), 1), 61, LV_ANIM_OFF);
+    /* Match the memory rows; leave room for a numeric CPU percentage. */
+    lv_obj_set_style_pad_top(memory, 30, 0);
+    lv_obj_t *cpu_row = lv_obj_create(memory_internal);
+    bare(cpu_row);
+    lv_obj_move_to_index(cpu_row, 0);
+    lv_obj_set_style_margin_bottom(cpu_row, 10, 0);
+    lv_obj_set_size(cpu_row, lv_pct(100), 20);
+    lv_obj_t *cpu_title = text(cpu_row, "   CPU:", &esp_brookesia_font_maison_neue_book_16, WHITE);
+    lv_obj_align(cpu_title, LV_ALIGN_LEFT_MID, 4, 0);
+    quick_cpu_bar = lv_bar_create(cpu_row);
+    lv_obj_set_size(quick_cpu_bar, 109, 10);
+    lv_obj_align(quick_cpu_bar, LV_ALIGN_RIGHT_MID, -42, 0);
+    lv_obj_remove_flag(quick_cpu_bar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(quick_cpu_bar, lv_color_hex(0x00FF00), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(quick_cpu_bar, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_color(quick_cpu_bar, lv_color_hex(0xFF0000), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_main_stop(quick_cpu_bar, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_stop(quick_cpu_bar, 255, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_dir(quick_cpu_bar, LV_GRAD_DIR_HOR, LV_PART_INDICATOR);
+    quick_cpu_label = text(cpu_row, "--%", &esp_brookesia_font_maison_neue_book_16, WHITE);
+    lv_obj_align(quick_cpu_label, LV_ALIGN_RIGHT_MID, 0, 0);
     quick_home_bar = create_home_indicator(content);
 
     lv_obj_set_size(quick, SIZE, SIZE);
@@ -1247,7 +1290,7 @@ static void set_wlan_enabled(bool enabled, lv_obj_t *source)
         lv_timer_set_repeat_count(wlan_entry_settle_timer, 1);
     }
 
-    if(quick_wifi_button != NULL && quick_wifi_button != source) {
+    if(quick_wifi_button != NULL && quick_wifi_button != source && !speaker_ui_is_quick_transitioning()) {
         if(enabled) lv_obj_add_state(quick_wifi_button, LV_STATE_CHECKED);
         else lv_obj_remove_state(quick_wifi_button, LV_STATE_CHECKED);
     }
@@ -1259,7 +1302,7 @@ static void set_wlan_enabled(bool enabled, lv_obj_t *source)
 void speaker_ui_set_wifi_connected(bool connected)
 {
     quick_wifi_connected = wlan_enabled && connected;
-    if(quick_wifi_status_icon == NULL) return;
+    if(quick_wifi_status_icon == NULL || speaker_ui_is_quick_transitioning()) return;
     if(!wlan_enabled) lv_obj_add_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_remove_flag(quick_wifi_status_icon, LV_OBJ_FLAG_HIDDEN);
     lv_image_set_src(quick_wifi_status_icon, quick_wifi_connected ?
@@ -2033,9 +2076,12 @@ int speaker_ui_launcher_page(void)
 static void close_quick_settings_immediate(void)
 {
     quick_open = false;
+    quick_gesture_tracking = false;
+    quick_animation_running = false;
     lv_anim_delete(quick, NULL);
     lv_obj_set_pos(quick, 0, -SIZE);
     lv_obj_add_flag(quick, LV_OBJ_FLAG_HIDDEN);
+    quick_settings_refresh_status();
 }
 
 bool speaker_ui_show(const char *name)
@@ -2059,10 +2105,13 @@ bool speaker_ui_show(const char *name)
         lv_screen_load(music_screen);
     }
     else if(!strcmp(name, "quick")) {
+        quick_gesture_tracking = false;
+        quick_animation_running = false;
         lv_anim_delete(quick, NULL);
         lv_obj_remove_flag(quick, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_pos(quick, 0, 0);
         quick_open = true;
+        quick_settings_refresh_status();
     }
     else if(!strcmp(name, "settings") || !strcmp(name, "settings-bottom")) {
         lv_screen_load(settings);
@@ -2215,6 +2264,11 @@ bool speaker_ui_set_battery_state(bool charging, int percentage)
     if(quick_battery_status_icon == NULL || quick_battery_percent_label == NULL ||
        percentage < 0 || percentage > 100) return false;
 
+    quick_battery_valid = true;
+    quick_battery_charging = charging;
+    quick_battery_percentage = percentage;
+    if(speaker_ui_is_quick_transitioning()) return true;
+
     const lv_image_dsc_t *source = &speaker_image_middle_quick_settings_battery_charge_20_20;
     if(!charging) {
         if(percentage <= 25) source = &speaker_image_middle_quick_settings_battery_level1_20_20;
@@ -2225,6 +2279,31 @@ bool speaker_ui_set_battery_state(bool charging, int percentage)
     lv_image_set_src(quick_battery_status_icon, source);
     lv_label_set_text_fmt(quick_battery_percent_label, "%d%%", percentage);
     return true;
+}
+
+void speaker_ui_set_cpu_usage(int percent)
+{
+    if(percent < -1 || percent > 100) return;
+    quick_cpu_percent = percent;
+    if(speaker_ui_is_quick_transitioning() || quick_cpu_bar == NULL) return;
+    lv_bar_set_value(quick_cpu_bar, percent < 0 ? 0 : percent, LV_ANIM_OFF);
+    if(percent < 0) lv_label_set_text(quick_cpu_label, "--%");
+    else lv_label_set_text_fmt(quick_cpu_label, "%d%%", percent);
+}
+
+static void quick_settings_refresh_status(void)
+{
+    if(speaker_ui_is_quick_transitioning()) return;
+    quick_time_update(NULL);
+    quick_update_volume_icon();
+    quick_update_brightness_icon();
+    if(quick_wifi_button != NULL) {
+        if(wlan_enabled) lv_obj_add_state(quick_wifi_button, LV_STATE_CHECKED);
+        else lv_obj_remove_state(quick_wifi_button, LV_STATE_CHECKED);
+    }
+    speaker_ui_set_wifi_connected(quick_wifi_connected);
+    speaker_ui_set_cpu_usage(quick_cpu_percent);
+    if(quick_battery_valid) speaker_ui_set_battery_state(quick_battery_charging, quick_battery_percentage);
 }
 
 bool speaker_ui_set_about_info(const speaker_ui_about_info_t *info)

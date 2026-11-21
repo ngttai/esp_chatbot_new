@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -39,6 +40,7 @@ extern "C" {
 #include "apps/music/music_ui.h"
 #include "modules/music/music_data.h"
 #include "modules/music/music_playback.h"
+#include "modules/music/music_spectrum.h"
 #include "speaker_ui.h"
 #include "ui.h"
 }
@@ -967,6 +969,11 @@ int test_music_ui(InputInjector &input)
     }
     input.pump(20);
 
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    if (!with_ui_lock([]() { return music_ui_is_spectrum_visible(); })) return 182;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    if (with_ui_lock([]() { return music_ui_is_spectrum_visible(); })) return 183;
+
     if (with_ui_lock([]() { return music_ui_is_playing(); })) {
         std::fprintf(stderr, "Music unexpectedly started in the playing state\n");
         return 153;
@@ -977,6 +984,44 @@ int test_music_ui(InputInjector &input)
         return 154;
     }
 
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 184;
+    with_ui_lock([]() { music_ui_set_output_state(60, true); return 0; });
+    input.pump(30);
+    if (music_spectrum_is_enabled() || !with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 194;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    if (with_ui_lock([]() { return music_ui_is_spectrum_visible(); })) return 195;
+    if (!with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 196;
+    with_ui_lock([]() { music_ui_set_output_state(0, false); return 0; });
+    input.pump(30);
+    if (!with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 197;
+    with_ui_lock([]() { music_ui_set_output_state(60, false); return 0; });
+    input.pump(30);
+    if (with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 198;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 199;
+    if (!input_ok(input.press(180, 5), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 25), input)) return 1;
+    input.pump(20);
+    if (music_spectrum_is_enabled()) return 185;
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(50);
+    if (!show("music")) return 186;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 187;
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    input.pump(30);
+    if (music_spectrum_is_enabled()) return 188;
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 189;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(20);
+    if (music_spectrum_is_enabled()) return 190;
+
     const size_t first_track = with_ui_lock([]() { return music_ui_get_track_index(); });
     if (!input_ok(input.click(250, 257), input)) return 1;
     if (with_ui_lock([]() { return music_ui_get_track_index(); }) == first_track) {
@@ -984,7 +1029,12 @@ int test_music_ui(InputInjector &input)
         return 155;
     }
 
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(20);
+    if (!music_spectrum_is_enabled()) return 191;
     if (!input_ok(input.click(180, 308), input)) return 1;
+    input.pump(20);
+    if (music_spectrum_is_enabled()) return 192;
     if (!with_ui_lock([]() { return music_ui_is_playlist_visible(); })) {
         std::fprintf(stderr, "Music Playlist button did not open the track list\n");
         return 156;
@@ -1022,6 +1072,7 @@ int test_music_ui(InputInjector &input)
         return 158;
     }
 
+    if (music_spectrum_is_enabled()) return 193;
     std::puts("Music controls, playlist and Home gesture passed");
     return 0;
 }
@@ -1350,6 +1401,87 @@ int drag(InputInjector &input, int start_x, int start_y, int end_x, int end_y,
     return 0;
 }
 
+int test_quick_status_freeze(InputInjector &input)
+{
+    std::function<lv_obj_t *(lv_obj_t *, const char *)> find_label = [&](lv_obj_t *obj, const char *text) -> lv_obj_t * {
+        if(lv_obj_check_type(obj, &lv_label_class) && std::strcmp(lv_label_get_text(obj), text) == 0) return obj;
+        for(uint32_t i = 0; i < lv_obj_get_child_count(obj); ++i) {
+            if(auto *found = find_label(lv_obj_get_child(obj, i), text)) return found;
+        }
+        return nullptr;
+    };
+    lv_obj_t *panel = with_ui_lock([&]() {
+        auto *obj = find_label(lv_layer_top(), "  SRAM:");
+        while(obj && lv_obj_get_parent(obj) != lv_layer_top()) obj = lv_obj_get_parent(obj);
+        return obj;
+    });
+    if(!panel) return 71;
+    auto content = [&]() {
+        return with_ui_lock([&]() {
+            std::string result;
+            std::function<void(lv_obj_t *)> walk = [&](lv_obj_t *obj) {
+                if(lv_obj_check_type(obj, &lv_label_class)) result += std::string("L:") + lv_label_get_text(obj);
+                if(lv_obj_check_type(obj, &lv_image_class)) result += "I:" + std::to_string(reinterpret_cast<uintptr_t>(lv_image_get_src(obj)));
+                if(lv_obj_check_type(obj, &lv_bar_class)) result += "B:" + std::to_string(lv_bar_get_value(obj));
+                result += "S:" + std::to_string(reinterpret_cast<uintptr_t>(lv_obj_get_style_bg_image_src(obj, LV_PART_MAIN)));
+                result += lv_obj_has_state(obj, LV_STATE_CHECKED) ? ":checked" : ":unchecked";
+                if(obj != panel) result += lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) ? ":hidden" : ":visible";
+                for(uint32_t i = 0; i < lv_obj_get_child_count(obj); ++i) walk(lv_obj_get_child(obj, i));
+            };
+            walk(panel);
+            return result;
+        });
+    };
+    if(!show("launcher")) return 72;
+    input.pump(20);
+    with_ui_lock([]() {
+        speaker_ui_set_battery_state(false, 55);
+        speaker_ui_set_cpu_usage(0);
+        speaker_ui_set_quick_volume_level(0);
+        speaker_ui_set_quick_brightness_level(0);
+        speaker_ui_set_wlan_enabled(true);
+        speaker_ui_set_wifi_connected(true);
+        return 0;
+    });
+    if(!input_ok(input.press(180, 5), input)) { std::fprintf(stderr, "freeze: opening press failed\n"); return 1; }
+    input.pump(5);
+    for(int y = 20; y <= 180; y += 10) {
+        if(!input_ok(input.move(180, y), input)) { std::fprintf(stderr, "freeze: opening move %d failed\n", y); return 1; }
+        input.pump(5);
+    }
+    if(!with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); })) return 73;
+    const std::string frozen = content();
+    with_ui_lock([]() {
+        speaker_ui_set_cpu_usage(100);
+        speaker_ui_set_cpu_usage(37);
+        speaker_ui_set_battery_state(true, 19);
+        speaker_ui_set_battery_state(false, 22);
+        speaker_ui_set_quick_volume_level(2);
+        speaker_ui_set_quick_brightness_level(2);
+        speaker_ui_set_wlan_enabled(false);
+        speaker_ui_set_wifi_connected(false);
+        return 0;
+    });
+    input.pump(250); // Hold long enough for the periodic status timers to run.
+    if(content() != frozen) { std::fprintf(stderr, "Quick content changed while dragging\n"); return 74; }
+    if(!input_ok(input.release(), input)) return 1;
+    input.pump(1);
+    if(!with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); }) || content() != frozen) return 75;
+    input.pump(50);
+    if(with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); })) return 76;
+    if(!with_ui_lock([&]() { return find_label(panel, "22%") != nullptr; }) || content() == frozen) return 77;
+    if(!with_ui_lock([&]() { return find_label(panel, "37%") != nullptr; })) return 81;
+    // Navigation that cancels a drag must not leave status updates frozen.
+    if(!input_ok(input.press(180, 355), input)) { std::fprintf(stderr, "freeze: closing press failed\n"); return 1; }
+    input.pump(5);
+    if(!with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); })) return 78;
+    if(!show("settings")) return 79;
+    if(with_ui_lock([]() { return speaker_ui_is_quick_transitioning(); })) return 80;
+    if(!input_ok(input.release(), input)) return 1;
+    input.pump(30);
+    return 0;
+}
+
 int test_quick_gesture(InputInjector &input)
 {
     show("launcher");
@@ -1382,6 +1514,7 @@ int test_quick_gesture(InputInjector &input)
         return 13;
     }
 
+    if(int result = test_quick_status_freeze(input); result != 0) return result;
     std::puts("Quick Settings top-edge drag gesture passed");
     return 0;
 }

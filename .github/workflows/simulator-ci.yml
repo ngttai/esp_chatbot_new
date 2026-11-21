@@ -47,6 +47,7 @@ jobs:
             imagemagick \
             libboost-all-dev \
             libsdl2-dev \
+            libjpeg-dev \
             libssl-dev \
             ninja-build \
             pkg-config

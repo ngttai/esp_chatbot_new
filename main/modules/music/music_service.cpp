@@ -65,6 +65,9 @@ void Service::set_pinned(size_t index)
         std::lock_guard<std::mutex> lock(mutex_);
         if (pinned_ == index) return;
         pinned_ = index;
+        cover_attempted_ = size_t(-1);
+        cover_.reset();
+        cover_index_ = size_t(-1);
         epoch_++;
     }
     cv_.notify_all();
@@ -115,6 +118,12 @@ bool Service::path_of(size_t index, std::string &out) const
     if (track == nullptr) return false;
     out = track->path;
     return true;
+}
+
+CoverPtr Service::cover_of(size_t index) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return index == cover_index_ ? cover_ : CoverPtr{};
 }
 
 bool Service::settled_locked() const
@@ -193,6 +202,22 @@ void Service::run()
         if (!wait_until_settled(lock)) break;
 
         size_t index = 0;
+        if (config_.cover_loader && library_.track(pinned_) && cover_attempted_ != pinned_ &&
+            library_.track(pinned_)->state != MetaState::Pending) {
+            const size_t selected = pinned_;
+            const std::string path = library_.track(selected)->path;
+            CancelContext cancel{this, epoch_.load()};
+            const ParseOptions options{&Service::parse_cancelled, &cancel};
+            lock.unlock();
+            auto image = config_.cover_loader(path.c_str(), options);
+            lock.lock();
+            if (parse_cancelled(&cancel)) continue;
+            cover_attempted_ = selected;
+            cover_index_ = selected;
+            cover_ = std::move(image);
+            version_++;
+            continue;
+        }
         if (!pick_next_locked(index)) {
             cv_.wait(lock);
             continue;
