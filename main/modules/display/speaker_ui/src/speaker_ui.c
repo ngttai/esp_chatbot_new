@@ -889,6 +889,11 @@ static void create_quick(void)
     lv_obj_align(quick_cpu_bar, LV_ALIGN_RIGHT_MID, -42, 0);
     lv_obj_remove_flag(quick_cpu_bar, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_color(quick_cpu_bar, lv_color_hex(0x00FF00), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(quick_cpu_bar, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_color(quick_cpu_bar, lv_color_hex(0xFF0000), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_main_stop(quick_cpu_bar, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_stop(quick_cpu_bar, 255, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_grad_dir(quick_cpu_bar, LV_GRAD_DIR_HOR, LV_PART_INDICATOR);
     quick_cpu_label = text(cpu_row, "--%", &esp_brookesia_font_maison_neue_book_16, WHITE);
     lv_obj_align(quick_cpu_label, LV_ALIGN_RIGHT_MID, 0, 0);
     quick_home_bar = create_home_indicator(content);
