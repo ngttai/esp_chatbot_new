@@ -1,5 +1,6 @@
 #include "music_ui.h"
 #include "music_ui_layout.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -54,6 +55,7 @@ static lv_obj_t *album_shape_primary;
 static lv_obj_t *album_shape_secondary;
 static lv_obj_t *album_mark;
 static lv_obj_t *album_cover_image;
+static lv_image_dsc_t album_cover_descriptor;
 static lv_obj_t *title_label;
 static lv_obj_t *artist_label;
 static lv_obj_t *elapsed_label;
@@ -266,6 +268,9 @@ static void update_wanted(void)
 
 static void refresh_cover(size_t index)
 {
+    /* Drop the old image/cache before releasing its retained pixel storage. */
+    lv_image_set_src(album_cover_image, NULL);
+    lv_image_cache_drop(&album_cover_descriptor);
     const music_data_cover_t cover = music_data_get_cover(index);
     if(cover == NULL) {
         lv_obj_add_flag(album_cover_image, LV_OBJ_FLAG_HIDDEN);
@@ -275,7 +280,16 @@ static void refresh_cover(size_t index)
         return;
     }
 
-    lv_image_set_src(album_cover_image, cover);
+    memset(&album_cover_descriptor, 0, sizeof(album_cover_descriptor));
+    album_cover_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
+    album_cover_descriptor.header.cf = LV_COLOR_FORMAT_RGB565;
+    album_cover_descriptor.header.w = cover->width;
+    album_cover_descriptor.header.h = cover->height;
+    album_cover_descriptor.header.stride = cover->width * 2;
+    album_cover_descriptor.data_size = cover->width * cover->height * 2;
+    album_cover_descriptor.data = cover->pixels;
+    lv_image_set_src(album_cover_image, &album_cover_descriptor);
+    lv_image_set_scale(album_cover_image, MUSIC_UI_ALBUM_SIZE * LV_SCALE_NONE / cover->width);
     lv_obj_center(album_cover_image);
     lv_obj_remove_flag(album_cover_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(album_shape_primary, LV_OBJ_FLAG_HIDDEN);
@@ -461,6 +475,7 @@ static void sync_timer_cb(lv_timer_t *timer)
     music_data_track_t data;
     const bool have = track_total > 0 && music_data_get(track_index, &data);
     if(have != shown_valid || (have && memcmp(&data, &shown_track, sizeof(data)) != 0)) refresh_track();
+    else refresh_cover(have ? track_index : MUSIC_NO_INDEX);
     if(!lv_obj_has_flag(playlist_page, LV_OBJ_FLAG_HIDDEN)) sync_rows();
 }
 

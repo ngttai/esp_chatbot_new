@@ -11,6 +11,7 @@ Install the Brookesia Linux dependencies (once):
 ```sh
 cd /path/to/esp-brookesia/hal/brookesia_hal_linux
 ./scripts/install_linux_deps.sh --minimal --display
+sudo apt-get install libjpeg-dev
 ```
 
 Resolve this project's IDF components once so `managed_components/lvgl__lvgl` is
@@ -106,6 +107,22 @@ two requested WLAN password keyboard refinements: Number and Special have no
 hide-key button, the Number `1 2 3 Backspace` row is centered, and Special uses
 the function-key order `123 , Space . Backspace`. Lowercase and uppercase retain
 their existing hide-key behavior.
+
+## Music album artwork
+
+Music loads JPEG artwork embedded in ID3v2.2/2.3/2.4 tags, preferring the front
+cover. If no usable embedded JPEG exists, it looks for `cover.jpg` and then
+`folder.jpg` in the MP3's directory. PNG and progressive JPEG are not supported;
+unsupported or missing images keep the existing fallback artwork.
+
+The metadata worker loads only the selected track's cover after the UI settles.
+Encoded images are limited to 512 KiB and 1024 pixels per dimension. Covers are
+center-cropped to 128×128 RGB565 (32 KiB); on ESP, encoded and pixel buffers use
+PSRAM without falling back to internal RAM. Decoding can temporarily use up to
+2 MiB of PSRAM for the source pixels, in addition to encoded data and thumbnails.
+The UI retains its displayed thumbnail until replacement, so changing tracks
+cannot invalidate an image still referenced by LVGL. Host decoding uses libjpeg;
+firmware uses the existing ESP JPEG decoder.
 
 ## Simulated brightness
 

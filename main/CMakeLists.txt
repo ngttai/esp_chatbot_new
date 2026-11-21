@@ -13,6 +13,7 @@ set(SRCS
     "modules/music/id3_parser.cpp"
     "modules/music/music_audio_backend.cpp"
     "modules/music/music_data.cpp"
+    "modules/music/music_cover.cpp"
     "modules/music/music_library.cpp"
     "modules/music/music_player.cpp"
     "modules/music/music_playback.cpp"
@@ -60,6 +61,7 @@ idf_component_register(
         "modules/display/speaker_ui/vendor/esp_speaker_ui/core/brookesia_core/systems/speaker/widgets/quick_settings/ui"
         "modules/display/speaker_ui/vendor/esp_speaker_ui/apps/brookesia_app_ai_profile/ui"
     PRIV_REQUIRES
+        espressif__esp_new_jpeg
         bq27220
         esp_board_manager
         esp_app_format

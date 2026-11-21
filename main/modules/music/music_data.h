@@ -22,9 +22,14 @@ typedef struct {
     music_data_state_t state;
 } music_data_track_t;
 
-/* Opaque image source owned by the music service. NULL means that the track
- * has no decoded cover available and the UI should use its fallback artwork. */
-typedef const void *music_data_cover_t;
+/* Native little-endian RGB565 thumbnail. Valid until the next get_cover call
+ * on the UI thread. NULL means that fallback artwork should be displayed. */
+typedef struct {
+    const uint8_t *pixels;
+    uint16_t width;
+    uint16_t height;
+} music_data_cover_image_t;
+typedef const music_data_cover_image_t *music_data_cover_t;
 
 /* Overrides the music folder. Must be called before music_data_start(). */
 void music_data_set_root(const char *path);

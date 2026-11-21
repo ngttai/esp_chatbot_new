@@ -188,6 +188,7 @@ add_executable(esp_chatbot_host_sim
     "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_audio_backend.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_cover.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_player.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_playback.cpp"
@@ -235,7 +236,9 @@ target_include_directories(esp_chatbot_host_sim PRIVATE
     "${SPEAKER_UI_DIR}/vendor/esp_speaker_ui/apps/brookesia_app_ai_profile/ui"
 )
 find_package(Threads REQUIRED)
+find_package(JPEG REQUIRED)
 target_link_libraries(esp_chatbot_host_sim PRIVATE
+    JPEG::JPEG
     Threads::Threads
     brookesia::gui_lvgl
     brookesia::hal_linux
@@ -281,10 +284,11 @@ if(BUILD_TESTING)
         "${HOST_SIM_DIR}/tests/music_data_cover_test.cpp"
         "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"
         "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_cover.cpp"
         "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
         "${PROJECT_ROOT}/main/modules/music/music_service.cpp")
     target_include_directories(music_data_cover_test PRIVATE "${PROJECT_ROOT}/main")
-    target_link_libraries(music_data_cover_test PRIVATE Threads::Threads)
+    target_link_libraries(music_data_cover_test PRIVATE Threads::Threads JPEG::JPEG)
     add_test(NAME music_data_cover COMMAND music_data_cover_test)
     set_tests_properties(music_data_cover PROPERTIES TIMEOUT 30)
     add_executable(panel_power_test "${HOST_SIM_DIR}/tests/panel_power_test.cpp")

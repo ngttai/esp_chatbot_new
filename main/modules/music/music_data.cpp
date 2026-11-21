@@ -13,6 +13,9 @@ namespace {
 
 std::unique_ptr<music::Service> service;
 std::string root_override;
+// Retains the displayed thumbnail while the worker replaces its single cache.
+music::CoverPtr displayed_cover;
+music_data_cover_image_t displayed_image{};
 
 std::string default_root()
 {
@@ -51,6 +54,7 @@ void music_data_start(void)
     if (service) return;
     music::Service::Config config;
     config.root = default_root();
+    config.cover_loader = music::load_cover;
     config.thread_setup = setup_worker_thread;
     config.thread_restore = restore_worker_thread;
     service = std::make_unique<music::Service>(std::move(config));
@@ -101,8 +105,10 @@ bool music_data_get_path(size_t index, char *out, size_t size)
 
 music_data_cover_t music_data_get_cover(size_t index)
 {
-    (void)index;
-    return nullptr;
+    displayed_cover = service ? service->cover_of(index) : music::CoverPtr{};
+    if (!displayed_cover) return nullptr;
+    displayed_image = {displayed_cover->pixels.get(), music::CoverImage::kSize, music::CoverImage::kSize};
+    return &displayed_image;
 }
 
 void music_data_set_ui_idle(bool idle)

@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "music_library.hpp"
+#include "music_cover.hpp"
 
 namespace music {
 
@@ -36,6 +37,7 @@ public:
         uint32_t settle_ms = 150;
         // Replaceable parser, defaults to parse_mp3_file.
         ParseFn parse;
+        std::function<CoverPtr(const char *, const ParseOptions &)> cover_loader;
         // Runs on the caller's thread right before the worker thread is created.
         std::function<void()> thread_setup;
         // Runs after the worker thread was created.
@@ -66,6 +68,7 @@ public:
     uint32_t version() const { return version_.load(); }
     bool snapshot(size_t index, TrackView &out) const;
     bool path_of(size_t index, std::string &out) const;
+    CoverPtr cover_of(size_t index) const;
 
 private:
     void run();
@@ -95,6 +98,9 @@ private:
 
     std::chrono::steady_clock::time_point idle_since_{};
     size_t pinned_ = 0;
+    size_t cover_index_ = size_t(-1);
+    size_t cover_attempted_ = size_t(-1);
+    CoverPtr cover_;
     size_t wanted_[kMaxWanted] = {};
     size_t wanted_count_ = 0;
 };
