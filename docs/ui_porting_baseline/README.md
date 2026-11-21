@@ -92,3 +92,7 @@ The screenshots use the reference runner's standard capture delay (30 UI pumps a
 - [x] Contact sheet visually inspected.
 
 Phase 0 is complete. Phase 1 must use this baseline to verify copied source integrity.
+
+The approved Quick Settings override adds the CPU usage row above SRAM/PSRAM.
+The parity gate preserves labels and controls while masking only live time,
+battery, and CPU/memory value regions.

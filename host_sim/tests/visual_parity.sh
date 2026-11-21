@@ -35,7 +35,7 @@ done
 # Mask only those content rectangles; all surrounding geometry, icons, controls,
 # colors and navigation chrome remain pixel-compared against the frozen baseline.
 content_masks=(
-    "quick|rectangle 85,24 175,56 rectangle 205,24 275,56 rectangle 65,250 295,306"
+    "quick|rectangle 85,24 175,56 rectangle 205,24 275,56 rectangle 135,210 295,233 rectangle 135,239 295,276"
     "restore|rectangle 45,125 320,160 rectangle 35,252 325,285"
 )
 failures=0
@@ -43,6 +43,9 @@ for entry in "${content_masks[@]}"; do
     screen=${entry%%|*}
     mask=${entry#*|}
     golden="$golden_directory/$screen.bmp"
+    if [[ -f "$override_directory/$screen.bmp" ]]; then
+        golden="$override_directory/$screen.bmp"
+    fi
     actual="$output_directory/screenshots/$screen.bmp"
     masked_golden="$output_directory/masked/$screen-golden.png"
     masked_actual="$output_directory/masked/$screen-actual.png"
