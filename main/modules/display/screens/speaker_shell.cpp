@@ -37,6 +37,7 @@
 extern "C" {
 #include "boot_splash.h"
 #include "speaker_ui.h"
+#include "apps/music/music_ui.h"
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level1_36_36);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level2_36_36);
 LV_IMAGE_DECLARE(esp_brookesia_app_icon_wlan_level3_36_36);
@@ -808,6 +809,7 @@ void ScreenSpeakerShell::sync_service_control_ui()
     const int volume = service_volume_.load();
     const int muted = service_muted_.load();
     if ((volume >= 0) && (muted >= 0)) {
+        music_ui_set_output_state(volume, muted != 0);
         const int effective_volume = muted != 0 ? 0 : volume;
         if (effective_volume != synced_effective_volume_) {
             const int quick_level = muted != 0 ? -1 : nearest_level(volume, QUICK_VOLUME_PERCENT);

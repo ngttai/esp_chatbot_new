@@ -17,6 +17,10 @@ void music_ui_show_now_playing(void);
 void music_ui_show_playlist(void);
 size_t music_ui_get_track_index(void);
 bool music_ui_is_playing(void);
+bool music_ui_is_spectrum_visible(void);
+/* Cached actual output state, called on the UI thread; volume 0 also mutes. */
+void music_ui_set_output_state(int volume, bool muted);
+bool music_ui_is_mute_visible(void);
 /* Test hooks: artist line text and a forced metadata refresh of the shown track. */
 const char *music_ui_get_artist_text(void);
 void music_ui_refresh_track(void);

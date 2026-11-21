@@ -67,5 +67,6 @@ license inventory or confirmation that every release asset has been cleared.
 `components/esp_audio_simple_player` derives from Espressif
 `esp_audio_simple_player` version `0.9.6~1`. Its per-file notices and
 LicenseRef-Espressif-Modified-MIT license text are retained in that directory.
-The project selects the MEMORY resampler profile; see
+The project selects the MEMORY resampler profile and adds an optional, non-blocking
+PCM observer for the Music spectrum; see
 `docs/development/component-overrides.md`.

@@ -14,6 +14,7 @@ set(SRCS
     "modules/music/music_audio_backend.cpp"
     "modules/music/music_data.cpp"
     "modules/music/music_cover.cpp"
+    "modules/music/music_spectrum.cpp"
     "modules/music/music_library.cpp"
     "modules/music/music_player.cpp"
     "modules/music/music_playback.cpp"

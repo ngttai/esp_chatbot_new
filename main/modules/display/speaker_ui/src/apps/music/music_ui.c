@@ -1,5 +1,6 @@
 #include "music_ui.h"
 #include "music_ui_layout.h"
+#include "speaker_ui.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
 #include <stdbool.h>
@@ -10,6 +11,7 @@
 
 #include "modules/music/music_data.h"
 #include "modules/music/music_playback.h"
+#include "modules/music/music_spectrum.h"
 
 #define MUSIC_WHITE  lv_color_hex(0xF5F7FA)
 #define MUSIC_MUTED  lv_color_hex(0x9BA3B3)
@@ -30,6 +32,7 @@ LV_FONT_DECLARE(esp_brookesia_font_maison_neue_book_14)
 LV_FONT_DECLARE(esp_brookesia_font_maison_neue_book_16)
 LV_FONT_DECLARE(esp_brookesia_font_maison_neue_book_20)
 LV_IMAGE_DECLARE(music_heart_outline_24_24);
+LV_IMAGE_DECLARE(speaker_image_middle_quick_settings_volume_off_48_48);
 
 typedef struct {
     uint32_t color_start;
@@ -56,6 +59,16 @@ static lv_obj_t *album_shape_secondary;
 static lv_obj_t *album_mark;
 static lv_obj_t *album_cover_image;
 static lv_image_dsc_t album_cover_descriptor;
+static lv_obj_t *spectrum_panel;
+static lv_obj_t *mute_badge, *mute_icon;
+static bool mute_breath_active;
+static uint32_t mute_breath_start;
+static bool output_muted;
+static lv_obj_t *spectrum_bars[MUSIC_SPECTRUM_BANDS];
+static bool spectrum_selected, spectrum_capturing;
+static size_t spectrum_track = MUSIC_NO_INDEX;
+static uint8_t spectrum_levels[MUSIC_SPECTRUM_BANDS];
+static uint32_t spectrum_sample_tick;
 static lv_obj_t *title_label;
 static lv_obj_t *artist_label;
 static lv_obj_t *elapsed_label;
@@ -268,6 +281,15 @@ static void update_wanted(void)
 
 static void refresh_cover(size_t index)
 {
+    if(spectrum_selected) {
+        lv_obj_add_flag(album_cover_image, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(album_shape_primary, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(album_shape_secondary, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(album_mark, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(spectrum_panel, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_add_flag(spectrum_panel, LV_OBJ_FLAG_HIDDEN);
     /* Drop the old image/cache before releasing its retained pixel storage. */
     lv_image_set_src(album_cover_image, NULL);
     lv_image_cache_drop(&album_cover_descriptor);
@@ -295,6 +317,76 @@ static void refresh_cover(size_t index)
     lv_obj_add_flag(album_shape_primary, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(album_shape_secondary, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(album_mark, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void mute_breathe_tick(void)
+{
+    const bool visible = output_muted && mute_badge &&
+        !lv_obj_has_flag(mute_badge, LV_OBJ_FLAG_HIDDEN) && now_playing_page &&
+        lv_obj_get_screen(now_playing_page) == lv_screen_active() &&
+        lv_obj_has_flag(playlist_page, LV_OBJ_FLAG_HIDDEN) &&
+        !speaker_ui_is_screen_active("quick") && !speaker_ui_is_quick_transitioning();
+    if(!visible) { mute_breath_active = false; return; }
+    if(!mute_breath_active) { mute_breath_start = lv_tick_get(); mute_breath_active = true; }
+    // Reuse the existing 15 FPS UI timer; no independent animation during gestures.
+    const uint32_t phase = lv_tick_elaps(mute_breath_start) % 2400;
+    const uint32_t fade = phase <= 1200 ? phase : 2400 - phase;
+    const lv_opa_t opacity = (lv_opa_t)(LV_OPA_COVER - fade * 110 / 1200);
+    if(lv_obj_get_style_image_opa(mute_icon, 0) != opacity) lv_obj_set_style_image_opa(mute_icon, opacity, 0);
+}
+
+static void spectrum_timer_cb(lv_timer_t *timer)
+{
+    LV_UNUSED(timer);
+    mute_breathe_tick();
+    const bool visible = spectrum_selected && now_playing_page &&
+        lv_obj_get_screen(now_playing_page) == lv_screen_active() &&
+        lv_obj_has_flag(playlist_page, LV_OBJ_FLAG_HIDDEN) &&
+        !speaker_ui_is_screen_active("quick") && !speaker_ui_is_quick_transitioning();
+    if(!visible) {
+        if(spectrum_capturing) music_spectrum_set_enabled(false);
+        spectrum_capturing = false;
+        return;
+    }
+    music_playback_info_t info;
+    music_playback_get_info(&info);
+    const bool playing = visible && !output_muted && info.state == MUSIC_PLAYBACK_PLAYING;
+    if(playing != spectrum_capturing || (playing && spectrum_track != info.index)) {
+        music_spectrum_set_enabled(false);
+        spectrum_capturing = false;
+        if(playing) {
+            char path[512];
+            if(music_data_get_path(info.index, path, sizeof(path)) && music_spectrum_set_enabled(true)) {
+                music_spectrum_set_track(path);
+                spectrum_capturing = true;
+                spectrum_track = info.index;
+            }
+        }
+    }
+    uint8_t target[MUSIC_SPECTRUM_BANDS] = {0};
+    if(spectrum_capturing && music_spectrum_read(target)) spectrum_sample_tick = lv_tick_get();
+    else if(playing && lv_tick_elaps(spectrum_sample_tick) < 250) return;
+    for(unsigned i = 0; i < MUSIC_SPECTRUM_BANDS; ++i) {
+        const uint8_t next = target[i] >= spectrum_levels[i] ? target[i] :
+            (spectrum_levels[i] > target[i] + 12 ? spectrum_levels[i] - 12 : target[i]);
+        if(next == spectrum_levels[i]) continue;
+        spectrum_levels[i] = next;
+        lv_obj_set_height(spectrum_bars[i], 2 + next * MUSIC_UI_SPECTRUM_HEIGHT / 100);
+    }
+}
+
+static void album_tapped_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    spectrum_selected = !spectrum_selected;
+    music_spectrum_set_enabled(false);
+    spectrum_capturing = false;
+    spectrum_track = MUSIC_NO_INDEX;
+    memset(spectrum_levels, 0, sizeof(spectrum_levels));
+    for(unsigned i = 0; i < MUSIC_SPECTRUM_BANDS; ++i) {
+        lv_obj_set_height(spectrum_bars[i], 2);
+    }
+    refresh_cover(track_total ? track_index : MUSIC_NO_INDEX);
 }
 
 static void show_error(const music_playback_info_t *info);
@@ -457,6 +549,12 @@ static void sync_timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
 
+    if(mute_badge && now_playing_page && lv_obj_get_screen(now_playing_page) == lv_screen_active() &&
+       !speaker_ui_is_screen_active("quick") && !speaker_ui_is_quick_transitioning()) {
+        const bool hidden = lv_obj_has_flag(mute_badge, LV_OBJ_FLAG_HIDDEN);
+        if(output_muted && hidden) lv_obj_remove_flag(mute_badge, LV_OBJ_FLAG_HIDDEN);
+        else if(!output_muted && !hidden) lv_obj_add_flag(mute_badge, LV_OBJ_FLAG_HIDDEN);
+    }
     music_playback_pump();
     sync_playback();
 
@@ -761,6 +859,7 @@ static void build_now_playing_page(lv_obj_t *parent)
     lv_obj_set_style_radius(album_shape_primary, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(album_shape_primary, LV_OPA_70, 0);
 
+    lv_obj_remove_flag(album_shape_primary, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     album_shape_secondary = lv_obj_create(album_card);
     lv_obj_remove_style_all(album_shape_secondary);
     lv_obj_set_size(album_shape_secondary, MUSIC_UI_SCALE(72), MUSIC_UI_SCALE(72));
@@ -768,12 +867,63 @@ static void build_now_playing_page(lv_obj_t *parent)
     lv_obj_set_style_radius(album_shape_secondary, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(album_shape_secondary, LV_OPA_60, 0);
 
+    lv_obj_remove_flag(album_shape_secondary, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     album_mark = make_label(album_card, "V", &esp_brookesia_font_maison_neue_book_20, MUSIC_WHITE);
     lv_obj_set_style_text_opa(album_mark, LV_OPA_80, 0);
     lv_obj_align(album_mark, LV_ALIGN_BOTTOM_RIGHT, -MUSIC_UI_SCALE(14), -MUSIC_UI_SCALE(10));
 
+    spectrum_panel = lv_obj_create(album_card);
+    lv_obj_remove_style_all(spectrum_panel);
+    lv_obj_set_size(spectrum_panel, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(spectrum_panel, lv_color_hex(0x111827), 0);
+    lv_obj_set_style_bg_opa(spectrum_panel, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(spectrum_panel, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(spectrum_panel, LV_OBJ_FLAG_HIDDEN);
+    for(unsigned i = 0; i < MUSIC_SPECTRUM_BANDS; ++i) {
+        spectrum_bars[i] = lv_obj_create(spectrum_panel);
+        lv_obj_remove_style_all(spectrum_bars[i]);
+        lv_obj_set_size(spectrum_bars[i], MUSIC_UI_SPECTRUM_BAR_WIDTH, 2);
+        lv_obj_align(spectrum_bars[i], LV_ALIGN_BOTTOM_LEFT,
+            MUSIC_UI_SPECTRUM_PADDING + i * MUSIC_UI_SPECTRUM_BAR_STEP, -MUSIC_UI_SPECTRUM_PADDING);
+        lv_obj_set_style_clip_corner(spectrum_bars[i], true, 0);
+        // Fixed tiers anchored to the baseline; bar height reveals their extent.
+        const int green_top = 2 + MUSIC_UI_SPECTRUM_HEIGHT * 50 / 100;
+        const int yellow_top = 2 + MUSIC_UI_SPECTRUM_HEIGHT * 70 / 100;
+        const int tops[] = {green_top, yellow_top, 2 + MUSIC_UI_SPECTRUM_HEIGHT};
+        const uint32_t colors[] = {0x32E6A1, 0xFFD447, 0xFF5263};
+        int bottom = 0;
+        for(unsigned tier = 0; tier < 3; ++tier) {
+            lv_obj_t *segment = lv_obj_create(spectrum_bars[i]);
+            lv_obj_remove_style_all(segment);
+            lv_obj_set_size(segment, lv_pct(100), tops[tier] - bottom);
+            lv_obj_align(segment, LV_ALIGN_BOTTOM_MID, 0, -bottom);
+            lv_obj_set_style_bg_color(segment, lv_color_hex(colors[tier]), 0);
+            lv_obj_set_style_bg_opa(segment, LV_OPA_COVER, 0);
+            lv_obj_remove_flag(segment, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+            bottom = tops[tier];
+        }
+        lv_obj_set_style_radius(spectrum_bars[i], MUSIC_UI_SCALE(2), 0);
+        lv_obj_remove_flag(spectrum_bars[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    }
+    lv_obj_add_flag(album_card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(album_card, album_tapped_cb, LV_EVENT_SHORT_CLICKED, NULL);
     album_cover_image = lv_image_create(album_card);
+    lv_obj_remove_flag(album_cover_image, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(album_cover_image, LV_OBJ_FLAG_HIDDEN);
+    mute_badge = lv_obj_create(album_card);
+    lv_obj_remove_style_all(mute_badge);
+    lv_obj_set_size(mute_badge, MUSIC_UI_MUTE_BADGE_SIZE, MUSIC_UI_MUTE_BADGE_SIZE);
+    lv_obj_center(mute_badge);
+    lv_obj_set_style_radius(mute_badge, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(mute_badge, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(mute_badge, LV_OPA_70, 0);
+    lv_obj_remove_flag(mute_badge, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(mute_badge, LV_OBJ_FLAG_HIDDEN);
+    mute_icon = lv_image_create(mute_badge);
+    lv_image_set_src(mute_icon, &speaker_image_middle_quick_settings_volume_off_48_48);
+    lv_image_set_scale(mute_icon, MUSIC_UI_MUTE_ICON_SIZE * LV_SCALE_NONE / 48);
+    lv_obj_center(mute_icon);
+    lv_obj_remove_flag(mute_icon, LV_OBJ_FLAG_CLICKABLE);
 
     title_label = make_label(parent, "", &esp_brookesia_font_maison_neue_book_20, MUSIC_WHITE);
     lv_obj_set_width(title_label, MUSIC_UI_TITLE_WIDTH);
@@ -854,6 +1004,8 @@ static void screen_unload_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
     music_playback_stop();
+    music_spectrum_set_enabled(false);
+    spectrum_capturing = false;
     playing_tick_valid = false;
     quick_ends = 0;
 }
@@ -890,6 +1042,7 @@ void music_ui_create(lv_obj_t *parent)
     // Quick Settings is an overlay and does not unload the underlying screen.
     lv_obj_add_event_cb(lv_obj_get_screen(parent), screen_unload_cb, LV_EVENT_SCREEN_UNLOAD_START, NULL);
     sync_timer = lv_timer_create(sync_timer_cb, MUSIC_SYNC_PERIOD, NULL);
+    lv_timer_create(spectrum_timer_cb, 67, NULL);
 }
 
 size_t music_ui_get_track_index(void)
@@ -927,4 +1080,20 @@ bool music_ui_is_playlist_visible(void)
 int32_t music_ui_get_playlist_scroll_y(void)
 {
     return playlist_track_view != NULL ? lv_obj_get_scroll_y(playlist_track_view) : 0;
+}
+
+bool music_ui_is_spectrum_visible(void)
+{
+    return spectrum_selected && spectrum_panel && !lv_obj_has_flag(spectrum_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void music_ui_set_output_state(int volume, bool muted)
+{
+    if(volume < 0 || volume > 100) return;
+    output_muted = muted || volume == 0;
+}
+
+bool music_ui_is_mute_visible(void)
+{
+    return mute_badge && !lv_obj_has_flag(mute_badge, LV_OBJ_FLAG_HIDDEN);
 }

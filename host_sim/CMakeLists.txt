@@ -189,6 +189,7 @@ add_executable(esp_chatbot_host_sim
     "${PROJECT_ROOT}/main/modules/music/music_audio_backend.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_data.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_cover.cpp"
+    "${PROJECT_ROOT}/main/modules/music/music_spectrum.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_library.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_player.cpp"
     "${PROJECT_ROOT}/main/modules/music/music_playback.cpp"
@@ -251,6 +252,12 @@ target_link_libraries(esp_chatbot_host_sim PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(music_spectrum_test
+        "${HOST_SIM_DIR}/tests/music_spectrum_test.cpp"
+        "${PROJECT_ROOT}/main/modules/music/music_spectrum.cpp")
+    target_include_directories(music_spectrum_test PRIVATE "${PROJECT_ROOT}/main")
+    target_link_libraries(music_spectrum_test PRIVATE Threads::Threads)
+    add_test(NAME music_spectrum COMMAND music_spectrum_test)
     add_executable(music_library_test
         "${HOST_SIM_DIR}/tests/music_library_test.cpp"
         "${PROJECT_ROOT}/main/modules/music/id3_parser.cpp"

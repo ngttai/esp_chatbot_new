@@ -8,6 +8,7 @@
 
 extern "C" {
 #include "speaker_ui.h"
+#include "apps/music/music_ui.h"
 }
 
 namespace host_sim {
@@ -141,6 +142,7 @@ bool VolumeAdapter::read_service_state()
 
     current_volume_ = std::clamp(static_cast<int>(volume_result.value()), 0, 100);
     current_mute_ = mute_result.value();
+    music_ui_set_output_state(current_volume_, current_mute_);
     return true;
 }
 
@@ -159,6 +161,7 @@ bool VolumeAdapter::apply_quick_level(int level)
             return false;
         }
         current_mute_ = true;
+        music_ui_set_output_state(current_volume_, current_mute_);
         return true;
     }
 
@@ -177,6 +180,7 @@ bool VolumeAdapter::apply_quick_level(int level)
     }
     current_volume_ = volume;
     current_mute_ = false;
+    music_ui_set_output_state(current_volume_, current_mute_);
     return true;
 }
 
@@ -197,6 +201,7 @@ bool VolumeAdapter::apply_slider_value(int value)
     }
     current_volume_ = value;
     current_mute_ = value == 0;
+    music_ui_set_output_state(current_volume_, current_mute_);
     return true;
 }
 

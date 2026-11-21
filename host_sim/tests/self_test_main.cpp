@@ -40,6 +40,7 @@ extern "C" {
 #include "apps/music/music_ui.h"
 #include "modules/music/music_data.h"
 #include "modules/music/music_playback.h"
+#include "modules/music/music_spectrum.h"
 #include "speaker_ui.h"
 #include "ui.h"
 }
@@ -968,6 +969,11 @@ int test_music_ui(InputInjector &input)
     }
     input.pump(20);
 
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    if (!with_ui_lock([]() { return music_ui_is_spectrum_visible(); })) return 182;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    if (with_ui_lock([]() { return music_ui_is_spectrum_visible(); })) return 183;
+
     if (with_ui_lock([]() { return music_ui_is_playing(); })) {
         std::fprintf(stderr, "Music unexpectedly started in the playing state\n");
         return 153;
@@ -978,6 +984,44 @@ int test_music_ui(InputInjector &input)
         return 154;
     }
 
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 184;
+    with_ui_lock([]() { music_ui_set_output_state(60, true); return 0; });
+    input.pump(30);
+    if (music_spectrum_is_enabled() || !with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 194;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    if (with_ui_lock([]() { return music_ui_is_spectrum_visible(); })) return 195;
+    if (!with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 196;
+    with_ui_lock([]() { music_ui_set_output_state(0, false); return 0; });
+    input.pump(30);
+    if (!with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 197;
+    with_ui_lock([]() { music_ui_set_output_state(60, false); return 0; });
+    input.pump(30);
+    if (with_ui_lock([]() { return music_ui_is_mute_visible(); })) return 198;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 199;
+    if (!input_ok(input.press(180, 5), input)) return 1;
+    input.pump(5);
+    if (!input_ok(input.move(180, 25), input)) return 1;
+    input.pump(20);
+    if (music_spectrum_is_enabled()) return 185;
+    if (!input_ok(input.release(), input)) return 1;
+    input.pump(50);
+    if (!show("music")) return 186;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 187;
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    input.pump(30);
+    if (music_spectrum_is_enabled()) return 188;
+    if (!input_ok(input.click(180, 257), input)) return 1;
+    input.pump(30);
+    if (!music_spectrum_is_enabled()) return 189;
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(20);
+    if (music_spectrum_is_enabled()) return 190;
+
     const size_t first_track = with_ui_lock([]() { return music_ui_get_track_index(); });
     if (!input_ok(input.click(250, 257), input)) return 1;
     if (with_ui_lock([]() { return music_ui_get_track_index(); }) == first_track) {
@@ -985,7 +1029,12 @@ int test_music_ui(InputInjector &input)
         return 155;
     }
 
+    if (!input_ok(input.click(180, 75), input)) return 1;
+    input.pump(20);
+    if (!music_spectrum_is_enabled()) return 191;
     if (!input_ok(input.click(180, 308), input)) return 1;
+    input.pump(20);
+    if (music_spectrum_is_enabled()) return 192;
     if (!with_ui_lock([]() { return music_ui_is_playlist_visible(); })) {
         std::fprintf(stderr, "Music Playlist button did not open the track list\n");
         return 156;
@@ -1023,6 +1072,7 @@ int test_music_ui(InputInjector &input)
         return 158;
     }
 
+    if (music_spectrum_is_enabled()) return 193;
     std::puts("Music controls, playlist and Home gesture passed");
     return 0;
 }

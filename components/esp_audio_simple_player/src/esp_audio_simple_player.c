@@ -142,12 +142,35 @@ static int asp_func_acquire_write(void *handle, esp_gmf_data_bus_block_t *blk, u
     return wanted_size;
 }
 
+/* Optional application observer; it must never block or retain the PCM pointer. */
+extern void esp_audio_simple_player_pcm_observer(const char *uri, const uint8_t *data, size_t size,
+                                                unsigned rate, unsigned channels, unsigned bits) __attribute__((weak));
+
 static int asp_func_release_write(void *handle, esp_gmf_data_bus_block_t *blk, int block_ticks)
 {
     int ret = 0;
     ESP_LOGD(TAG, "%s, vld:%d, blk:%p", __func__, blk->valid_size, blk);
-    esp_asp_func_t *func = (esp_asp_func_t *)handle;
+    esp_audio_simple_player_t *player = (esp_audio_simple_player_t *)handle;
+    esp_asp_func_t *func = &player->cfg.out;
     if (blk->valid_size) {
+#if CONFIG_ESP_AUDIO_SIMPLE_PLAYER_RESAMPLE_EN && CONFIG_ESP_AUDIO_SIMPLE_PLAYER_CH_CVT_EN && CONFIG_ESP_AUDIO_SIMPLE_PLAYER_BIT_CVT_EN
+        if (esp_audio_simple_player_pcm_observer) {
+            esp_gmf_io_handle_t input = NULL;
+            char *uri = NULL;
+            if (esp_gmf_pipeline_get_in(player->pipe, &input) == ESP_GMF_ERR_OK && input &&
+                esp_gmf_io_get_uri(input, &uri) == ESP_GMF_ERR_OK && uri) {
+#if CONFIG_AUDIO_SIMPLE_PLAYER_BIT_CVT_DEST_32BIT
+                const unsigned bits = 32;
+#elif CONFIG_AUDIO_SIMPLE_PLAYER_BIT_CVT_DEST_24BIT
+                const unsigned bits = 24;
+#else
+                const unsigned bits = 16;
+#endif
+                esp_audio_simple_player_pcm_observer(uri, blk->buf, blk->valid_size,
+                    CONFIG_AUDIO_SIMPLE_PLAYER_RESAMPLE_DEST_RATE, CONFIG_AUDIO_SIMPLE_PLAYER_CH_CVT_DEST, bits);
+            }
+        }
+#endif
         ret = func->cb(blk->buf, blk->valid_size, func->user_ctx);
     }
     return ret;
@@ -181,7 +204,7 @@ static int __setup_pipeline(esp_audio_simple_player_t *player, const char *uri, 
             ret = esp_gmf_pipeline_reg_el_port(player->pipe, OBJ_GET_TAG(player->pipe->head_el), ESP_GMF_IO_DIR_READER, in_port);
             ESP_GMF_RET_ON_ERROR(TAG, ret, goto __setup_pipe_err, "Failed to register in port for head element, ret:%x", ret);
         }
-        esp_gmf_port_handle_t out_port = NEW_ESP_GMF_PORT_OUT_BYTE(asp_func_acquire_write, asp_func_release_write, NULL, &player->cfg.out, 2048, ESP_GMF_MAX_DELAY);
+        esp_gmf_port_handle_t out_port = NEW_ESP_GMF_PORT_OUT_BYTE(asp_func_acquire_write, asp_func_release_write, NULL, player, 2048, ESP_GMF_MAX_DELAY);
         ESP_GMF_CHECK(TAG, out_port, goto __setup_pipe_err, "Failed to create out port");
         ret = esp_gmf_pipeline_reg_el_port(player->pipe, OBJ_GET_TAG(player->pipe->last_el), ESP_GMF_IO_DIR_WRITER, out_port);
         ESP_GMF_RET_ON_ERROR(TAG, ret, goto __setup_pipe_err, "Failed to register out port for tail element, ret:%x", ret);
